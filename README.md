@@ -29,12 +29,14 @@ Ferramenta para criação de projetos de modelagem
 ### Instalação
 
 1. Clone o repositório:
+
    ```bash
    git clone https://github.com/rgessele/inaa-studio.git
    cd inaa-studio
    ```
 
 2. Instale as dependências:
+
    ```bash
    npm install
    ```
@@ -45,6 +47,7 @@ Ferramenta para criação de projetos de modelagem
    - Adicione suas credenciais do Supabase
 
 4. Execute o servidor de desenvolvimento:
+
    ```bash
    npm run dev
    ```

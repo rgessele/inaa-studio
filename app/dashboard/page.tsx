@@ -61,8 +61,16 @@ export default async function DashboardPage() {
               Seus Projetos
             </h3>
             <p className="mt-2 text-gray-600">
-              Em breve você poderá criar e gerenciar seus moldes aqui.
+              Comece a criar seus moldes usando o editor.
             </p>
+            <div className="mt-4">
+              <a
+                href="/editor"
+                className="inline-flex items-center rounded-md bg-blue-600 px-6 py-3 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                Abrir Editor de Moldes
+              </a>
+            </div>
           </div>
         </div>
       </main>
