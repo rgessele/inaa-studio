@@ -38,7 +38,7 @@ export default function LoginPage() {
         });
         setEmail("");
       }
-    } catch (error) {
+    } catch {
       setMessage({
         type: "error",
         text: "Erro ao enviar email. Tente novamente.",
@@ -67,7 +67,7 @@ export default function LoginPage() {
         });
         setLoading(false);
       }
-    } catch (error) {
+    } catch {
       setMessage({
         type: "error",
         text: "Erro ao fazer login com Google. Tente novamente.",
