@@ -38,7 +38,8 @@ export default function LoginPage() {
         });
         setEmail("");
       }
-    } catch {
+    } catch (error) {
+      console.error("Error sending magic link:", error);
       setMessage({
         type: "error",
         text: "Erro ao enviar email. Tente novamente.",
@@ -67,7 +68,8 @@ export default function LoginPage() {
         });
         setLoading(false);
       }
-    } catch {
+    } catch (error) {
+      console.error("Error signing in with Google:", error);
       setMessage({
         type: "error",
         text: "Erro ao fazer login com Google. Tente novamente.",
