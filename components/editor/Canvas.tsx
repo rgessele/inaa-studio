@@ -39,6 +39,8 @@ interface Shape {
   fill?: string;
 }
 
+const WORKSPACE_SIZE = 4000;
+
 export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
   const [tool, setTool] = useState<Tool>("select");
   const [shapes, setShapes] = useState<Shape[]>([]);
@@ -74,7 +76,19 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
   }, []);
 
   useEffect(() => {
+    const isTypingElement = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      return (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.tagName === "BUTTON" ||
+        target.isContentEditable
+      );
+    };
+
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (isTypingElement(event.target)) return;
       if (event.code === "Space") {
         event.preventDefault();
         setIsSpacePressed(true);
@@ -82,6 +96,7 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
+      if (isTypingElement(event.target)) return;
       if (event.code === "Space") {
         event.preventDefault();
         setIsSpacePressed(false);
@@ -215,6 +230,10 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
 
     if (!isSpacePressed && tool !== "pan") {
       setIsPanDrag(false);
+      if (stageRef.current?.isDragging()) {
+        stageRef.current.stopDrag();
+      }
+      stageRef.current?.draggable(tool === "pan" || isSpacePressed);
     }
   };
 
@@ -394,10 +413,10 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
           >
             <Layer>
               <Rect
-                x={0}
-                y={0}
-                width={stageSize.width}
-                height={stageSize.height}
+                x={-WORKSPACE_SIZE / 2}
+                y={-WORKSPACE_SIZE / 2}
+                width={WORKSPACE_SIZE}
+                height={WORKSPACE_SIZE}
                 fill="#f8fafc"
                 name="workspace-background"
               />
