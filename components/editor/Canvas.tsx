@@ -141,7 +141,7 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
       return;
     }
 
-    if (tool === "select" || tool === "pan") return;
+    if (tool === "select") return;
 
     const pos = getRelativePointer(stage);
     if (!pos) return;
