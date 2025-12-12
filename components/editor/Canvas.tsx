@@ -39,7 +39,7 @@ interface Shape {
   fill?: string;
 }
 
-// Virtual workspace used to keep the background visible while o usuário navega pelo canvas.
+// Área virtual ampla para manter o fundo visível durante a navegação pelo canvas.
 const WORKSPACE_SIZE = 4000;
 const MIN_ZOOM_SCALE = 0.25;
 const MAX_ZOOM_SCALE = 6;
@@ -51,13 +51,13 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
   const [stagePosition, setStagePosition] = useState({ x: 0, y: 0 });
   const [stageSize, setStageSize] = useState({ width, height });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isKeyboardActive, setIsKeyboardActive] = useState(false);
   const [isPanDrag, setIsPanDrag] = useState(false);
   const isDrawing = useRef(false);
   const currentShape = useRef<Shape | null>(null);
   const currentShapeIndex = useRef<number>(-1);
   const stageRef = useRef<Konva.Stage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const isCanvasActive = useRef(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -91,9 +91,10 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
       );
     };
 
+    if (!isKeyboardActive) return;
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isTypingElement(event.target)) return;
-      if (!isCanvasActive.current) return;
       if (event.code === "Space") {
         event.preventDefault();
         setIsSpacePressed(true);
@@ -102,7 +103,6 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
 
     const handleKeyUp = (event: KeyboardEvent) => {
       if (isTypingElement(event.target)) return;
-      if (!isCanvasActive.current) return;
       if (event.code === "Space") {
         event.preventDefault();
         setIsSpacePressed(false);
@@ -117,7 +117,7 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, []);
+  }, [isKeyboardActive]);
 
   const isPanning = tool === "pan" || isSpacePressed || isPanDrag;
 
@@ -206,10 +206,14 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
     const updatedShapes = shapes.slice();
 
     if (lastShape.tool === "rectangle") {
+      const width = pos.x - lastShape.x;
+      const height = pos.y - lastShape.y;
       updatedShapes[shapeIndex] = {
         ...lastShape,
-        width: pos.x - lastShape.x,
-        height: pos.y - lastShape.y,
+        x: width < 0 ? pos.x : lastShape.x,
+        y: height < 0 ? pos.y : lastShape.y,
+        width: Math.abs(width),
+        height: Math.abs(height),
       };
     } else if (lastShape.tool === "circle") {
       const dx = pos.x - lastShape.x;
@@ -230,11 +234,11 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
   };
 
   const handleStageEnter = () => {
-    isCanvasActive.current = true;
+    setIsKeyboardActive(true);
   };
 
   const handleStageLeave = () => {
-    isCanvasActive.current = false;
+    setIsKeyboardActive(false);
     handleMouseUp();
   };
 
