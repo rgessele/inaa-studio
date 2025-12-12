@@ -23,11 +23,12 @@ export interface CanvasProps {
   height?: number;
 }
 
-type Tool = "select" | "pan" | "rectangle" | "circle" | "line";
+type DrawingTool = "rectangle" | "circle" | "line";
+type Tool = DrawingTool | "select" | "pan";
 
 interface Shape {
   id: string;
-  tool: "rectangle" | "circle" | "line";
+  tool: DrawingTool;
   x: number;
   y: number;
   width?: number;
@@ -188,18 +189,22 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
 
     isDrawing.current = true;
 
+    const drawTool: DrawingTool = tool;
     const newShape: Shape = {
       id: crypto.randomUUID(),
-      tool,
+      tool: drawTool,
       x: pos.x,
       y: pos.y,
       width: 0,
       height: 0,
       radius: 0,
-      points: tool === "line" ? [pos.x, pos.y] : [],
+      points: drawTool === "line" ? [pos.x, pos.y] : [],
       stroke: DEFAULT_STROKE,
       strokeWidth: 2,
-      fill: tool === "rectangle" || tool === "circle" ? DEFAULT_FILL : undefined,
+      fill:
+        drawTool === "rectangle" || drawTool === "circle"
+          ? DEFAULT_FILL
+          : undefined,
     };
 
     currentShape.current = newShape;
@@ -320,7 +325,12 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
         ? "default"
         : "crosshair";
 
-  const tools = [
+  const tools: {
+    id: Tool;
+    label: string;
+    description: string;
+    icon: typeof MousePointer2;
+  }[] = [
     {
       id: "select",
       label: "Selecionar",
