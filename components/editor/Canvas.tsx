@@ -44,6 +44,7 @@ interface Shape {
 const WORKSPACE_SIZE = 4000;
 const MIN_ZOOM_SCALE = 0.25;
 const MAX_ZOOM_SCALE = 6;
+const ZOOM_FACTOR = 1.08;
 const DEFAULT_STROKE = "#111827";
 const DEFAULT_FILL = "#e5e7eb";
 const WORKSPACE_BACKGROUND = "#f8fafc";
@@ -91,7 +92,6 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
         target.tagName === "INPUT" ||
         target.tagName === "TEXTAREA" ||
         target.tagName === "SELECT" ||
-        target.tagName === "BUTTON" ||
         target.isContentEditable
       );
     };
@@ -294,9 +294,8 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
       y: (pointer.y - position.y) / oldScale,
     };
 
-    const scaleBy = 1.08;
     const newScale =
-      e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
+      e.evt.deltaY > 0 ? oldScale / ZOOM_FACTOR : oldScale * ZOOM_FACTOR;
     const clampedScale = Math.min(
       Math.max(newScale, MIN_ZOOM_SCALE),
       MAX_ZOOM_SCALE
