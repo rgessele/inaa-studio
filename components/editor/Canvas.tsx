@@ -39,7 +39,10 @@ interface Shape {
   fill?: string;
 }
 
+// Virtual workspace used to keep the background visible while o usuário navega pelo canvas.
 const WORKSPACE_SIZE = 4000;
+const MIN_ZOOM_SCALE = 0.25;
+const MAX_ZOOM_SCALE = 6;
 
 export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
   const [tool, setTool] = useState<Tool>("select");
@@ -54,6 +57,7 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
   const currentShapeIndex = useRef<number>(-1);
   const stageRef = useRef<Konva.Stage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const isCanvasActive = useRef(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -89,6 +93,7 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isTypingElement(event.target)) return;
+      if (!isCanvasActive.current) return;
       if (event.code === "Space") {
         event.preventDefault();
         setIsSpacePressed(true);
@@ -97,6 +102,7 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
 
     const handleKeyUp = (event: KeyboardEvent) => {
       if (isTypingElement(event.target)) return;
+      if (!isCanvasActive.current) return;
       if (event.code === "Space") {
         event.preventDefault();
         setIsSpacePressed(false);
@@ -223,6 +229,15 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
     setShapes(updatedShapes);
   };
 
+  const handleStageEnter = () => {
+    isCanvasActive.current = true;
+  };
+
+  const handleStageLeave = () => {
+    isCanvasActive.current = false;
+    handleMouseUp();
+  };
+
   const handleMouseUp = () => {
     isDrawing.current = false;
     currentShape.current = null;
@@ -255,7 +270,10 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
     const scaleBy = 1.08;
     const newScale =
       e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
-    const clampedScale = Math.min(Math.max(newScale, 0.25), 6);
+    const clampedScale = Math.min(
+      Math.max(newScale, MIN_ZOOM_SCALE),
+      MAX_ZOOM_SCALE
+    );
 
     const newPosition = {
       x: pointer.x - mousePointTo.x * clampedScale,
@@ -404,7 +422,8 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onMouseEnter={handleStageEnter}
+            onMouseLeave={handleStageLeave}
             onWheel={handleWheel}
             onDragMove={handleDragMove}
             onDragEnd={handleDragMove}
