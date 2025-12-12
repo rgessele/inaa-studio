@@ -34,15 +34,17 @@ export default async function EditorPage() {
         </div>
       </nav>
 
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-6">
+      <main className="flex min-h-[calc(100vh-64px)] flex-col bg-gray-50">
+        <div className="px-4 py-8 sm:px-6 lg:px-8">
           <h2 className="text-3xl font-bold text-gray-900">Editor de Moldes</h2>
           <p className="mt-2 text-gray-600">
             Use as ferramentas abaixo para criar e editar seus moldes.
           </p>
         </div>
 
-        <Canvas width={1000} height={600} />
+        <div className="flex flex-1 min-h-0 px-4 pb-8 sm:px-6 lg:px-8">
+          <Canvas />
+        </div>
       </main>
     </div>
   );
