@@ -39,10 +39,13 @@ interface Shape {
   fill?: string;
 }
 
-// Área virtual ampla para manter o fundo visível durante a navegação pelo canvas.
+// Large virtual area to keep the background visible while navigating the canvas.
 const WORKSPACE_SIZE = 4000;
 const MIN_ZOOM_SCALE = 0.25;
 const MAX_ZOOM_SCALE = 6;
+const DEFAULT_STROKE = "#111827";
+const DEFAULT_FILL = "#e5e7eb";
+const WORKSPACE_BACKGROUND = "#f8fafc";
 
 export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
   const [tool, setTool] = useState<Tool>("select");
@@ -59,6 +62,7 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
   const stageRef = useRef<Konva.Stage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  // Space-bar panning needs preventDefault to avoid page scroll, so listeners are active only while the canvas is active.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -144,6 +148,21 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
     stage.startDrag();
   };
 
+  const normalizeRectangle = (
+    start: { x: number; y: number },
+    end: { x: number; y: number }
+  ) => {
+    const width = end.x - start.x;
+    const height = end.y - start.y;
+
+    return {
+      x: width < 0 ? end.x : start.x,
+      y: height < 0 ? end.y : start.y,
+      width: Math.abs(width),
+      height: Math.abs(height),
+    };
+  };
+
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const stage = e.target.getStage();
     if (!stage) return;
@@ -178,9 +197,9 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
       height: 0,
       radius: 0,
       points: tool === "line" ? [pos.x, pos.y] : [],
-      stroke: "#111827",
+      stroke: DEFAULT_STROKE,
       strokeWidth: 2,
-      fill: tool === "rectangle" || tool === "circle" ? "#e5e7eb" : undefined,
+      fill: tool === "rectangle" || tool === "circle" ? DEFAULT_FILL : undefined,
     };
 
     currentShape.current = newShape;
@@ -206,14 +225,13 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
     const updatedShapes = shapes.slice();
 
     if (lastShape.tool === "rectangle") {
-      const width = pos.x - lastShape.x;
-      const height = pos.y - lastShape.y;
+      const rect = normalizeRectangle(
+        { x: lastShape.x, y: lastShape.y },
+        pos
+      );
       updatedShapes[shapeIndex] = {
         ...lastShape,
-        x: width < 0 ? pos.x : lastShape.x,
-        y: height < 0 ? pos.y : lastShape.y,
-        width: Math.abs(width),
-        height: Math.abs(height),
+        ...rect,
       };
     } else if (lastShape.tool === "circle") {
       const dx = pos.x - lastShape.x;
@@ -440,7 +458,7 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
                 y={-WORKSPACE_SIZE / 2}
                 width={WORKSPACE_SIZE}
                 height={WORKSPACE_SIZE}
-                fill="#f8fafc"
+                fill={WORKSPACE_BACKGROUND}
                 name="workspace-background"
               />
 
