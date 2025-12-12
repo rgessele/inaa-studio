@@ -8,7 +8,8 @@ Ferramenta para criação de projetos de modelagem
 - ✅ Proteção de rotas e gerenciamento de sessão
 - ✅ Banco de dados com Row Level Security (RLS)
 - ✅ Armazenamento de projetos com dados em JSONB
-- 🚧 Editor de moldes (em desenvolvimento)
+- ✅ Editor de moldes com React Konva
+- ✅ Canvas interativo para desenho de formas (retângulos, círculos, linhas)
 
 ## Tecnologias
 
@@ -17,6 +18,8 @@ Ferramenta para criação de projetos de modelagem
 - **Supabase** - Autenticação e banco de dados
 - **Tailwind CSS** - Estilização
 - **@supabase/ssr** - Integração Supabase com Next.js
+- **React Konva** - Engine gráfica para o editor CAD
+- **Konva** - Canvas 2D HTML5
 
 ## Começando
 
@@ -29,12 +32,14 @@ Ferramenta para criação de projetos de modelagem
 ### Instalação
 
 1. Clone o repositório:
+
    ```bash
    git clone https://github.com/rgessele/inaa-studio.git
    cd inaa-studio
    ```
 
 2. Instale as dependências:
+
    ```bash
    npm install
    ```
@@ -45,6 +50,7 @@ Ferramenta para criação de projetos de modelagem
    - Adicione suas credenciais do Supabase
 
 4. Execute o servidor de desenvolvimento:
+
    ```bash
    npm run dev
    ```
@@ -66,9 +72,11 @@ inaa-studio/
 ├── app/                    # Next.js App Router
 │   ├── auth/              # Rotas de autenticação
 │   ├── dashboard/         # Dashboard protegido
+│   ├── editor/            # Editor de moldes
 │   ├── login/             # Página de login
 │   └── ...
 ├── components/            # Componentes reutilizáveis
+│   └── editor/           # Componentes do editor (Canvas)
 ├── lib/                   # Bibliotecas e utilitários
 │   └── supabase/         # Cliente Supabase
 ├── supabase/             # Configuração do banco
@@ -93,6 +101,20 @@ O banco de dados possui duas tabelas principais:
 - `projects` - Projetos de modelagem com dados em JSONB
 
 Todas as tabelas possuem Row Level Security (RLS) ativo, garantindo que cada usuário só possa acessar seus próprios dados.
+
+## Editor de Moldes
+
+O editor de moldes utiliza React Konva para fornecer uma experiência interativa de desenho:
+
+- **Canvas Interativo** - Área de trabalho para criar e editar moldes
+- **Ferramentas de Desenho**:
+  - Retângulo - Desenhar formas retangulares
+  - Círculo - Desenhar formas circulares
+  - Linha - Desenhar linhas retas
+  - Seleção - Selecionar e manipular formas (em desenvolvimento)
+- **Limpar Canvas** - Remover todas as formas desenhadas
+
+O editor está acessível em `/editor` após fazer login.
 
 ## Contribuindo
 

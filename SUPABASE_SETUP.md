@@ -27,6 +27,7 @@ This document provides step-by-step instructions for setting up Supabase authent
 ## Step 3: Configure Environment Variables
 
 1. In your project root, copy `.env.local.example` to `.env.local`:
+
    ```bash
    cp .env.local.example .env.local
    ```
@@ -46,6 +47,7 @@ This document provides step-by-step instructions for setting up Supabase authent
 5. Click "Run" to execute the migration
 
 This will create:
+
 - `profiles` table for user data
 - `projects` table for storing design projects
 - Row Level Security (RLS) policies to ensure users can only access their own data
@@ -83,6 +85,7 @@ For development, Supabase provides a default email service that works well for t
 ## Step 7: Test the Setup
 
 1. Start your development server:
+
    ```bash
    npm run dev
    ```
@@ -109,19 +112,23 @@ To verify that the tables and RLS policies are set up correctly:
 ## Troubleshooting
 
 ### "Invalid API credentials" error
+
 - Double-check that your environment variables match the values from Supabase dashboard
 - Restart your development server after changing `.env.local`
 
 ### Email not being sent
+
 - Check the **Authentication** → **Logs** in Supabase dashboard
 - For development, use the default Supabase email service
 - For production, configure custom SMTP settings
 
 ### Redirect issues
+
 - Ensure the callback URL in your authentication settings matches your application URL
 - Check that middleware is properly configured
 
 ### RLS errors when accessing data
+
 - Verify that you're logged in
 - Check that RLS policies are active in the Table Editor
 - Review the SQL migration to ensure all policies were created
@@ -136,6 +143,7 @@ Now that authentication and database are configured:
 4. RLS ensures data privacy between users
 
 You can now build features to:
+
 - Create and manage design projects
 - Store design vectors in the `design_data` JSONB field
 - Add more user profile fields as needed
