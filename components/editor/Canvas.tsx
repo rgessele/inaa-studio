@@ -30,6 +30,7 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
   const [shapes, setShapes] = useState<Shape[]>([]);
   const isDrawing = useRef(false);
   const currentShape = useRef<Shape | null>(null);
+  const currentShapeIndex = useRef<number>(-1);
 
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const stage = e.target.getStage();
@@ -43,7 +44,7 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
     isDrawing.current = true;
 
     const newShape: Shape = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       tool,
       x: pos.x,
       y: pos.y,
@@ -57,6 +58,7 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
     };
 
     currentShape.current = newShape;
+    currentShapeIndex.current = shapes.length;
     setShapes([...shapes, newShape]);
   };
 
@@ -72,10 +74,10 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
     const lastShape = currentShape.current;
     if (!lastShape) return;
 
-    const updatedShapes = shapes.slice();
-    const shapeIndex = updatedShapes.findIndex((s) => s.id === lastShape.id);
-
+    const shapeIndex = currentShapeIndex.current;
     if (shapeIndex === -1) return;
+
+    const updatedShapes = shapes.slice();
 
     if (tool === "rectangle") {
       updatedShapes[shapeIndex] = {
@@ -104,6 +106,7 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
   const handleMouseUp = () => {
     isDrawing.current = false;
     currentShape.current = null;
+    currentShapeIndex.current = -1;
   };
 
   const clearCanvas = () => {
