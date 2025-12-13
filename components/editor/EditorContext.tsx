@@ -57,6 +57,13 @@ interface EditorContextType {
   setShowPageGuides: (show: boolean) => void;
   pageGuideSettings: PageGuideSettings;
   setPageGuideSettings: (settings: PageGuideSettings) => void;
+
+  // Project management
+  projectId: string | null;
+  setProjectId: (id: string | null) => void;
+  projectName: string;
+  setProjectName: (name: string) => void;
+  loadProject: (shapes: Shape[], projectId: string, projectName: string) => void;
 }
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
@@ -70,6 +77,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [pixelsPerUnit, setPixelsPerUnit] = useState(DEFAULT_PIXELS_PER_UNIT);
   const [showRulers, setShowRulers] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
+
+  // Project state
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState("Projeto Sem Nome");
 
   const defaultExportSettings = createDefaultExportSettings();
   const [showPageGuides, setShowPageGuides] = useState(false);
@@ -114,6 +125,18 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     [setShapesState]
   );
 
+  // Load a project into the editor
+  const loadProject = useCallback((
+    shapes: Shape[],
+    projectId: string,
+    projectName: string
+  ) => {
+    setShapesState(shapes, false); // Load without saving to history
+    setProjectId(projectId);
+    setProjectName(projectName);
+    setSelectedShapeId(null);
+  }, [setShapesState]);
+
   return (
     <EditorContext.Provider
       value={{
@@ -145,6 +168,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setShowPageGuides,
         pageGuideSettings,
         setPageGuideSettings,
+        projectId,
+        setProjectId,
+        projectName,
+        setProjectName,
+        loadProject,
       }}
     >
       {children}

@@ -1,15 +1,69 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { UnitSettings } from "./UnitSettings";
 import { ViewMenu } from "./ViewMenu";
+import { useEditor } from "./EditorContext";
+import { SaveProjectModal } from "./SaveProjectModal";
+import { Toast } from "./Toast";
+import { saveProject } from "@/lib/projects";
+import { useRouter } from "next/navigation";
 
 export function EditorHeader() {
+  const { shapes, projectId, setProjectId, projectName, setProjectName } =
+    useEditor();
+  const router = useRouter();
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error";
+    isVisible: boolean;
+  }>({
+    message: "",
+    type: "success",
+    isVisible: false,
+  });
+
   const toggleTheme = () => {
     document.documentElement.classList.toggle("dark");
   };
 
+  const handleSaveClick = () => {
+    setShowSaveModal(true);
+  };
+
+  const handleSave = async (name: string) => {
+    setIsSaving(true);
+    const result = await saveProject(name, shapes, projectId);
+
+    if (result.success && result.projectId) {
+      setProjectName(name);
+      if (!projectId) {
+        setProjectId(result.projectId);
+      }
+      setToast({
+        message: "Projeto salvo com sucesso!",
+        type: "success",
+        isVisible: true,
+      });
+      setShowSaveModal(false);
+    } else {
+      setToast({
+        message: result.error || "Erro ao salvar projeto",
+        type: "error",
+        isVisible: true,
+      });
+    }
+    setIsSaving(false);
+  };
+
+  const handleBackToDashboard = () => {
+    router.push("/dashboard");
+  };
+
   return (
+    <>
     <header className="h-12 bg-surface-light dark:bg-surface-dark border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 shrink-0 z-20 shadow-subtle relative">
       <div className="flex items-center gap-3">
         <div className="flex items-center">
@@ -37,6 +91,15 @@ export function EditorHeader() {
         </div>
       </div>
       <div className="flex items-center gap-3">
+        {/* Save button */}
+        <button
+          onClick={handleSaveClick}
+          className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-4 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2"
+          title="Salvar Projeto"
+        >
+          <span className="material-symbols-outlined text-[16px]">save</span>
+          Salvar
+        </button>
         <UnitSettings />
         <div className="flex items-center mr-2">
           <button
@@ -49,9 +112,14 @@ export function EditorHeader() {
             </span>
           </button>
         </div>
-        <button className="bg-primary hover:bg-primary-hover text-white text-xs font-medium px-3 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2">
-          <span className="material-symbols-outlined text-[16px]">logout</span>
-          Sair
+        <button
+          onClick={handleBackToDashboard}
+          className="bg-primary hover:bg-primary-hover text-white text-xs font-medium px-3 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2"
+        >
+          <span className="material-symbols-outlined text-[16px]">
+            dashboard
+          </span>
+          Dashboard
         </button>
         <div className="h-5 w-px bg-gray-300 dark:bg-gray-700 mx-1"></div>
         <button
@@ -63,5 +131,21 @@ export function EditorHeader() {
         </button>
       </div>
     </header>
+
+    <SaveProjectModal
+      isOpen={showSaveModal}
+      onClose={() => setShowSaveModal(false)}
+      onSave={handleSave}
+      currentName={projectName}
+      isSaving={isSaving}
+    />
+
+    <Toast
+      message={toast.message}
+      type={toast.type}
+      isVisible={toast.isVisible}
+      onClose={() => setToast({ ...toast, isVisible: false })}
+    />
+    </>
   );
 }
