@@ -5,4 +5,3 @@ export { EditorToolbar } from "./EditorToolbar";
 export { PropertiesPanel } from "./PropertiesPanel";
 export { EditorProvider, useEditor } from "./EditorContext";
 export * from "./types";
-

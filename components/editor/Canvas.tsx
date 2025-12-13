@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Stage,
-  Layer,
-  Line,
-  Rect,
-  Circle as KonvaCircle,
-} from "react-konva";
+import { Stage, Layer, Line, Rect, Circle as KonvaCircle } from "react-konva";
 import Konva from "konva";
 import { useEditor } from "./EditorContext";
 import { DrawingTool, Shape } from "./types";
@@ -44,7 +38,6 @@ export default function Canvas() {
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isKeyboardActive, setIsKeyboardActive] = useState(false);
   const [isPanDrag, setIsPanDrag] = useState(false);
-  const [isDraggingControlPoint, setIsDraggingControlPoint] = useState(false);
   const isDrawing = useRef(false);
   const currentShape = useRef<Shape | null>(null);
   const currentShapeIndex = useRef<number>(-1);
@@ -195,11 +188,11 @@ export default function Canvas() {
     }
 
     if (tool === "select") {
-        // Handle selection logic here if needed, Konva handles click on shapes usually
-        if (isBackground) {
-            setSelectedShapeId(null);
-        }
-        return;
+      // Handle selection logic here if needed, Konva handles click on shapes usually
+      if (isBackground) {
+        setSelectedShapeId(null);
+      }
+      return;
     }
 
     const pos = getRelativePointer(stage);
@@ -249,10 +242,7 @@ export default function Canvas() {
     const updatedShapes = shapes.slice();
 
     if (lastShape.tool === "rectangle") {
-      const rect = normalizeRectangle(
-        { x: lastShape.x, y: lastShape.y },
-        pos
-      );
+      const rect = normalizeRectangle({ x: lastShape.x, y: lastShape.y }, pos);
       updatedShapes[shapeIndex] = {
         ...lastShape,
         ...rect,
@@ -344,16 +334,19 @@ export default function Canvas() {
   };
 
   const handleShapeClick = (id: string) => {
-      if (tool === 'select') {
-          setSelectedShapeId(id);
-      }
-  }
-
-  const handleControlPointDragStart = () => {
-    setIsDraggingControlPoint(true);
+    if (tool === "select") {
+      setSelectedShapeId(id);
+    }
   };
 
-  const handleControlPointDragMove = (shapeId: string, e: Konva.KonvaEventObject<DragEvent>) => {
+  const handleControlPointDragStart = () => {
+    // Prevent background interactions during drag
+  };
+
+  const handleControlPointDragMove = (
+    shapeId: string,
+    e: Konva.KonvaEventObject<DragEvent>
+  ) => {
     const stage = e.target.getStage();
     if (!stage) return;
 
@@ -374,7 +367,7 @@ export default function Canvas() {
   };
 
   const handleControlPointDragEnd = () => {
-    setIsDraggingControlPoint(false);
+    // Drag ended
   };
 
   const cursor =
@@ -389,23 +382,26 @@ export default function Canvas() {
   const RULER_THICKNESS = 24;
 
   return (
-    <div ref={containerRef} className="h-full w-full bg-canvas-bg dark:bg-canvas-bg-dark relative flex flex-col">
+    <div
+      ref={containerRef}
+      className="h-full w-full bg-canvas-bg dark:bg-canvas-bg-dark relative flex flex-col"
+    >
       {showRulers && (
         <div className="flex h-6 shrink-0 z-10 bg-surface-light dark:bg-surface-dark border-b border-gray-200 dark:border-gray-700">
           <div className="w-6 shrink-0 border-r border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark z-20"></div>
           <div className="flex-1 relative overflow-hidden">
-             <Ruler orientation="horizontal" />
+            <Ruler orientation="horizontal" />
           </div>
         </div>
       )}
-      
+
       <div className="flex-1 flex min-h-0 relative">
         {showRulers && (
           <div className="w-6 shrink-0 h-full border-r border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark z-10 relative overflow-hidden">
             <Ruler orientation="vertical" />
           </div>
         )}
-        
+
         <div className="flex-1 relative overflow-hidden">
           <Stage
             ref={stageRef}
@@ -436,14 +432,16 @@ export default function Canvas() {
                 fill={WORKSPACE_BACKGROUND}
                 name="workspace-background"
               />
-              
+
               {/* Grid lines */}
               {gridLines}
 
               {shapes.map((shape) => {
                 const isSelected = shape.id === selectedShapeId;
                 const stroke = isSelected ? "#673b45" : shape.stroke; // Primary color for selection
-                const strokeWidth = isSelected ? shape.strokeWidth + 1 : shape.strokeWidth;
+                const strokeWidth = isSelected
+                  ? shape.strokeWidth + 1
+                  : shape.strokeWidth;
 
                 if (shape.tool === "rectangle") {
                   return (
@@ -488,7 +486,7 @@ export default function Canvas() {
                 } else if (shape.tool === "curve") {
                   const points = shape.points || [];
                   const cp = shape.controlPoint;
-                  
+
                   if (points.length >= 4 && cp) {
                     // Create quadratic Bézier curve points
                     const x1 = points[0];
@@ -497,24 +495,24 @@ export default function Canvas() {
                     const y2 = points[3];
                     const cx = cp.x;
                     const cy = cp.y;
-                    
+
                     // Generate curve points using quadratic Bézier formula
                     const curvePoints: number[] = [];
                     const steps = 50; // Number of segments for smooth curve
-                    
+
                     for (let i = 0; i <= steps; i++) {
                       const t = i / steps;
                       const mt = 1 - t;
                       const mt2 = mt * mt;
                       const t2 = t * t;
-                      
+
                       // Quadratic Bézier formula: B(t) = (1-t)²P₀ + 2(1-t)tP₁ + t²P₂
                       const x = mt2 * x1 + 2 * mt * t * cx + t2 * x2;
                       const y = mt2 * y1 + 2 * mt * t * cy + t2 * y2;
-                      
+
                       curvePoints.push(x, y);
                     }
-                    
+
                     return (
                       <>
                         <Line
@@ -562,7 +560,9 @@ export default function Canvas() {
                               strokeWidth={2}
                               draggable={true}
                               onDragStart={handleControlPointDragStart}
-                              onDragMove={(e) => handleControlPointDragMove(shape.id, e)}
+                              onDragMove={(e) =>
+                                handleControlPointDragMove(shape.id, e)
+                              }
                               onDragEnd={handleControlPointDragEnd}
                             />
                           </>
@@ -575,10 +575,10 @@ export default function Canvas() {
               })}
             </Layer>
           </Stage>
-          
+
           {/* Overlay UI elements like zoom level could go here if not in toolbar */}
           <div className="absolute bottom-4 left-4 bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 rounded px-2 py-1 text-xs text-text-muted dark:text-text-muted-dark shadow-sm pointer-events-none">
-              {Math.round(stageScale * 100)}%
+            {Math.round(stageScale * 100)}%
           </div>
         </div>
       </div>
