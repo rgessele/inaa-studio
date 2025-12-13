@@ -1,5 +1,3 @@
-"use client";
-
 import { createClient } from "@/lib/supabase/client";
 import { Shape } from "@/components/editor/types";
 
@@ -82,6 +80,16 @@ export async function loadProject(
   try {
     const supabase = createClient();
 
+    // Check if user is authenticated
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { success: false, error: "Usuário não autenticado" };
+    }
+
     const { data, error } = await supabase
       .from("projects")
       .select("*")
@@ -114,6 +122,16 @@ export async function listProjects(): Promise<{
 }> {
   try {
     const supabase = createClient();
+
+    // Check if user is authenticated
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { success: false, error: "Usuário não autenticado" };
+    }
 
     const { data, error } = await supabase
       .from("projects")
