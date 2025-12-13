@@ -74,6 +74,18 @@ export function EditorToolbar() {
         }
       />
 
+      <ToolButton
+        active={tool === "curve"}
+        onClick={() => handleToolChange("curve")}
+        icon="timeline"
+        label="Curva (U)"
+        customIcon={
+            <svg className="w-5 h-5 stroke-current" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" viewBox="0 0 24 24">
+            <path d="M5 19 Q 12 5, 19 19"></path>
+            </svg>
+        }
+      />
+
       <button
         className="group relative flex items-center justify-center p-2 rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
         title="Caneta (P)"

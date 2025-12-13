@@ -1,4 +1,4 @@
-export type DrawingTool = "rectangle" | "circle" | "line";
+export type DrawingTool = "rectangle" | "circle" | "line" | "curve";
 export type Tool = DrawingTool | "select" | "pan";
 
 export interface Shape {
@@ -10,6 +10,7 @@ export interface Shape {
   height?: number;
   radius?: number;
   points?: number[];
+  controlPoint?: { x: number; y: number }; // For Bézier curves
   stroke: string;
   strokeWidth: number;
   fill?: string;
