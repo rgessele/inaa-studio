@@ -37,21 +37,22 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [unit, setUnit] = useState("px");
   const [pixelsPerUnit, setPixelsPerUnit] = useState(1);
   const [showRulers, setShowRulers] = useState(true);
-  
+
   // History for undo/redo
   const [history, setHistory] = useState<Shape[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
 
   const updateShapes = (newShapes: Shape[] | ((prev: Shape[]) => Shape[])) => {
     setShapes((prev) => {
-      const resolvedShapes = typeof newShapes === "function" ? newShapes(prev) : newShapes;
-      
+      const resolvedShapes =
+        typeof newShapes === "function" ? newShapes(prev) : newShapes;
+
       // Add to history
       const newHistory = history.slice(0, historyIndex + 1);
       newHistory.push(resolvedShapes);
       setHistory(newHistory);
       setHistoryIndex(newHistory.length - 1);
-      
+
       return resolvedShapes;
     });
   };
@@ -61,8 +62,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       setHistoryIndex(historyIndex - 1);
       setShapes(history[historyIndex - 1]);
     } else if (historyIndex === 0) {
-        setHistoryIndex(-1);
-        setShapes([]);
+      setHistoryIndex(-1);
+      setShapes([]);
     }
   };
 

@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Stage,
-  Layer,
-  Line,
-  Rect,
-  Circle as KonvaCircle,
-} from "react-konva";
+import { Stage, Layer, Line, Rect, Circle as KonvaCircle } from "react-konva";
 import Konva from "konva";
 import { useEditor } from "./EditorContext";
 import { DrawingTool, Shape } from "./types";
@@ -24,6 +18,7 @@ const DEFAULT_FILL = "transparent";
 const WORKSPACE_BACKGROUND = "#121212"; // Dark background
 const GRID_SIZE = 20;
 const GRID_COLOR = "rgba(255, 255, 255, 0.05)";
+const CONTROL_POINT_RADIUS = 6; // Radius for control point anchor
 
 export default function Canvas() {
   const {
@@ -193,11 +188,11 @@ export default function Canvas() {
     }
 
     if (tool === "select") {
-        // Handle selection logic here if needed, Konva handles click on shapes usually
-        if (isBackground) {
-            setSelectedShapeId(null);
-        }
-        return;
+      // Handle selection logic here if needed, Konva handles click on shapes usually
+      if (isBackground) {
+        setSelectedShapeId(null);
+      }
+      return;
     }
 
     const pos = getRelativePointer(stage);
@@ -214,7 +209,8 @@ export default function Canvas() {
       width: 0,
       height: 0,
       radius: 0,
-      points: drawTool === "line" ? [pos.x, pos.y] : [],
+      points: drawTool === "line" || drawTool === "curve" ? [pos.x, pos.y] : [],
+      controlPoint: drawTool === "curve" ? { x: pos.x, y: pos.y } : undefined,
       stroke: DEFAULT_STROKE,
       strokeWidth: 2,
       fill:
@@ -246,10 +242,7 @@ export default function Canvas() {
     const updatedShapes = shapes.slice();
 
     if (lastShape.tool === "rectangle") {
-      const rect = normalizeRectangle(
-        { x: lastShape.x, y: lastShape.y },
-        pos
-      );
+      const rect = normalizeRectangle({ x: lastShape.x, y: lastShape.y }, pos);
       updatedShapes[shapeIndex] = {
         ...lastShape,
         ...rect,
@@ -266,6 +259,15 @@ export default function Canvas() {
       updatedShapes[shapeIndex] = {
         ...lastShape,
         points: [lastShape.x, lastShape.y, pos.x, pos.y],
+      };
+    } else if (lastShape.tool === "curve") {
+      // Calculate midpoint for control point
+      const midX = (lastShape.x + pos.x) / 2;
+      const midY = (lastShape.y + pos.y) / 2;
+      updatedShapes[shapeIndex] = {
+        ...lastShape,
+        points: [lastShape.x, lastShape.y, pos.x, pos.y],
+        controlPoint: { x: midX, y: midY },
       };
     }
 
@@ -332,10 +334,41 @@ export default function Canvas() {
   };
 
   const handleShapeClick = (id: string) => {
-      if (tool === 'select') {
-          setSelectedShapeId(id);
+    if (tool === "select") {
+      setSelectedShapeId(id);
+    }
+  };
+
+  const handleControlPointDragStart = () => {
+    // Prevent background interactions during drag
+  };
+
+  const handleControlPointDragMove = (
+    shapeId: string,
+    e: Konva.KonvaEventObject<DragEvent>
+  ) => {
+    const stage = e.target.getStage();
+    if (!stage) return;
+
+    const circle = e.target as Konva.Circle;
+    const pos = { x: circle.x(), y: circle.y() };
+
+    const updatedShapes = shapes.map((shape) => {
+      if (shape.id === shapeId && shape.tool === "curve") {
+        return {
+          ...shape,
+          controlPoint: pos,
+        };
       }
-  }
+      return shape;
+    });
+
+    setShapes(updatedShapes);
+  };
+
+  const handleControlPointDragEnd = () => {
+    // Drag ended
+  };
 
   const cursor =
     tool === "pan" || isSpacePressed || isPanDrag
@@ -349,23 +382,26 @@ export default function Canvas() {
   const RULER_THICKNESS = 24;
 
   return (
-    <div ref={containerRef} className="h-full w-full bg-canvas-bg dark:bg-canvas-bg-dark relative flex flex-col">
+    <div
+      ref={containerRef}
+      className="h-full w-full bg-canvas-bg dark:bg-canvas-bg-dark relative flex flex-col"
+    >
       {showRulers && (
         <div className="flex h-6 shrink-0 z-10 bg-surface-light dark:bg-surface-dark border-b border-gray-200 dark:border-gray-700">
           <div className="w-6 shrink-0 border-r border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark z-20"></div>
           <div className="flex-1 relative overflow-hidden">
-             <Ruler orientation="horizontal" />
+            <Ruler orientation="horizontal" />
           </div>
         </div>
       )}
-      
+
       <div className="flex-1 flex min-h-0 relative">
         {showRulers && (
           <div className="w-6 shrink-0 h-full border-r border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark z-10 relative overflow-hidden">
             <Ruler orientation="vertical" />
           </div>
         )}
-        
+
         <div className="flex-1 relative overflow-hidden">
           <Stage
             ref={stageRef}
@@ -396,14 +432,16 @@ export default function Canvas() {
                 fill={WORKSPACE_BACKGROUND}
                 name="workspace-background"
               />
-              
+
               {/* Grid lines */}
               {gridLines}
 
               {shapes.map((shape) => {
                 const isSelected = shape.id === selectedShapeId;
                 const stroke = isSelected ? "#673b45" : shape.stroke; // Primary color for selection
-                const strokeWidth = isSelected ? shape.strokeWidth + 1 : shape.strokeWidth;
+                const strokeWidth = isSelected
+                  ? shape.strokeWidth + 1
+                  : shape.strokeWidth;
 
                 if (shape.tool === "rectangle") {
                   return (
@@ -445,15 +483,102 @@ export default function Canvas() {
                       onTap={() => handleShapeClick(shape.id)}
                     />
                   );
+                } else if (shape.tool === "curve") {
+                  const points = shape.points || [];
+                  const cp = shape.controlPoint;
+
+                  if (points.length >= 4 && cp) {
+                    // Create quadratic Bézier curve points
+                    const x1 = points[0];
+                    const y1 = points[1];
+                    const x2 = points[2];
+                    const y2 = points[3];
+                    const cx = cp.x;
+                    const cy = cp.y;
+
+                    // Generate curve points using quadratic Bézier formula
+                    const curvePoints: number[] = [];
+                    const steps = 50; // Number of segments for smooth curve
+
+                    for (let i = 0; i <= steps; i++) {
+                      const t = i / steps;
+                      const mt = 1 - t;
+                      const mt2 = mt * mt;
+                      const t2 = t * t;
+
+                      // Quadratic Bézier formula: B(t) = (1-t)²P₀ + 2(1-t)tP₁ + t²P₂
+                      const x = mt2 * x1 + 2 * mt * t * cx + t2 * x2;
+                      const y = mt2 * y1 + 2 * mt * t * cy + t2 * y2;
+
+                      curvePoints.push(x, y);
+                    }
+
+                    return (
+                      <>
+                        <Line
+                          key={shape.id}
+                          points={curvePoints}
+                          stroke={stroke}
+                          strokeWidth={strokeWidth}
+                          tension={0}
+                          lineCap="round"
+                          lineJoin="round"
+                          onClick={() => handleShapeClick(shape.id)}
+                          onTap={() => handleShapeClick(shape.id)}
+                        />
+                        {/* Show control point anchor when selected */}
+                        {isSelected && (
+                          <>
+                            {/* Line from start to control point */}
+                            <Line
+                              key={`${shape.id}-guide1`}
+                              points={[x1, y1, cx, cy]}
+                              stroke="#673b45"
+                              strokeWidth={1}
+                              dash={[5, 5]}
+                              opacity={0.5}
+                              listening={false}
+                            />
+                            {/* Line from control point to end */}
+                            <Line
+                              key={`${shape.id}-guide2`}
+                              points={[cx, cy, x2, y2]}
+                              stroke="#673b45"
+                              strokeWidth={1}
+                              dash={[5, 5]}
+                              opacity={0.5}
+                              listening={false}
+                            />
+                            {/* Draggable control point anchor */}
+                            <KonvaCircle
+                              key={`${shape.id}-control`}
+                              x={cx}
+                              y={cy}
+                              radius={CONTROL_POINT_RADIUS}
+                              fill="#673b45"
+                              stroke="#ffffff"
+                              strokeWidth={2}
+                              draggable={true}
+                              onDragStart={handleControlPointDragStart}
+                              onDragMove={(e) =>
+                                handleControlPointDragMove(shape.id, e)
+                              }
+                              onDragEnd={handleControlPointDragEnd}
+                            />
+                          </>
+                        )}
+                      </>
+                    );
+                  }
                 }
                 return null;
               })}
             </Layer>
           </Stage>
-          
+
           {/* Overlay UI elements like zoom level could go here if not in toolbar */}
           <div className="absolute bottom-4 left-4 bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 rounded px-2 py-1 text-xs text-text-muted dark:text-text-muted-dark shadow-sm pointer-events-none">
-              {Math.round(stageScale * 100)}%
+            {Math.round(stageScale * 100)}%
           </div>
         </div>
       </div>

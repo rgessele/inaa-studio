@@ -26,7 +26,7 @@ export function Ruler({ orientation }: RulerProps) {
 
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
-    
+
     // We rely on the parent div for background color to support themes
     // But we need to set text/stroke colors based on theme
     const isDark = document.documentElement.classList.contains("dark");
@@ -38,12 +38,11 @@ export function Ruler({ orientation }: RulerProps) {
     // Calculate start and end values based on viewport
     // position.x/y is the offset of the stage (in pixels)
     // scale is the zoom level
-    
+
     // Visible range in PIXELS
-    const startPx = orientation === "horizontal" 
-      ? -position.x / scale 
-      : -position.y / scale;
-      
+    const startPx =
+      orientation === "horizontal" ? -position.x / scale : -position.y / scale;
+
     const viewportSize = orientation === "horizontal" ? width : height;
     const endPx = startPx + viewportSize / scale;
 
@@ -51,13 +50,13 @@ export function Ruler({ orientation }: RulerProps) {
     // Convert visible range to units
     const startUnit = startPx / pixelsPerUnit;
     const endUnit = endPx / pixelsPerUnit;
-    
+
     // Determine tick interval in UNITS
     // We want ticks roughly every 50-100 pixels on screen
     const minTickSpacingScreen = 50;
     // How many units fit in that screen space?
     const minIntervalUnit = minTickSpacingScreen / (pixelsPerUnit * scale);
-    
+
     // Find a nice round number for the interval in UNITS
     const magnitude = Math.pow(10, Math.floor(Math.log10(minIntervalUnit)));
     let intervalUnit = magnitude;
@@ -72,13 +71,18 @@ export function Ruler({ orientation }: RulerProps) {
 
     // Loop through units
     // We add a small buffer to endUnit to ensure we catch the last tick
-    for (let valUnit = firstTickUnit; valUnit <= endUnit + intervalUnit; valUnit += intervalUnit) {
+    for (
+      let valUnit = firstTickUnit;
+      valUnit <= endUnit + intervalUnit;
+      valUnit += intervalUnit
+    ) {
       // Convert unit value back to screen position
       const valPx = valUnit * pixelsPerUnit;
-      
-      const screenPos = orientation === "horizontal"
-        ? valPx * scale + position.x
-        : valPx * scale + position.y;
+
+      const screenPos =
+        orientation === "horizontal"
+          ? valPx * scale + position.x
+          : valPx * scale + position.y;
 
       // Skip if off screen
       if (screenPos < -50 || screenPos > viewportSize + 50) continue;
@@ -91,12 +95,16 @@ export function Ruler({ orientation }: RulerProps) {
         ctx.moveTo(screenPos, height);
         ctx.lineTo(screenPos, height - TICK_SIZE);
         // Draw label
-        ctx.fillText(labelValue.toString(), screenPos + LABEL_OFFSET, height - LABEL_OFFSET);
+        ctx.fillText(
+          labelValue.toString(),
+          screenPos + LABEL_OFFSET,
+          height - LABEL_OFFSET
+        );
       } else {
         // Draw tick
         ctx.moveTo(width, screenPos);
         ctx.lineTo(width - TICK_SIZE, screenPos);
-        
+
         // Draw label (rotated for vertical)
         ctx.save();
         ctx.translate(width - LABEL_OFFSET, screenPos + LABEL_OFFSET);
@@ -106,14 +114,13 @@ export function Ruler({ orientation }: RulerProps) {
       }
     }
     ctx.stroke();
-
   }, [scale, position, orientation, unit, pixelsPerUnit]);
 
   // Resize observer to handle window resize
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     const parent = canvas.parentElement;
     if (!parent) return;
 
@@ -121,16 +128,11 @@ export function Ruler({ orientation }: RulerProps) {
       canvas.width = parent.clientWidth;
       canvas.height = parent.clientHeight;
     });
-    
+
     resizeObserver.observe(parent);
-    
+
     return () => resizeObserver.disconnect();
   }, []);
 
-  return (
-    <canvas 
-      ref={canvasRef} 
-      className="w-full h-full block"
-    />
-  );
+  return <canvas ref={canvasRef} className="w-full h-full block" />;
 }

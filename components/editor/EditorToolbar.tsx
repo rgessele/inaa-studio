@@ -29,14 +29,14 @@ export function EditorToolbar() {
         </span>
       </button>
       <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
-      
+
       <ToolButton
         active={tool === "select"}
         onClick={() => handleToolChange("select")}
         icon="arrow_selector_tool"
         label="Selecionar (V)"
       />
-      
+
       <ToolButton
         active={tool === "pan"}
         onClick={() => handleToolChange("pan")}
@@ -68,9 +68,37 @@ export function EditorToolbar() {
         icon="horizontal_rule" // Using horizontal_rule as line icon replacement or custom svg
         label="Linha (L)"
         customIcon={
-            <svg className="w-5 h-5 stroke-current" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" viewBox="0 0 24 24">
+          <svg
+            className="w-5 h-5 stroke-current"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.5"
+            viewBox="0 0 24 24"
+          >
             <line x1="5" x2="19" y1="19" y2="5"></line>
-            </svg>
+          </svg>
+        }
+      />
+
+      <ToolButton
+        active={tool === "curve"}
+        onClick={() => handleToolChange("curve")}
+        icon="timeline"
+        label="Curva (U)"
+        customIcon={
+          <svg
+            className="w-5 h-5 stroke-current"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.5"
+            viewBox="0 0 24 24"
+          >
+            <path d="M5 19 Q 12 5, 19 19"></path>
+          </svg>
         }
       />
 
@@ -125,7 +153,14 @@ interface ToolButtonProps {
   customIcon?: React.ReactNode;
 }
 
-function ToolButton({ active, onClick, icon, label, filled, customIcon }: ToolButtonProps) {
+function ToolButton({
+  active,
+  onClick,
+  icon,
+  label,
+  filled,
+  customIcon,
+}: ToolButtonProps) {
   return (
     <button
       onClick={onClick}
@@ -136,10 +171,14 @@ function ToolButton({ active, onClick, icon, label, filled, customIcon }: ToolBu
       }`}
       title={label}
     >
-      {customIcon ? customIcon : (
-          <span className={`material-symbols-outlined text-[20px] ${filled ? "icon-filled" : ""}`}>
-            {icon}
-          </span>
+      {customIcon ? (
+        customIcon
+      ) : (
+        <span
+          className={`material-symbols-outlined text-[20px] ${filled ? "icon-filled" : ""}`}
+        >
+          {icon}
+        </span>
       )}
       <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
         {label}
