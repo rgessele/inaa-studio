@@ -11,15 +11,13 @@ export function EditorHeader() {
   return (
     <header className="h-12 bg-surface-light dark:bg-surface-dark border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 shrink-0 z-20 shadow-subtle relative">
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <div className="h-7 w-7 overflow-hidden rounded bg-primary/10 flex items-center justify-center">
-            <span className="material-symbols-outlined text-primary text-[20px]">
-              gesture
-            </span>
-          </div>
-          <h1 className="text-sm font-semibold tracking-tight text-gray-900 dark:text-white uppercase">
-            Inaá Studio
-          </h1>
+        <div className="flex items-center">
+          {/* Logo */}
+          <img 
+            src="/logo.png" 
+            alt="Inaá Studio" 
+            className="h-9 w-auto object-contain" 
+          />
         </div>
         <div className="hidden md:flex ml-6 text-xs text-text-muted dark:text-text-muted-dark gap-1">
           <button className="hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-primary dark:hover:text-white px-3 py-1.5 rounded transition-colors">
