@@ -138,6 +138,7 @@ export async function listProjects(): Promise<{
     const { data, error } = await supabase
       .from("projects")
       .select("*")
+      .eq("user_id", user.id)
       .order("updated_at", { ascending: false });
 
     if (error) {

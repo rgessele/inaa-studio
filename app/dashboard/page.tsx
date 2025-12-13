@@ -16,6 +16,7 @@ export default async function DashboardPage() {
   const { data: projects, error } = await supabase
     .from("projects")
     .select("*")
+    .eq("user_id", user.id)
     .order("updated_at", { ascending: false });
 
   const handleSignOut = async () => {
