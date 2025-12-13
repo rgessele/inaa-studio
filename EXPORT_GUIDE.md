@@ -45,8 +45,9 @@ Cada página do PDF inclui:
 ### Exemplo: Linha de 50cm
 
 Uma linha horizontal de 50cm será dividida em aproximadamente 3 páginas:
+
 - Página 1: 0cm - 19cm
-- Página 2: 19cm - 38cm  
+- Página 2: 19cm - 38cm
 - Página 3: 38cm - 50cm
 
 ## Exportação para SVG

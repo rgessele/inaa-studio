@@ -90,10 +90,8 @@ export default function Canvas() {
   }
 
   // Page boundary guides (based on export/print tile size)
-  const viewportWidth =
-    stageSize.width - (showRulers ? RULER_THICKNESS : 0);
-  const viewportHeight =
-    stageSize.height - (showRulers ? RULER_THICKNESS : 0);
+  const viewportWidth = stageSize.width - (showRulers ? RULER_THICKNESS : 0);
+  const viewportHeight = stageSize.height - (showRulers ? RULER_THICKNESS : 0);
 
   const pageGuideRects = [];
   if (showPageGuides && viewportWidth > 0 && viewportHeight > 0) {

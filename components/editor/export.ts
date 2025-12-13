@@ -14,7 +14,11 @@ import {
 } from "./shapeBounds";
 import { Shape } from "./types";
 
-export type { ExportSettings, PaperOrientation, PaperSize } from "./exportSettings";
+export type {
+  ExportSettings,
+  PaperOrientation,
+  PaperSize,
+} from "./exportSettings";
 export {
   createDefaultExportSettings,
   getPaperDimensionsCm,
@@ -153,7 +157,8 @@ function filterShapesBySettings(
   settings: ExportSettings
 ): Shape[] {
   return shapes.filter((shape) => {
-    const enabled = settings.toolFilter[shape.tool as keyof ExportSettings["toolFilter"]];
+    const enabled =
+      settings.toolFilter[shape.tool as keyof ExportSettings["toolFilter"]];
     return enabled !== false;
   });
 }
@@ -255,171 +260,171 @@ export async function generateTiledPDF(
     for (const { tileX, tileY } of tiles) {
       pageNum++;
 
-        // Render this tile to dataURL with high quality.
-        // IMPORTANT: we render only the shapes (no canvas background/grid/transformers)
-        // by drawing into an offscreen Konva stage.
-        const container = document.createElement("div");
-        const tileStage = new Konva.Stage({
-          container,
-          width: safeWidthPx,
-          height: safeHeightPx,
-        });
+      // Render this tile to dataURL with high quality.
+      // IMPORTANT: we render only the shapes (no canvas background/grid/transformers)
+      // by drawing into an offscreen Konva stage.
+      const container = document.createElement("div");
+      const tileStage = new Konva.Stage({
+        container,
+        width: safeWidthPx,
+        height: safeHeightPx,
+      });
 
-        const tileLayer = new Konva.Layer();
-        tileStage.add(tileLayer);
+      const tileLayer = new Konva.Layer();
+      tileStage.add(tileLayer);
 
-        // Draw shapes with tile offset
-        const tileRect: BoundingBox = {
-          x: tileX,
-          y: tileY,
-          width: safeWidthPx,
-          height: safeHeightPx,
-        };
+      // Draw shapes with tile offset
+      const tileRect: BoundingBox = {
+        x: tileX,
+        y: tileY,
+        width: safeWidthPx,
+        height: safeHeightPx,
+      };
 
-        const shapesInTile = filteredShapes.filter((shape) =>
-          intersectsRect(getShapeBoundingBox(shape), tileRect)
-        );
+      const shapesInTile = filteredShapes.filter((shape) =>
+        intersectsRect(getShapeBoundingBox(shape), tileRect)
+      );
 
-        shapesInTile.forEach((shape) => {
-          // Force black strokes for print quality
-          const stroke = "#000000";
-          const strokeWidth = shape.strokeWidth || 1;
-          const fill = shape.fill || "transparent";
-          const opacity = shape.opacity !== undefined ? shape.opacity : 1;
-          const rotation = shape.rotation || 0;
-          const dash = resolved.dashedLines ? [12, 6] : shape.dash;
+      shapesInTile.forEach((shape) => {
+        // Force black strokes for print quality
+        const stroke = "#000000";
+        const strokeWidth = shape.strokeWidth || 1;
+        const fill = shape.fill || "transparent";
+        const opacity = shape.opacity !== undefined ? shape.opacity : 1;
+        const rotation = shape.rotation || 0;
+        const dash = resolved.dashedLines ? [12, 6] : shape.dash;
 
-          if (shape.tool === "rectangle") {
-            tileLayer.add(
-              new Konva.Rect({
-                x: shape.x - tileX,
-                y: shape.y - tileY,
-                width: shape.width || 0,
-                height: shape.height || 0,
-                fill,
-                stroke,
-                strokeWidth,
-                opacity,
-                rotation,
-              })
-            );
-            return;
-          }
+        if (shape.tool === "rectangle") {
+          tileLayer.add(
+            new Konva.Rect({
+              x: shape.x - tileX,
+              y: shape.y - tileY,
+              width: shape.width || 0,
+              height: shape.height || 0,
+              fill,
+              stroke,
+              strokeWidth,
+              opacity,
+              rotation,
+            })
+          );
+          return;
+        }
 
-          if (shape.tool === "circle") {
-            tileLayer.add(
-              new Konva.Circle({
-                x: shape.x - tileX,
-                y: shape.y - tileY,
-                radius: shape.radius || 0,
-                fill,
-                stroke,
-                strokeWidth,
-                opacity,
-                rotation,
-              })
-            );
-            return;
-          }
+        if (shape.tool === "circle") {
+          tileLayer.add(
+            new Konva.Circle({
+              x: shape.x - tileX,
+              y: shape.y - tileY,
+              radius: shape.radius || 0,
+              fill,
+              stroke,
+              strokeWidth,
+              opacity,
+              rotation,
+            })
+          );
+          return;
+        }
 
-          if (shape.tool === "line") {
+        if (shape.tool === "line") {
+          tileLayer.add(
+            new Konva.Line({
+              x: shape.x - tileX,
+              y: shape.y - tileY,
+              points: shape.points || [],
+              stroke,
+              strokeWidth,
+              opacity,
+              rotation,
+              dash,
+              lineCap: "round",
+              lineJoin: "round",
+            })
+          );
+          return;
+        }
+
+        if (shape.tool === "curve") {
+          const points = shape.points || [];
+          const cp = shape.controlPoint;
+          if (points.length >= 4 && cp) {
+            const x1 = points[0];
+            const y1 = points[1];
+            const x2 = points[2];
+            const y2 = points[3];
+            const cx = cp.x;
+            const cy = cp.y;
+
+            const curvePoints: number[] = [];
+            const steps = 50;
+
+            for (let i = 0; i <= steps; i++) {
+              const t = i / steps;
+              const mt = 1 - t;
+              const mt2 = mt * mt;
+              const t2 = t * t;
+
+              const x = mt2 * x1 + 2 * mt * t * cx + t2 * x2;
+              const y = mt2 * y1 + 2 * mt * t * cy + t2 * y2;
+
+              curvePoints.push(x, y);
+            }
+
             tileLayer.add(
               new Konva.Line({
                 x: shape.x - tileX,
                 y: shape.y - tileY,
-                points: shape.points || [],
+                points: curvePoints,
                 stroke,
                 strokeWidth,
                 opacity,
                 rotation,
                 dash,
+                tension: 0,
                 lineCap: "round",
                 lineJoin: "round",
               })
             );
-            return;
           }
-
-          if (shape.tool === "curve") {
-            const points = shape.points || [];
-            const cp = shape.controlPoint;
-            if (points.length >= 4 && cp) {
-              const x1 = points[0];
-              const y1 = points[1];
-              const x2 = points[2];
-              const y2 = points[3];
-              const cx = cp.x;
-              const cy = cp.y;
-
-              const curvePoints: number[] = [];
-              const steps = 50;
-
-              for (let i = 0; i <= steps; i++) {
-                const t = i / steps;
-                const mt = 1 - t;
-                const mt2 = mt * mt;
-                const t2 = t * t;
-
-                const x = mt2 * x1 + 2 * mt * t * cx + t2 * x2;
-                const y = mt2 * y1 + 2 * mt * t * cy + t2 * y2;
-
-                curvePoints.push(x, y);
-              }
-
-              tileLayer.add(
-                new Konva.Line({
-                  x: shape.x - tileX,
-                  y: shape.y - tileY,
-                  points: curvePoints,
-                  stroke,
-                  strokeWidth,
-                  opacity,
-                  rotation,
-                  dash,
-                  tension: 0,
-                  lineCap: "round",
-                  lineJoin: "round",
-                })
-              );
-            }
-          }
-        });
-
-        // Crop marks and page number are drawn in tile-local coordinates.
-        drawCropMarks(tileLayer, 0, 0, safeWidthPx, safeHeightPx);
-        drawPageNumber(tileLayer, pageNum, totalPages, 0, 0, safeHeightPx);
-
-        if (resolved.showBaseSize && pageNum === 1) {
-          drawBaseSizeMarker(tileLayer);
         }
+      });
 
-        // Ensure everything is rendered
-        tileLayer.draw();
+      // Crop marks and page number are drawn in tile-local coordinates.
+      drawCropMarks(tileLayer, 0, 0, safeWidthPx, safeHeightPx);
+      drawPageNumber(tileLayer, pageNum, totalPages, 0, 0, safeHeightPx);
 
-        const dataURL = tileStage.toDataURL({
-          x: 0,
-          y: 0,
-          width: safeWidthPx,
-          height: safeHeightPx,
-          pixelRatio: 3,
-        });
+      if (resolved.showBaseSize && pageNum === 1) {
+        drawBaseSizeMarker(tileLayer);
+      }
 
-        tileStage.destroy();
+      // Ensure everything is rendered
+      tileLayer.draw();
 
-        // Add new page if not the first
-        if (pageNum > 1) {
-          pdf.addPage();
-        }
+      const dataURL = tileStage.toDataURL({
+        x: 0,
+        y: 0,
+        width: safeWidthPx,
+        height: safeHeightPx,
+        pixelRatio: 3,
+      });
 
-        // Add image to PDF at actual size (maintaining 1:1 scale)
-        pdf.addImage(
-          dataURL,
-          "PNG",
-          marginCm,
-          marginCm,
-          safeWidthCm,
-          safeHeightCm
-        );
+      tileStage.destroy();
+
+      // Add new page if not the first
+      if (pageNum > 1) {
+        pdf.addPage();
+      }
+
+      // Add image to PDF at actual size (maintaining 1:1 scale)
+      pdf.addImage(
+        dataURL,
+        "PNG",
+        marginCm,
+        marginCm,
+        safeWidthCm,
+        safeHeightCm
+      );
     }
 
     // Save the PDF

@@ -57,6 +57,17 @@ interface EditorContextType {
   setShowPageGuides: (show: boolean) => void;
   pageGuideSettings: PageGuideSettings;
   setPageGuideSettings: (settings: PageGuideSettings) => void;
+
+  // Project management
+  projectId: string | null;
+  setProjectId: (id: string | null) => void;
+  projectName: string;
+  setProjectName: (name: string) => void;
+  loadProject: (
+    shapes: Shape[],
+    projectId: string,
+    projectName: string
+  ) => void;
 }
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
@@ -71,6 +82,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [showRulers, setShowRulers] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
 
+  // Project state
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState("Projeto Sem Nome");
+
   const defaultExportSettings = createDefaultExportSettings();
   const [showPageGuides, setShowPageGuides] = useState(false);
   const [pageGuideSettings, setPageGuideSettings] = useState<PageGuideSettings>(
@@ -80,14 +95,14 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       marginCm: defaultExportSettings.marginCm,
     }
   );
-  
+
   // Store stage reference without triggering re-renders
   const stageRef = useRef<Konva.Stage | null>(null);
-  
+
   const registerStage = useCallback((stage: Konva.Stage | null) => {
     stageRef.current = stage;
   }, []);
-  
+
   const getStage = useCallback(() => {
     return stageRef.current;
   }, []);
@@ -110,6 +125,17 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       } else {
         setShapesState(newShapes, saveHistory);
       }
+    },
+    [setShapesState]
+  );
+
+  // Load a project into the editor
+  const loadProject = useCallback(
+    (shapes: Shape[], projectId: string, projectName: string) => {
+      setShapesState(shapes, false); // Load without saving to history
+      setProjectId(projectId);
+      setProjectName(projectName);
+      setSelectedShapeId(null);
     },
     [setShapesState]
   );
@@ -145,6 +171,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setShowPageGuides,
         pageGuideSettings,
         setPageGuideSettings,
+        projectId,
+        setProjectId,
+        projectName,
+        setProjectName,
+        loadProject,
       }}
     >
       {children}
