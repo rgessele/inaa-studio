@@ -39,6 +39,8 @@ export default function Canvas() {
     selectedShapeId,
     setSelectedShapeId,
     showRulers,
+    registerStage,
+    showGrid,
   } = useEditor();
 
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
@@ -102,6 +104,11 @@ export default function Canvas() {
 
     return () => observer.disconnect();
   }, []);
+
+  // Register stage ref with context
+  useEffect(() => {
+    registerStage(stageRef.current);
+  }, [registerStage]);
 
   useEffect(() => {
     const isTypingElement = (target: EventTarget | null) => {
@@ -620,7 +627,7 @@ export default function Canvas() {
               />
 
               {/* Grid lines */}
-              {gridLines}
+              {showGrid && gridLines}
 
               {shapes.map((shape) => {
                 const isSelected = shape.id === selectedShapeId;

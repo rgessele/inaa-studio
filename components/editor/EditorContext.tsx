@@ -6,7 +6,9 @@ import React, {
   useState,
   ReactNode,
   useCallback,
+  useRef,
 } from "react";
+import Konva from "konva";
 import { Tool, Shape } from "./types";
 import { DEFAULT_UNIT, DEFAULT_PIXELS_PER_UNIT } from "./constants";
 import { useHistory } from "./useHistory";
@@ -35,6 +37,10 @@ interface EditorContextType {
   setPixelsPerUnit: (pixels: number) => void;
   showRulers: boolean;
   setShowRulers: (show: boolean) => void;
+  getStage: () => Konva.Stage | null;
+  registerStage: (stage: Konva.Stage | null) => void;
+  showGrid: boolean;
+  setShowGrid: (show: boolean) => void;
 }
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
@@ -47,6 +53,18 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [unit, setUnit] = useState(DEFAULT_UNIT);
   const [pixelsPerUnit, setPixelsPerUnit] = useState(DEFAULT_PIXELS_PER_UNIT);
   const [showRulers, setShowRulers] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
+  
+  // Store stage reference without triggering re-renders
+  const stageRef = useRef<Konva.Stage | null>(null);
+  
+  const registerStage = useCallback((stage: Konva.Stage | null) => {
+    stageRef.current = stage;
+  }, []);
+  
+  const getStage = useCallback(() => {
+    return stageRef.current;
+  }, []);
 
   // Use the history hook for shapes
   const {
@@ -93,6 +111,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setPixelsPerUnit,
         showRulers,
         setShowRulers,
+        getStage,
+        registerStage,
+        showGrid,
+        setShowGrid,
       }}
     >
       {children}
