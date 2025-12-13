@@ -675,6 +675,8 @@ export default function Canvas() {
                           shapeRefs.current.delete(shape.id);
                         }
                       }}
+                      x={shape.x}
+                      y={shape.y}
                       points={shape.points}
                       stroke={stroke}
                       strokeWidth={strokeWidth}
