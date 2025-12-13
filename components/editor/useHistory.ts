@@ -25,33 +25,30 @@ export function useHistory<T>(
     future: [],
   });
 
-  const setState = useCallback(
-    (newState: T, saveHistory = true) => {
-      if (!saveHistory) {
-        // Update without saving to history (for temporary updates during drawing)
-        setHistory((current) => ({
-          ...current,
-          present: newState,
-        }));
-        return;
-      }
+  const setState = useCallback((newState: T, saveHistory = true) => {
+    if (!saveHistory) {
+      // Update without saving to history (for temporary updates during drawing)
+      setHistory((current) => ({
+        ...current,
+        present: newState,
+      }));
+      return;
+    }
 
-      setHistory((current) => {
-        // If there's a present state, save it to past
-        const newPast =
-          current.present !== null
-            ? [...current.past, current.present]
-            : current.past;
+    setHistory((current) => {
+      // If there's a present state, save it to past
+      const newPast =
+        current.present !== null
+          ? [...current.past, current.present]
+          : current.past;
 
-        return {
-          past: newPast,
-          present: newState,
-          future: [], // Clear future when new state is set
-        };
-      });
-    },
-    []
-  );
+      return {
+        past: newPast,
+        present: newState,
+        future: [], // Clear future when new state is set
+      };
+    });
+  }, []);
 
   const undo = useCallback(() => {
     setHistory((current) => {

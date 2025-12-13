@@ -59,14 +59,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   } = useHistory<Shape[]>([]);
 
   const setShapes = useCallback(
-    (
-      newShapes: Shape[] | ((prev: Shape[]) => Shape[]),
-      saveHistory = true
-    ) => {
+    (newShapes: Shape[] | ((prev: Shape[]) => Shape[]), saveHistory = true) => {
       const resolvedShapes =
-        typeof newShapes === "function"
-          ? newShapes(shapes || [])
-          : newShapes;
+        typeof newShapes === "function" ? newShapes(shapes || []) : newShapes;
 
       setShapesState(resolvedShapes, saveHistory);
     },

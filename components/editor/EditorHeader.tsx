@@ -13,10 +13,10 @@ export function EditorHeader() {
       <div className="flex items-center gap-3">
         <div className="flex items-center">
           {/* Logo */}
-          <img 
-            src="/logo.png" 
-            alt="Inaá Studio" 
-            className="h-9 w-auto object-contain" 
+          <img
+            src="/logo.png"
+            alt="Inaá Studio"
+            className="h-9 w-auto object-contain"
           />
         </div>
         <div className="hidden md:flex ml-6 text-xs text-text-muted dark:text-text-muted-dark gap-1">
