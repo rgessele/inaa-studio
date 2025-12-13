@@ -1,23 +1,163 @@
 import jsPDF from "jspdf";
 import Konva from "konva";
-import { Shape } from "./types";
+import { DrawingTool, Shape } from "./types";
 import { PX_PER_CM } from "./constants";
 
 // A4 dimensions in cm
 const A4_WIDTH_CM = 21.0;
 const A4_HEIGHT_CM = 29.7;
 
-// Safe printing area (A4 minus 1cm margins on each side)
-const SAFE_WIDTH_CM = 19.0;
-const SAFE_HEIGHT_CM = 27.7;
-
-// Convert to pixels
-const SAFE_WIDTH_PX = SAFE_WIDTH_CM * PX_PER_CM;
-const SAFE_HEIGHT_PX = SAFE_HEIGHT_CM * PX_PER_CM;
-
 // Crop mark size in cm
 const CROP_MARK_SIZE_CM = 0.5;
 const CROP_MARK_SIZE_PX = CROP_MARK_SIZE_CM * PX_PER_CM;
+
+export type PaperSize = "A4";
+export type PaperOrientation = "portrait" | "landscape";
+
+export interface ExportSettings {
+  paperSize: PaperSize;
+  orientation: PaperOrientation;
+  marginCm: number;
+  includeBlankPages: boolean;
+  dashedLines: boolean;
+  showBaseSize: boolean;
+  toolFilter: Record<DrawingTool, boolean>;
+}
+
+export function createDefaultExportSettings(): ExportSettings {
+  return {
+    paperSize: "A4",
+    orientation: "portrait",
+    marginCm: 1,
+    includeBlankPages: false,
+    dashedLines: false,
+    showBaseSize: false,
+    toolFilter: {
+      rectangle: true,
+      circle: true,
+      line: true,
+      curve: true,
+    },
+  };
+}
+
+function resolveExportSettings(
+  partial?: Partial<ExportSettings>
+): ExportSettings {
+  const defaults = createDefaultExportSettings();
+  return {
+    ...defaults,
+    ...partial,
+    toolFilter: {
+      ...defaults.toolFilter,
+      ...(partial?.toolFilter ?? {}),
+    },
+  };
+}
+
+function getPaperDimensionsCm(
+  paperSize: PaperSize,
+  orientation: PaperOrientation
+): { widthCm: number; heightCm: number } {
+  const base =
+    paperSize === "A4"
+      ? { widthCm: A4_WIDTH_CM, heightCm: A4_HEIGHT_CM }
+      : { widthCm: A4_WIDTH_CM, heightCm: A4_HEIGHT_CM };
+
+  if (orientation === "landscape") {
+    return { widthCm: base.heightCm, heightCm: base.widthCm };
+  }
+
+  return base;
+}
+
+function getShapeBoundingBox(shape: Shape): BoundingBox {
+  let minX = shape.x;
+  let minY = shape.y;
+  let maxX = shape.x;
+  let maxY = shape.y;
+
+  if (shape.tool === "rectangle") {
+    const width = shape.width || 0;
+    const height = shape.height || 0;
+    maxX = shape.x + width;
+    maxY = shape.y + height;
+  } else if (shape.tool === "circle") {
+    const radius = shape.radius || 0;
+    minX = shape.x - radius;
+    minY = shape.y - radius;
+    maxX = shape.x + radius;
+    maxY = shape.y + radius;
+  } else if (shape.tool === "line" || shape.tool === "curve") {
+    const points = shape.points || [];
+    for (let i = 0; i < points.length; i += 2) {
+      const px = shape.x + points[i];
+      const py = shape.y + points[i + 1];
+      minX = Math.min(minX, px);
+      minY = Math.min(minY, py);
+      maxX = Math.max(maxX, px);
+      maxY = Math.max(maxY, py);
+    }
+  }
+
+  const strokeWidth = shape.strokeWidth || 0;
+  const halfStroke = strokeWidth / 2;
+  minX -= halfStroke;
+  minY -= halfStroke;
+  maxX += halfStroke;
+  maxY += halfStroke;
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+function intersectsRect(a: BoundingBox, b: BoundingBox): boolean {
+  return !(
+    a.x + a.width <= b.x ||
+    b.x + b.width <= a.x ||
+    a.y + a.height <= b.y ||
+    b.y + b.height <= a.y
+  );
+}
+
+function filterShapesBySettings(
+  shapes: Shape[],
+  settings: ExportSettings
+): Shape[] {
+  return shapes.filter((shape) => settings.toolFilter[shape.tool]);
+}
+
+function drawBaseSizeMarker(layer: Konva.Layer): void {
+  const sizePx = 10 * PX_PER_CM;
+  const x = 40;
+  const y = 40;
+
+  layer.add(
+    new Konva.Rect({
+      x,
+      y,
+      width: sizePx,
+      height: sizePx,
+      stroke: "#000000",
+      strokeWidth: 2,
+    })
+  );
+
+  layer.add(
+    new Konva.Text({
+      x,
+      y: y + sizePx + 8,
+      text: "10 cm",
+      fontSize: 14,
+      fontFamily: "Arial",
+      fill: "#000000",
+    })
+  );
+}
 
 interface BoundingBox {
   x: number;
@@ -174,21 +314,39 @@ function drawPageNumber(
  * Generate a multi-page PDF with tiling for A4 printing
  */
 export async function generateTiledPDF(
-  stage: Konva.Stage,
+  _stage: Konva.Stage,
   shapes: Shape[],
-  hideGrid: () => void,
-  showGrid: () => void
+  _hideGrid: () => void,
+  _showGrid: () => void,
+  settings?: Partial<ExportSettings>
 ): Promise<void> {
-  if (shapes.length === 0) {
+  const resolved = resolveExportSettings(settings);
+  const filteredShapes = filterShapesBySettings(shapes, resolved);
+
+  if (filteredShapes.length === 0) {
     alert("Não há nada para exportar. Desenhe algo primeiro.");
     return;
   }
 
-  const bbox = calculateBoundingBox(shapes);
+  const bbox = calculateBoundingBox(filteredShapes);
   if (!bbox) {
     alert("Erro ao calcular a área de desenho.");
     return;
   }
+
+  const { widthCm: paperWidthCm, heightCm: paperHeightCm } =
+    getPaperDimensionsCm(resolved.paperSize, resolved.orientation);
+  const marginCm = Math.max(0, Math.min(resolved.marginCm, 10));
+  const safeWidthCm = paperWidthCm - 2 * marginCm;
+  const safeHeightCm = paperHeightCm - 2 * marginCm;
+
+  if (safeWidthCm <= 0 || safeHeightCm <= 0) {
+    alert("Margens inválidas: a área útil ficou negativa.");
+    return;
+  }
+
+  const safeWidthPx = safeWidthCm * PX_PER_CM;
+  const safeHeightPx = safeHeightCm * PX_PER_CM;
 
   // Add some padding around the design
   const padding = 10; // pixels
@@ -200,69 +358,210 @@ export async function generateTiledPDF(
   };
 
   // Calculate how many tiles we need
-  const cols = Math.ceil(exportArea.width / SAFE_WIDTH_PX);
-  const rows = Math.ceil(exportArea.height / SAFE_HEIGHT_PX);
-  const totalPages = cols * rows;
+  const cols = Math.ceil(exportArea.width / safeWidthPx);
+  const rows = Math.ceil(exportArea.height / safeHeightPx);
 
-  // Hide grid temporarily
-  hideGrid();
+  const tiles: Array<{ tileX: number; tileY: number }> = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const tileX = exportArea.x + col * safeWidthPx;
+      const tileY = exportArea.y + row * safeHeightPx;
+
+      if (!resolved.includeBlankPages) {
+        const tileRect: BoundingBox = {
+          x: tileX,
+          y: tileY,
+          width: safeWidthPx,
+          height: safeHeightPx,
+        };
+
+        const hasContent = filteredShapes.some((shape) =>
+          intersectsRect(getShapeBoundingBox(shape), tileRect)
+        );
+
+        if (!hasContent) {
+          continue;
+        }
+      }
+
+      tiles.push({ tileX, tileY });
+    }
+  }
+
+  const totalPages = tiles.length;
+  if (totalPages === 0) {
+    alert("Nada para exportar com os filtros selecionados.");
+    return;
+  }
 
   // Create PDF
   const pdf = new jsPDF({
-    orientation: "portrait",
+    orientation: resolved.orientation,
     unit: "cm",
     format: "a4",
   });
 
   let pageNum = 0;
 
-  // Create a temporary layer for crop marks and page numbers
-  const tempLayer = new Konva.Layer();
-  stage.add(tempLayer);
-
   try {
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        pageNum++;
+    for (const { tileX, tileY } of tiles) {
+      pageNum++;
 
-        // Calculate tile position
-        const tileX = exportArea.x + col * SAFE_WIDTH_PX;
-        const tileY = exportArea.y + row * SAFE_HEIGHT_PX;
+        // Render this tile to dataURL with high quality.
+        // IMPORTANT: we render only the shapes (no canvas background/grid/transformers)
+        // by drawing into an offscreen Konva stage.
+        const container = document.createElement("div");
+        const tileStage = new Konva.Stage({
+          container,
+          width: safeWidthPx,
+          height: safeHeightPx,
+        });
 
-        // Draw crop marks and page number on temp layer
-        tempLayer.destroyChildren();
-        const cropMarks = drawCropMarks(
-          tempLayer,
-          tileX,
-          tileY,
-          SAFE_WIDTH_PX,
-          SAFE_HEIGHT_PX
-        );
-        const pageText = drawPageNumber(
-          tempLayer,
-          pageNum,
-          totalPages,
-          tileX,
-          tileY,
-          SAFE_HEIGHT_PX
-        );
+        const tileLayer = new Konva.Layer();
+        tileStage.add(tileLayer);
 
-        // Render this tile to dataURL with high quality
-        const dataURL = stage.toDataURL({
+        // Draw shapes with tile offset
+        const tileRect: BoundingBox = {
           x: tileX,
           y: tileY,
-          width: SAFE_WIDTH_PX,
-          height: SAFE_HEIGHT_PX,
-          pixelRatio: 3, // High quality for printing
+          width: safeWidthPx,
+          height: safeHeightPx,
+        };
+
+        const shapesInTile = filteredShapes.filter((shape) =>
+          intersectsRect(getShapeBoundingBox(shape), tileRect)
+        );
+
+        shapesInTile.forEach((shape) => {
+          // Force black strokes for print quality
+          const stroke = "#000000";
+          const strokeWidth = shape.strokeWidth || 1;
+          const fill = shape.fill || "transparent";
+          const opacity = shape.opacity !== undefined ? shape.opacity : 1;
+          const rotation = shape.rotation || 0;
+          const dash = resolved.dashedLines ? [12, 6] : shape.dash;
+
+          if (shape.tool === "rectangle") {
+            tileLayer.add(
+              new Konva.Rect({
+                x: shape.x - tileX,
+                y: shape.y - tileY,
+                width: shape.width || 0,
+                height: shape.height || 0,
+                fill,
+                stroke,
+                strokeWidth,
+                opacity,
+                rotation,
+              })
+            );
+            return;
+          }
+
+          if (shape.tool === "circle") {
+            tileLayer.add(
+              new Konva.Circle({
+                x: shape.x - tileX,
+                y: shape.y - tileY,
+                radius: shape.radius || 0,
+                fill,
+                stroke,
+                strokeWidth,
+                opacity,
+                rotation,
+              })
+            );
+            return;
+          }
+
+          if (shape.tool === "line") {
+            tileLayer.add(
+              new Konva.Line({
+                x: shape.x - tileX,
+                y: shape.y - tileY,
+                points: shape.points || [],
+                stroke,
+                strokeWidth,
+                opacity,
+                rotation,
+                dash,
+                lineCap: "round",
+                lineJoin: "round",
+              })
+            );
+            return;
+          }
+
+          if (shape.tool === "curve") {
+            const points = shape.points || [];
+            const cp = shape.controlPoint;
+            if (points.length >= 4 && cp) {
+              const x1 = points[0];
+              const y1 = points[1];
+              const x2 = points[2];
+              const y2 = points[3];
+              const cx = cp.x;
+              const cy = cp.y;
+
+              const curvePoints: number[] = [];
+              const steps = 50;
+
+              for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const mt = 1 - t;
+                const mt2 = mt * mt;
+                const t2 = t * t;
+
+                const x = mt2 * x1 + 2 * mt * t * cx + t2 * x2;
+                const y = mt2 * y1 + 2 * mt * t * cy + t2 * y2;
+
+                curvePoints.push(x, y);
+              }
+
+              tileLayer.add(
+                new Konva.Line({
+                  x: shape.x - tileX,
+                  y: shape.y - tileY,
+                  points: curvePoints,
+                  stroke,
+                  strokeWidth,
+                  opacity,
+                  rotation,
+                  dash,
+                  tension: 0,
+                  lineCap: "round",
+                  lineJoin: "round",
+                })
+              );
+            }
+          }
         });
+
+        // Crop marks and page number are drawn in tile-local coordinates.
+        drawCropMarks(tileLayer, 0, 0, safeWidthPx, safeHeightPx);
+        drawPageNumber(tileLayer, pageNum, totalPages, 0, 0, safeHeightPx);
+
+        if (resolved.showBaseSize && pageNum === 1) {
+          drawBaseSizeMarker(tileLayer);
+        }
+
+        // Ensure everything is rendered
+        tileLayer.draw();
+
+        const dataURL = tileStage.toDataURL({
+          x: 0,
+          y: 0,
+          width: safeWidthPx,
+          height: safeHeightPx,
+          pixelRatio: 3,
+        });
+
+        tileStage.destroy();
 
         // Add new page if not the first
         if (pageNum > 1) {
           pdf.addPage();
         }
-
-        // Calculate position to center the image with 1cm margins
-        const marginCm = 1;
 
         // Add image to PDF at actual size (maintaining 1:1 scale)
         pdf.addImage(
@@ -270,14 +569,9 @@ export async function generateTiledPDF(
           "PNG",
           marginCm,
           marginCm,
-          SAFE_WIDTH_CM,
-          SAFE_HEIGHT_CM
+          safeWidthCm,
+          safeHeightCm
         );
-
-        // Clean up temp layer
-        cropMarks.destroy();
-        pageText.destroy();
-      }
     }
 
     // Save the PDF
@@ -291,24 +585,26 @@ export async function generateTiledPDF(
         `Imprima em escala 100% (tamanho real) e una as páginas usando as marcas de corte.`
     );
   } finally {
-    // Clean up temp layer
-    tempLayer.destroy();
-
-    // Show grid again
-    showGrid();
+    // no-op: export uses offscreen stage, so nothing to restore
   }
 }
 
 /**
  * Generate SVG export (simpler vector format for plotters)
  */
-export function generateSVG(shapes: Shape[]): void {
-  if (shapes.length === 0) {
+export function generateSVG(
+  shapes: Shape[],
+  settings?: Partial<ExportSettings>
+): void {
+  const resolved = resolveExportSettings(settings);
+  const filteredShapes = filterShapesBySettings(shapes, resolved);
+
+  if (filteredShapes.length === 0) {
     alert("Não há nada para exportar. Desenhe algo primeiro.");
     return;
   }
 
-  const bbox = calculateBoundingBox(shapes);
+  const bbox = calculateBoundingBox(filteredShapes);
   if (!bbox) {
     alert("Erro ao calcular a área de desenho.");
     return;
@@ -331,11 +627,16 @@ export function generateSVG(shapes: Shape[]): void {
 `;
 
   // Convert each shape to SVG
-  shapes.forEach((shape) => {
+  filteredShapes.forEach((shape) => {
     const stroke = shape.stroke || "#000000";
     const strokeWidth = shape.strokeWidth || 1;
     const fill = shape.fill || "none";
     const opacity = shape.opacity !== undefined ? shape.opacity : 1;
+    const dashArray = resolved.dashedLines
+      ? "12 6"
+      : shape.dash
+        ? shape.dash.join(" ")
+        : null;
 
     if (shape.tool === "rectangle" && shape.width && shape.height) {
       svgContent += `  <rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" `;
@@ -351,7 +652,11 @@ export function generateSVG(shapes: Shape[]): void {
         const x2 = shape.x + points[2];
         const y2 = shape.y + points[3];
         svgContent += `  <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" `;
-        svgContent += `stroke="${stroke}" stroke-width="${strokeWidth}" opacity="${opacity}" />\n`;
+        svgContent += `stroke="${stroke}" stroke-width="${strokeWidth}" opacity="${opacity}"`;
+        if (dashArray) {
+          svgContent += ` stroke-dasharray="${dashArray}"`;
+        }
+        svgContent += ` />\n`;
       }
     } else if (shape.tool === "curve" && shape.points && shape.controlPoint) {
       const points = shape.points;
@@ -364,7 +669,11 @@ export function generateSVG(shapes: Shape[]): void {
         const cy = shape.y + shape.controlPoint.y;
 
         svgContent += `  <path d="M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}" `;
-        svgContent += `stroke="${stroke}" stroke-width="${strokeWidth}" fill="none" opacity="${opacity}" />\n`;
+        svgContent += `stroke="${stroke}" stroke-width="${strokeWidth}" fill="none" opacity="${opacity}"`;
+        if (dashArray) {
+          svgContent += ` stroke-dasharray="${dashArray}"`;
+        }
+        svgContent += ` />\n`;
       }
     }
   });

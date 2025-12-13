@@ -2,13 +2,26 @@
 
 import React, { useState } from "react";
 import { useEditor } from "./EditorContext";
-import { Tool } from "./types";
-import { generateTiledPDF, generateSVG } from "./export";
+import { DrawingTool, Tool } from "./types";
+import {
+  createDefaultExportSettings,
+  generateTiledPDF,
+  generateSVG,
+  type ExportSettings,
+} from "./export";
 
 export function EditorToolbar() {
   const { tool, setTool, setShapes, undo, redo, canUndo, canRedo, shapes, getStage, setShowGrid } =
     useEditor();
   const [showExportModal, setShowExportModal] = useState(false);
+
+  const [exportSettings, setExportSettings] = useState<ExportSettings>(() =>
+    createDefaultExportSettings()
+  );
+  const [customMargins, setCustomMargins] = useState(false);
+  const [includePatternName, setIncludePatternName] = useState(true);
+  const [includePatternTexts, setIncludePatternTexts] = useState(true);
+  const [includeSeamAllowance, setIncludeSeamAllowance] = useState(true);
 
   const handleToolChange = (newTool: Tool) => {
     setTool(newTool);
@@ -29,17 +42,39 @@ export function EditorToolbar() {
 
     setShowExportModal(false);
 
+    const resolvedSettings: ExportSettings = {
+      ...exportSettings,
+      marginCm: customMargins ? exportSettings.marginCm : 1,
+    };
+
     await generateTiledPDF(
       stage,
       shapes,
       () => setShowGrid(false),
-      () => setShowGrid(true)
+      () => setShowGrid(true),
+      resolvedSettings
     );
   };
 
   const handleExportSVG = () => {
     setShowExportModal(false);
-    generateSVG(shapes);
+
+    const resolvedSettings: ExportSettings = {
+      ...exportSettings,
+      marginCm: customMargins ? exportSettings.marginCm : 1,
+    };
+
+    generateSVG(shapes, resolvedSettings);
+  };
+
+  const toggleToolFilter = (drawingTool: DrawingTool) => {
+    setExportSettings((prev) => ({
+      ...prev,
+      toolFilter: {
+        ...prev.toolFilter,
+        [drawingTool]: !prev.toolFilter[drawingTool],
+      },
+    }));
   };
 
   return (
@@ -68,37 +103,37 @@ export function EditorToolbar() {
 
         <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
 
-      <button
-        onClick={undo}
-        disabled={!canUndo}
-        className={`group relative flex items-center justify-center p-2 rounded transition-all ${
-          !canUndo
-            ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-            : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
-        }`}
-        aria-label="Desfazer (Ctrl+Z)"
-      >
-        <span className="material-symbols-outlined text-[20px]">undo</span>
-        <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
-          Desfazer (Ctrl+Z)
-        </span>
-      </button>
+        <button
+          onClick={undo}
+          disabled={!canUndo}
+          className={`group relative flex items-center justify-center p-2 rounded transition-all ${
+            !canUndo
+              ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+              : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+          }`}
+          aria-label="Desfazer (Ctrl+Z)"
+        >
+          <span className="material-symbols-outlined text-[20px]">undo</span>
+          <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
+            Desfazer (Ctrl+Z)
+          </span>
+        </button>
 
-      <button
-        onClick={redo}
-        disabled={!canRedo}
-        className={`group relative flex items-center justify-center p-2 rounded transition-all ${
-          !canRedo
-            ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-            : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
-        }`}
-        aria-label="Refazer (Ctrl+Y)"
-      >
-        <span className="material-symbols-outlined text-[20px]">redo</span>
-        <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
-          Refazer (Ctrl+Y)
-        </span>
-      </button>
+        <button
+          onClick={redo}
+          disabled={!canRedo}
+          className={`group relative flex items-center justify-center p-2 rounded transition-all ${
+            !canRedo
+              ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+              : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+          }`}
+          aria-label="Refazer (Ctrl+Y)"
+        >
+          <span className="material-symbols-outlined text-[20px]">redo</span>
+          <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
+            Refazer (Ctrl+Y)
+          </span>
+        </button>
 
       <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
 
@@ -221,64 +256,291 @@ export function EditorToolbar() {
           onClick={() => setShowExportModal(false)}
         >
           <div
-            className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl"
+            className="bg-white dark:bg-gray-800 rounded-lg p-8 max-w-5xl w-full mx-4 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-              Exportar Projeto
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
-              Escolha o formato de exportação:
-            </p>
-
-            <div className="space-y-3">
-              <button
-                onClick={handleExportPDF}
-                className="w-full flex items-start gap-3 p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:border-primary dark:hover:border-primary hover:bg-primary/5 dark:hover:bg-primary/10 transition-all text-left"
-              >
-                <span className="material-symbols-outlined text-primary text-2xl mt-0.5">
-                  picture_as_pdf
-                </span>
-                <div>
-                  <div className="font-semibold text-gray-900 dark:text-white">
-                    PDF A4 (Multipágina)
-                  </div>
-                  <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                    Para impressão doméstica. O molde é dividido em páginas A4
-                    que podem ser unidas.
-                  </div>
-                </div>
-              </button>
+            <div className="flex items-start justify-between gap-6 mb-8">
+              <div>
+                <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">
+                  Imprimir Molde
+                </h2>
+              </div>
 
               <button
-                onClick={handleExportSVG}
-                className="w-full flex items-start gap-3 p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:border-primary dark:hover:border-primary hover:bg-primary/5 dark:hover:bg-primary/10 transition-all text-left"
+                type="button"
+                className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors"
+                aria-label="Fechar"
+                onClick={() => setShowExportModal(false)}
               >
-                <span className="material-symbols-outlined text-primary text-2xl mt-0.5">
-                  code
+                <span className="material-symbols-outlined text-[20px]">
+                  close
                 </span>
-                <div>
-                  <div className="font-semibold text-gray-900 dark:text-white">
-                    SVG (Vetorial)
-                  </div>
-                  <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                    Formato vetorial para plotters profissionais ou edição
-                    posterior.
-                  </div>
-                </div>
               </button>
             </div>
 
-            <button
-              onClick={() => setShowExportModal(false)}
-              className="w-full mt-4 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-            >
-              Cancelar
-            </button>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
+                  Propriedades
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
+                  Escolha as informações que você deseja imprimir no seu molde:
+                </p>
+
+                <div className="space-y-4">
+                  <SwitchRow
+                    label="Nome do molde"
+                    checked={includePatternName}
+                    onCheckedChange={setIncludePatternName}
+                  />
+                  <SwitchRow
+                    label="Textos do molde"
+                    checked={includePatternTexts}
+                    onCheckedChange={setIncludePatternTexts}
+                  />
+                  <SwitchRow
+                    label="Margem de costura"
+                    checked={includeSeamAllowance}
+                    onCheckedChange={setIncludeSeamAllowance}
+                  />
+                  <SwitchRow
+                    label="Páginas em branco"
+                    checked={exportSettings.includeBlankPages}
+                    onCheckedChange={(checked) =>
+                      setExportSettings((prev) => ({
+                        ...prev,
+                        includeBlankPages: checked,
+                      }))
+                    }
+                  />
+                  <SwitchRow
+                    label="Linhas tracejadas"
+                    checked={exportSettings.dashedLines}
+                    onCheckedChange={(checked) =>
+                      setExportSettings((prev) => ({
+                        ...prev,
+                        dashedLines: checked,
+                      }))
+                    }
+                  />
+                  <SwitchRow
+                    label="Mostrar tamanho base"
+                    checked={exportSettings.showBaseSize}
+                    onCheckedChange={(checked) =>
+                      setExportSettings((prev) => ({
+                        ...prev,
+                        showBaseSize: checked,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="mt-8">
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
+                    Elementos do desenho
+                  </h4>
+                  <div className="space-y-2">
+                    <CheckboxRow
+                      label="Retângulos"
+                      checked={exportSettings.toolFilter.rectangle}
+                      onCheckedChange={() => toggleToolFilter("rectangle")}
+                    />
+                    <CheckboxRow
+                      label="Círculos"
+                      checked={exportSettings.toolFilter.circle}
+                      onCheckedChange={() => toggleToolFilter("circle")}
+                    />
+                    <CheckboxRow
+                      label="Linhas"
+                      checked={exportSettings.toolFilter.line}
+                      onCheckedChange={() => toggleToolFilter("line")}
+                    />
+                    <CheckboxRow
+                      label="Curvas"
+                      checked={exportSettings.toolFilter.curve}
+                      onCheckedChange={() => toggleToolFilter("curve")}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
+                  Tamanho
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
+                  Configure o tamanho do papel:
+                </p>
+
+                <select
+                  value={exportSettings.paperSize}
+                  onChange={(e) =>
+                    setExportSettings((prev) => ({
+                      ...prev,
+                      paperSize: e.target.value as ExportSettings["paperSize"],
+                    }))
+                  }
+                  className="w-full h-10 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-sm text-gray-900 dark:text-white"
+                >
+                  <option value="A4">A4</option>
+                </select>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
+                  Margens
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                  Configure margens e orientação da sua impressão:
+                </p>
+
+                <label className="flex items-center gap-3 text-sm text-gray-900 dark:text-white">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-gray-300 dark:border-gray-600"
+                    checked={customMargins}
+                    onChange={(e) => setCustomMargins(e.target.checked)}
+                  />
+                  Customizar Margens
+                </label>
+
+                {customMargins && (
+                  <div className="mt-4">
+                    <label className="block text-xs text-gray-600 dark:text-gray-300 mb-2">
+                      Margem (cm)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      value={exportSettings.marginCm}
+                      onChange={(e) =>
+                        setExportSettings((prev) => ({
+                          ...prev,
+                          marginCm: Number(e.target.value),
+                        }))
+                      }
+                      className="w-full h-10 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-sm text-gray-900 dark:text-white"
+                    />
+                  </div>
+                )}
+
+                <div className="mt-8">
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
+                    Orientação
+                  </h4>
+
+                  <div className="flex items-center gap-6">
+                    <label className="flex items-center gap-2 text-sm text-gray-900 dark:text-white">
+                      <input
+                        type="radio"
+                        name="export-orientation"
+                        value="landscape"
+                        checked={exportSettings.orientation === "landscape"}
+                        onChange={() =>
+                          setExportSettings((prev) => ({
+                            ...prev,
+                            orientation: "landscape",
+                          }))
+                        }
+                      />
+                      Paisagem
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-900 dark:text-white">
+                      <input
+                        type="radio"
+                        name="export-orientation"
+                        value="portrait"
+                        checked={exportSettings.orientation === "portrait"}
+                        onChange={() =>
+                          setExportSettings((prev) => ({
+                            ...prev,
+                            orientation: "portrait",
+                          }))
+                        }
+                      />
+                      Retrato
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-10 flex items-center justify-between gap-4">
+              <button
+                type="button"
+                onClick={handleExportSVG}
+                className="px-4 py-2 text-sm rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Exportar SVG
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportPDF}
+                className="inline-flex items-center gap-2 px-6 py-3 text-sm rounded-md bg-primary text-white hover:bg-primary/90 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  print
+                </span>
+                Imprimir
+              </button>
+            </div>
           </div>
         </div>
       )}
     </>
+  );
+}
+
+interface SwitchRowProps {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}
+
+function SwitchRow({ label, checked, onCheckedChange }: SwitchRowProps) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-sm text-gray-900 dark:text-white">{label}</span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onCheckedChange(!checked)}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+          checked
+            ? "bg-primary"
+            : "bg-gray-200 dark:bg-gray-700"
+        }`}
+      >
+        <span
+          className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+            checked ? "translate-x-5" : "translate-x-1"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+interface CheckboxRowProps {
+  label: string;
+  checked: boolean;
+  onCheckedChange: () => void;
+}
+
+function CheckboxRow({ label, checked, onCheckedChange }: CheckboxRowProps) {
+  return (
+    <label className="flex items-center gap-3 text-sm text-gray-900 dark:text-white">
+      <input
+        type="checkbox"
+        className="h-4 w-4 rounded border-gray-300 dark:border-gray-600"
+        checked={checked}
+        onChange={onCheckedChange}
+      />
+      {label}
+    </label>
   );
 }
 
