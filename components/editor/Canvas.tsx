@@ -329,8 +329,11 @@ export default function Canvas() {
   };
 
   const handleDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
-    const stage = e.target as Konva.Stage;
-    setStagePosition({ x: stage.x(), y: stage.y() });
+    // Only update stage position if the stage itself is being dragged
+    if (e.target === stageRef.current) {
+      const stage = e.target as Konva.Stage;
+      setStagePosition({ x: stage.x(), y: stage.y() });
+    }
   };
 
   const handleShapeClick = (id: string) => {
@@ -339,17 +342,72 @@ export default function Canvas() {
     }
   };
 
-  const handleControlPointDragStart = () => {
-    // Prevent background interactions during drag
+  const handleControlPointDragStart = (e: Konva.KonvaEventObject<DragEvent>) => {
+    e.cancelBubble = true;
   };
 
   const handleControlPointDragMove = (
     shapeId: string,
     e: Konva.KonvaEventObject<DragEvent>
   ) => {
+    e.cancelBubble = true;
     const stage = e.target.getStage();
     if (!stage) return;
 
+    const circle = e.target as Konva.Circle;
+    const cx = circle.x();
+    const cy = circle.y();
+
+    // Find the shape to get start/end points
+    const shape = shapes.find((s) => s.id === shapeId);
+    if (!shape || !shape.points || shape.points.length < 4) return;
+
+    const x1 = shape.points[0];
+    const y1 = shape.points[1];
+    const x2 = shape.points[2];
+    const y2 = shape.points[3];
+
+    // Calculate new curve points directly for performance (avoiding React state update during drag)
+    const curvePoints: number[] = [];
+    const steps = 50;
+
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const mt = 1 - t;
+      const mt2 = mt * mt;
+      const t2 = t * t;
+
+      const x = mt2 * x1 + 2 * mt * t * cx + t2 * x2;
+      const y = mt2 * y1 + 2 * mt * t * cy + t2 * y2;
+
+      curvePoints.push(x, y);
+    }
+
+    // Update the visual nodes directly
+    const layer = circle.getLayer();
+    if (layer) {
+      const curveLine = layer.findOne(`.curve-${shapeId}`) as Konva.Line;
+      if (curveLine) {
+        curveLine.points(curvePoints);
+      }
+
+      const guide1 = layer.findOne(`.guide1-${shapeId}`) as Konva.Line;
+      if (guide1) {
+        guide1.points([x1, y1, cx, cy]);
+      }
+
+      const guide2 = layer.findOne(`.guide2-${shapeId}`) as Konva.Line;
+      if (guide2) {
+        guide2.points([cx, cy, x2, y2]);
+      }
+    }
+  };
+
+  const handleControlPointDragEnd = (
+    shapeId: string,
+    e: Konva.KonvaEventObject<DragEvent>
+  ) => {
+    e.cancelBubble = true;
     const circle = e.target as Konva.Circle;
     const pos = { x: circle.x(), y: circle.y() };
 
@@ -364,10 +422,6 @@ export default function Canvas() {
     });
 
     setShapes(updatedShapes);
-  };
-
-  const handleControlPointDragEnd = () => {
-    // Drag ended
   };
 
   const cursor =
@@ -517,6 +571,7 @@ export default function Canvas() {
                       <>
                         <Line
                           key={shape.id}
+                          name={`curve-${shape.id}`}
                           points={curvePoints}
                           stroke={stroke}
                           strokeWidth={strokeWidth}
@@ -532,6 +587,7 @@ export default function Canvas() {
                             {/* Line from start to control point */}
                             <Line
                               key={`${shape.id}-guide1`}
+                              name={`guide1-${shape.id}`}
                               points={[x1, y1, cx, cy]}
                               stroke="#673b45"
                               strokeWidth={1}
@@ -542,6 +598,7 @@ export default function Canvas() {
                             {/* Line from control point to end */}
                             <Line
                               key={`${shape.id}-guide2`}
+                              name={`guide2-${shape.id}`}
                               points={[cx, cy, x2, y2]}
                               stroke="#673b45"
                               strokeWidth={1}
@@ -563,7 +620,9 @@ export default function Canvas() {
                               onDragMove={(e) =>
                                 handleControlPointDragMove(shape.id, e)
                               }
-                              onDragEnd={handleControlPointDragEnd}
+                              onDragEnd={(e) =>
+                                handleControlPointDragEnd(shape.id, e)
+                              }
                             />
                           </>
                         )}
