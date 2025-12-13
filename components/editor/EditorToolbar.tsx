@@ -1,12 +1,14 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { useEditor } from "./EditorContext";
 import { Tool } from "./types";
+import { generateTiledPDF, generateSVG } from "./export";
 
 export function EditorToolbar() {
-  const { tool, setTool, setShapes, undo, redo, canUndo, canRedo } =
+  const { tool, setTool, setShapes, undo, redo, canUndo, canRedo, shapes, stageRef, showGrid, setShowGrid } =
     useEditor();
+  const [showExportModal, setShowExportModal] = useState(false);
 
   const handleToolChange = (newTool: Tool) => {
     setTool(newTool);
@@ -18,19 +20,52 @@ export function EditorToolbar() {
     }
   };
 
-  return (
-    <aside className="w-12 bg-surface-light dark:bg-surface-dark border-r border-gray-200 dark:border-gray-700 flex flex-col z-10 shadow-subtle shrink-0 items-center py-4 gap-1">
-      <button
-        className="group relative flex items-center justify-center p-2 rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
-        title="Salvar"
-      >
-        <span className="material-symbols-outlined text-[20px]">save</span>
-        <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
-          Salvar
-        </span>
-      </button>
+  const handleExportPDF = async () => {
+    if (!stageRef?.current) {
+      alert("Canvas ainda não está pronto.");
+      return;
+    }
 
-      <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
+    setShowExportModal(false);
+
+    await generateTiledPDF(
+      stageRef.current,
+      shapes,
+      () => setShowGrid(false),
+      () => setShowGrid(true)
+    );
+  };
+
+  const handleExportSVG = () => {
+    setShowExportModal(false);
+    generateSVG(shapes);
+  };
+
+  return (
+    <>
+      <aside className="w-12 bg-surface-light dark:bg-surface-dark border-r border-gray-200 dark:border-gray-700 flex flex-col z-10 shadow-subtle shrink-0 items-center py-4 gap-1">
+        <button
+          className="group relative flex items-center justify-center p-2 rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
+          title="Salvar"
+        >
+          <span className="material-symbols-outlined text-[20px]">save</span>
+          <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
+            Salvar
+          </span>
+        </button>
+
+        <button
+          onClick={() => setShowExportModal(true)}
+          className="group relative flex items-center justify-center p-2 rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
+          title="Exportar"
+        >
+          <span className="material-symbols-outlined text-[20px]">download</span>
+          <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
+            Exportar
+          </span>
+        </button>
+
+        <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
 
       <button
         onClick={undo}
@@ -177,7 +212,73 @@ export function EditorToolbar() {
         <span className="material-symbols-outlined text-[20px]">delete</span>
       </button>
     </aside>
-  );
+
+    {/* Export Modal */}
+    {showExportModal && (
+      <div
+        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+        onClick={() => setShowExportModal(false)}
+      >
+        <div
+          className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
+            Exportar Projeto
+          </h2>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
+            Escolha o formato de exportação:
+          </p>
+
+          <div className="space-y-3">
+            <button
+              onClick={handleExportPDF}
+              className="w-full flex items-start gap-3 p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:border-primary dark:hover:border-primary hover:bg-primary/5 dark:hover:bg-primary/10 transition-all text-left"
+            >
+              <span className="material-symbols-outlined text-primary text-2xl mt-0.5">
+                picture_as_pdf
+              </span>
+              <div>
+                <div className="font-semibold text-gray-900 dark:text-white">
+                  PDF A4 (Multipágina)
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                  Para impressão doméstica. O molde é dividido em páginas A4
+                  que podem ser unidas.
+                </div>
+              </div>
+            </button>
+
+            <button
+              onClick={handleExportSVG}
+              className="w-full flex items-start gap-3 p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:border-primary dark:hover:border-primary hover:bg-primary/5 dark:hover:bg-primary/10 transition-all text-left"
+            >
+              <span className="material-symbols-outlined text-primary text-2xl mt-0.5">
+                code
+              </span>
+              <div>
+                <div className="font-semibold text-gray-900 dark:text-white">
+                  SVG (Vetorial)
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                  Formato vetorial para plotters profissionais ou edição
+                  posterior.
+                </div>
+              </div>
+            </button>
+          </div>
+
+          <button
+            onClick={() => setShowExportModal(false)}
+            className="w-full mt-4 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    )}
+  </>
+);
 }
 
 interface ToolButtonProps {

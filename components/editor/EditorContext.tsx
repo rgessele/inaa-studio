@@ -6,7 +6,9 @@ import React, {
   useState,
   ReactNode,
   useCallback,
+  RefObject,
 } from "react";
+import Konva from "konva";
 import { Tool, Shape } from "./types";
 import { DEFAULT_UNIT, DEFAULT_PIXELS_PER_UNIT } from "./constants";
 import { useHistory } from "./useHistory";
@@ -35,6 +37,10 @@ interface EditorContextType {
   setPixelsPerUnit: (pixels: number) => void;
   showRulers: boolean;
   setShowRulers: (show: boolean) => void;
+  stageRef: RefObject<Konva.Stage | null> | null;
+  setStageRef: (ref: RefObject<Konva.Stage | null>) => void;
+  showGrid: boolean;
+  setShowGrid: (show: boolean) => void;
 }
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
@@ -47,6 +53,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [unit, setUnit] = useState(DEFAULT_UNIT);
   const [pixelsPerUnit, setPixelsPerUnit] = useState(DEFAULT_PIXELS_PER_UNIT);
   const [showRulers, setShowRulers] = useState(true);
+  const [stageRef, setStageRef] = useState<RefObject<Konva.Stage | null> | null>(null);
+  const [showGrid, setShowGrid] = useState(true);
 
   // Use the history hook for shapes
   const {
@@ -93,6 +101,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setPixelsPerUnit,
         showRulers,
         setShowRulers,
+        stageRef,
+        setStageRef,
+        showGrid,
+        setShowGrid,
       }}
     >
       {children}
