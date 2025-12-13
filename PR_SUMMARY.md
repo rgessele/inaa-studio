@@ -8,7 +8,7 @@ Este PR implementa o **Sistema de Seleção e Transformação** completo para o 
 
 ### Funcionalidades Principais
 
-1. **Seleção de Objetos** 
+1. **Seleção de Objetos**
    - Clique em qualquer objeto para selecioná-lo
    - Transformer visual aparece ao redor do objeto
    - Clique no fundo para desselecionar
@@ -34,9 +34,11 @@ Este PR implementa o **Sistema de Seleção e Transformação** completo para o 
 ## 🔧 Mudanças Técnicas
 
 ### Arquivos Modificados
+
 - `components/editor/Canvas.tsx` - Implementação completa do sistema
 
 ### Componentes Adicionados
+
 - **Transformer do Konva** - Componente de transformação visual
 - **Shape Refs Map** - Para rastreamento eficiente de nodes
 - **Event Handlers** - Para drag, transform e controle de curvas
@@ -46,7 +48,6 @@ Este PR implementa o **Sistema de Seleção e Transformação** completo para o 
 1. **Coordenadas Relativas para Linhas/Curvas**
    - Points são relativos a x,y (não absolutos)
    - Permite transformações corretas (rotate, scale)
-   
 2. **Normalização de Escala**
    - Scale resetado para 1 após transformação
    - Dimensões reais atualizadas (width, height, radius, points)
@@ -83,22 +84,26 @@ Criados 4 documentos completos:
 ## ✅ Validação
 
 ### Build & Lint
+
 - ✅ TypeScript compilado com sucesso
 - ✅ 0 novos erros ou warnings
 - ✅ ESLint aprovado
 
 ### Code Review
+
 - ✅ Review automatizada executada
 - ✅ Comentários analisados e endereçados
 - ✅ Padrões do Konva confirmados
 
 ### Security
+
 - ✅ CodeQL checker: **0 alertas**
 - ✅ Nenhuma vulnerabilidade introduzida
 
 ## 🎯 Como Testar
 
 1. **Iniciar o servidor**:
+
    ```bash
    npm run dev
    ```

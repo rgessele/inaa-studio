@@ -14,26 +14,32 @@ Esta implementação adiciona um sistema completo de seleção e transformação
 ### Canvas.tsx
 
 #### Importações Adicionadas
+
 ```typescript
 import { Transformer } from "react-konva";
 ```
 
 #### Novos Refs
+
 - `transformerRef`: Referência ao componente Transformer do Konva
 - `shapeRefs`: Map que armazena referências a todos os shapes renderizados
 
 #### Novo Efeito
+
 Um `useEffect` foi adicionado para sincronizar o transformer com o shape selecionado:
+
 - Quando um shape é selecionado com a ferramenta "select", o transformer se anexa a ele
 - Quando a seleção é removida, o transformer se desanexa
 
 #### Novos Handlers
 
 **handleShapeDragEnd**
+
 - Atualiza a posição (x, y) do shape após o arrasto
 - Sincroniza o estado do shape com a nova posição
 
 **handleShapeTransformEnd**
+
 - Lida com redimensionamento e rotação
 - Para retângulos: atualiza width e height
 - Para círculos: atualiza radius
@@ -44,6 +50,7 @@ Um `useEffect` foi adicionado para sincronizar o transformer com o shape selecio
 #### Modificações nos Shapes
 
 Todos os shapes (Rectangle, Circle, Line) agora incluem:
+
 - `ref`: Callback que registra o node no `shapeRefs` Map
 - `draggable`: Habilitado quando o shape está selecionado e a ferramenta é "select"
 - `rotation`: Aplicado do estado do shape
@@ -53,6 +60,7 @@ Todos os shapes (Rectangle, Circle, Line) agora incluem:
 #### Componente Transformer
 
 Adicionado ao final da Layer com as seguintes configurações:
+
 - **boundBoxFunc**: Limita o redimensionamento mínimo a 5px
 - **enabledAnchors**: 8 âncoras para redimensionamento (cantos, centros das laterais)
 - **rotateEnabled**: true - permite rotação
@@ -85,26 +93,31 @@ Adicionado ao final da Layer com as seguintes configurações:
 ## Comportamento Especial
 
 ### Curvas Bézier
+
 - As curvas mantêm seu ponto de controle editável quando selecionadas
 - O ponto de controle (círculo roxo) também é escalado durante transformações
 - Linhas-guia pontilhadas mostram a relação entre endpoints e ponto de controle
 
 ### Linhas
+
 - As linhas são transformadas escalando seus pontos de início e fim
 - A rotação funciona ao redor do ponto de origem
 
 ### Limitações
+
 - Redimensionamento mínimo de 5px para evitar shapes invisíveis
 - Círculos mantêm proporção 1:1 (apenas uma dimensão de raio)
 
 ## Detalhes Técnicos
 
 ### Performance
+
 - Referências aos shapes são armazenadas em um Map para acesso O(1)
 - O transformer é reutilizado para todos os shapes, mudando apenas os nodes anexados
 - Transformações resetam a escala interna do Konva e aplicam mudanças às dimensões reais
 
 ### Sincronização de Estado
+
 - Drag e Transform eventos atualizam o estado do editor via setShapes
 - O histórico de undo/redo captura essas mudanças automaticamente
 - A posição do stage (pan/zoom) é independente das transformações dos shapes

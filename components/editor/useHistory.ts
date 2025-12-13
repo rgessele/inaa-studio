@@ -8,7 +8,10 @@ interface HistoryState<T> {
 
 interface UseHistoryReturn<T> {
   state: T | null;
-  setState: (newState: T, saveHistory?: boolean) => void;
+  setState: (
+    newState: T | ((prev: T | null) => T),
+    saveHistory?: boolean
+  ) => void;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -25,30 +28,44 @@ export function useHistory<T>(
     future: [],
   });
 
-  const setState = useCallback((newState: T, saveHistory = true) => {
-    if (!saveHistory) {
-      // Update without saving to history (for temporary updates during drawing)
-      setHistory((current) => ({
-        ...current,
-        present: newState,
-      }));
-      return;
-    }
+  const setState = useCallback(
+    (newState: T | ((prev: T | null) => T), saveHistory = true) => {
+      if (!saveHistory) {
+        // Update without saving to history (for temporary updates during drawing)
+        setHistory((current) => {
+          const resolvedState =
+            typeof newState === "function"
+              ? (newState as (prev: T | null) => T)(current.present)
+              : newState;
+          return {
+            ...current,
+            present: resolvedState,
+          };
+        });
+        return;
+      }
 
-    setHistory((current) => {
-      // If there's a present state, save it to past
-      const newPast =
-        current.present !== null
-          ? [...current.past, current.present]
-          : current.past;
+      setHistory((current) => {
+        const resolvedState =
+          typeof newState === "function"
+            ? (newState as (prev: T | null) => T)(current.present)
+            : newState;
 
-      return {
-        past: newPast,
-        present: newState,
-        future: [], // Clear future when new state is set
-      };
-    });
-  }, []);
+        // If there's a present state, save it to past
+        const newPast =
+          current.present !== null
+            ? [...current.past, current.present]
+            : current.past;
+
+        return {
+          past: newPast,
+          present: resolvedState,
+          future: [], // Clear future when new state is set
+        };
+      });
+    },
+    []
+  );
 
   const undo = useCallback(() => {
     setHistory((current) => {

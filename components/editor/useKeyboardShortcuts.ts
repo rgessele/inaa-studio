@@ -30,7 +30,9 @@ export function useKeyboardShortcuts({
       // Don't trigger shortcuts when typing in input fields
       if (isTypingElement(event.target)) return;
 
-      const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+      // Use metaKey for Mac (Cmd key) and ctrlKey for Windows/Linux
+      // Check userAgent for Mac-like platforms
+      const isMac = /Mac|iPhone|iPod|iPad/.test(navigator.userAgent);
       const cmdOrCtrl = isMac ? event.metaKey : event.ctrlKey;
 
       // Undo: Ctrl+Z (or Cmd+Z on Mac)
