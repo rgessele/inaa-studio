@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Stage, Layer, Line, Rect, Circle as KonvaCircle } from "react-konva";
+import {
+  Stage,
+  Layer,
+  Line,
+  Rect,
+  Circle as KonvaCircle,
+  Transformer,
+} from "react-konva";
 import Konva from "konva";
 import { useEditor } from "./EditorContext";
 import { DrawingTool, Shape } from "./types";
@@ -43,6 +50,8 @@ export default function Canvas() {
   const currentShapeIndex = useRef<number>(-1);
   const stageRef = useRef<Konva.Stage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const transformerRef = useRef<Konva.Transformer | null>(null);
+  const shapeRefs = useRef<Map<string, Konva.Node>>(new Map());
 
   // Generate grid lines - 1cm x 1cm squares
   const gridLines = [];
@@ -134,6 +143,22 @@ export default function Canvas() {
   }, [isKeyboardActive]);
 
   const isPanning = tool === "pan" || isSpacePressed || isPanDrag;
+
+  // Attach transformer to selected shape
+  useEffect(() => {
+    if (!transformerRef.current) return;
+
+    if (selectedShapeId && tool === "select") {
+      const selectedNode = shapeRefs.current.get(selectedShapeId);
+      if (selectedNode) {
+        transformerRef.current.nodes([selectedNode]);
+        transformerRef.current.getLayer()?.batchDraw();
+      }
+    } else {
+      transformerRef.current.nodes([]);
+      transformerRef.current.getLayer()?.batchDraw();
+    }
+  }, [selectedShapeId, tool]);
 
   const getRelativePointer = (stage: Konva.Stage) => {
     const pointer = stage.getPointerPosition();
@@ -346,6 +371,78 @@ export default function Canvas() {
     }
   };
 
+  const handleShapeDragEnd = (id: string, e: Konva.KonvaEventObject<DragEvent>) => {
+    const node = e.target;
+    const updatedShapes = shapes.map((shape) => {
+      if (shape.id === id) {
+        return {
+          ...shape,
+          x: node.x(),
+          y: node.y(),
+        };
+      }
+      return shape;
+    });
+    setShapes(updatedShapes);
+  };
+
+  const handleShapeTransformEnd = (id: string, e: Konva.KonvaEventObject<Event>) => {
+    const node = e.target;
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
+
+    // Reset scale to 1 and update width/height/radius instead
+    node.scaleX(1);
+    node.scaleY(1);
+
+    const updatedShapes = shapes.map((shape) => {
+      if (shape.id === id) {
+        const updated = {
+          ...shape,
+          x: node.x(),
+          y: node.y(),
+          rotation: node.rotation(),
+        };
+
+        if (shape.tool === "rectangle") {
+          updated.width = Math.max(5, (shape.width || 0) * scaleX);
+          updated.height = Math.max(5, (shape.height || 0) * scaleY);
+        } else if (shape.tool === "circle") {
+          updated.radius = Math.max(2.5, (shape.radius || 0) * scaleX);
+        } else if (shape.tool === "line" && shape.points) {
+          // Scale line points
+          const scaledPoints = shape.points.map((point, index) => {
+            if (index % 2 === 0) {
+              return point * scaleX;
+            } else {
+              return point * scaleY;
+            }
+          });
+          updated.points = scaledPoints;
+        } else if (shape.tool === "curve" && shape.points && shape.controlPoint) {
+          // Scale curve points and control point
+          const scaledPoints = shape.points.map((point, index) => {
+            if (index % 2 === 0) {
+              return point * scaleX;
+            } else {
+              return point * scaleY;
+            }
+          });
+          updated.points = scaledPoints;
+          updated.controlPoint = {
+            x: shape.controlPoint.x * scaleX,
+            y: shape.controlPoint.y * scaleY,
+          };
+        }
+
+        return updated;
+      }
+      return shape;
+    });
+
+    setShapes(updatedShapes);
+  };
+
   const handleControlPointDragStart = (
     e: Konva.KonvaEventObject<DragEvent>
   ) => {
@@ -502,11 +599,19 @@ export default function Canvas() {
                 const strokeWidth = isSelected
                   ? shape.strokeWidth + 1
                   : shape.strokeWidth;
+                const isDraggable = tool === "select" && isSelected;
 
                 if (shape.tool === "rectangle") {
                   return (
                     <Rect
                       key={shape.id}
+                      ref={(node) => {
+                        if (node) {
+                          shapeRefs.current.set(shape.id, node);
+                        } else {
+                          shapeRefs.current.delete(shape.id);
+                        }
+                      }}
                       x={shape.x}
                       y={shape.y}
                       width={shape.width}
@@ -514,33 +619,59 @@ export default function Canvas() {
                       fill={shape.fill}
                       stroke={stroke}
                       strokeWidth={strokeWidth}
+                      rotation={shape.rotation || 0}
+                      draggable={isDraggable}
                       onClick={() => handleShapeClick(shape.id)}
                       onTap={() => handleShapeClick(shape.id)}
+                      onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
+                      onTransformEnd={(e) => handleShapeTransformEnd(shape.id, e)}
                     />
                   );
                 } else if (shape.tool === "circle") {
                   return (
                     <KonvaCircle
                       key={shape.id}
+                      ref={(node) => {
+                        if (node) {
+                          shapeRefs.current.set(shape.id, node);
+                        } else {
+                          shapeRefs.current.delete(shape.id);
+                        }
+                      }}
                       x={shape.x}
                       y={shape.y}
                       radius={shape.radius}
                       fill={shape.fill}
                       stroke={stroke}
                       strokeWidth={strokeWidth}
+                      rotation={shape.rotation || 0}
+                      draggable={isDraggable}
                       onClick={() => handleShapeClick(shape.id)}
                       onTap={() => handleShapeClick(shape.id)}
+                      onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
+                      onTransformEnd={(e) => handleShapeTransformEnd(shape.id, e)}
                     />
                   );
                 } else if (shape.tool === "line") {
                   return (
                     <Line
                       key={shape.id}
+                      ref={(node) => {
+                        if (node) {
+                          shapeRefs.current.set(shape.id, node);
+                        } else {
+                          shapeRefs.current.delete(shape.id);
+                        }
+                      }}
                       points={shape.points}
                       stroke={stroke}
                       strokeWidth={strokeWidth}
+                      rotation={shape.rotation || 0}
+                      draggable={isDraggable}
                       onClick={() => handleShapeClick(shape.id)}
                       onTap={() => handleShapeClick(shape.id)}
+                      onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
+                      onTransformEnd={(e) => handleShapeTransformEnd(shape.id, e)}
                     />
                   );
                 } else if (shape.tool === "curve") {
@@ -638,6 +769,36 @@ export default function Canvas() {
                 }
                 return null;
               })}
+
+              {/* Transformer for selection and transformation */}
+              <Transformer
+                ref={transformerRef}
+                boundBoxFunc={(oldBox, newBox) => {
+                  // Limit resize to minimum 5px
+                  if (newBox.width < 5 || newBox.height < 5) {
+                    return oldBox;
+                  }
+                  return newBox;
+                }}
+                enabledAnchors={[
+                  "top-left",
+                  "top-right",
+                  "bottom-left",
+                  "bottom-right",
+                  "top-center",
+                  "bottom-center",
+                  "middle-left",
+                  "middle-right",
+                ]}
+                rotateEnabled={true}
+                borderStroke="#673b45"
+                borderStrokeWidth={2}
+                anchorFill="#673b45"
+                anchorStroke="#ffffff"
+                anchorStrokeWidth={2}
+                anchorSize={8}
+                rotateAnchorOffset={20}
+              />
             </Layer>
           </Stage>
 
