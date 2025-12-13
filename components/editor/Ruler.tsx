@@ -10,6 +10,7 @@ interface RulerProps {
 export function Ruler({ orientation }: RulerProps) {
   const { scale, position, unit, pixelsPerUnit } = useEditor();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [canvasSize, setCanvasSize] = React.useState({ width: 0, height: 0 });
   const RULER_SIZE = 24;
   const TICK_SIZE = 10;
   const LABEL_OFFSET = 4;
@@ -107,14 +108,15 @@ export function Ruler({ orientation }: RulerProps) {
 
         // Draw label (rotated for vertical)
         ctx.save();
-        ctx.translate(width - LABEL_OFFSET, screenPos + LABEL_OFFSET);
+        // Position text above the tick (smaller Y) and aligned right
+        ctx.translate(width - LABEL_OFFSET, screenPos - LABEL_OFFSET);
         ctx.rotate(-Math.PI / 2);
         ctx.fillText(labelValue.toString(), 0, 0);
         ctx.restore();
       }
     }
     ctx.stroke();
-  }, [scale, position, orientation, unit, pixelsPerUnit]);
+  }, [scale, position, orientation, unit, pixelsPerUnit, canvasSize]);
 
   // Resize observer to handle window resize
   useEffect(() => {
@@ -127,6 +129,7 @@ export function Ruler({ orientation }: RulerProps) {
     const resizeObserver = new ResizeObserver(() => {
       canvas.width = parent.clientWidth;
       canvas.height = parent.clientHeight;
+      setCanvasSize({ width: parent.clientWidth, height: parent.clientHeight });
     });
 
     resizeObserver.observe(parent);
