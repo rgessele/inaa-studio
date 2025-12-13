@@ -62,7 +62,9 @@ export default async function DashboardPage() {
 
         {error ? (
           <div className="rounded-lg bg-red-50 p-4">
-            <p className="text-red-800">Erro ao carregar projetos: {error.message}</p>
+            <p className="text-red-800">
+              Erro ao carregar projetos: {error.message}
+            </p>
           </div>
         ) : projects && projects.length > 0 ? (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">

@@ -63,7 +63,11 @@ interface EditorContextType {
   setProjectId: (id: string | null) => void;
   projectName: string;
   setProjectName: (name: string) => void;
-  loadProject: (shapes: Shape[], projectId: string, projectName: string) => void;
+  loadProject: (
+    shapes: Shape[],
+    projectId: string,
+    projectName: string
+  ) => void;
 }
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
@@ -91,14 +95,14 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       marginCm: defaultExportSettings.marginCm,
     }
   );
-  
+
   // Store stage reference without triggering re-renders
   const stageRef = useRef<Konva.Stage | null>(null);
-  
+
   const registerStage = useCallback((stage: Konva.Stage | null) => {
     stageRef.current = stage;
   }, []);
-  
+
   const getStage = useCallback(() => {
     return stageRef.current;
   }, []);
@@ -126,16 +130,15 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   );
 
   // Load a project into the editor
-  const loadProject = useCallback((
-    shapes: Shape[],
-    projectId: string,
-    projectName: string
-  ) => {
-    setShapesState(shapes, false); // Load without saving to history
-    setProjectId(projectId);
-    setProjectName(projectName);
-    setSelectedShapeId(null);
-  }, [setShapesState]);
+  const loadProject = useCallback(
+    (shapes: Shape[], projectId: string, projectName: string) => {
+      setShapesState(shapes, false); // Load without saving to history
+      setProjectId(projectId);
+      setProjectName(projectName);
+      setSelectedShapeId(null);
+    },
+    [setShapesState]
+  );
 
   return (
     <EditorContext.Provider
