@@ -183,6 +183,10 @@ export default function Canvas() {
       tool === "pan" ||
       (tool === "select" && isBackground)
     ) {
+      // Deselect if clicking on background with select tool
+      if (tool === "select" && isBackground) {
+        setSelectedShapeId(null);
+      }
       beginPan(stage);
       return;
     }
