@@ -38,11 +38,12 @@ export async function saveProject(
     };
 
     if (projectId) {
-      // Update existing project
+      // Update existing project - ensure user owns it
       const { error } = await supabase
         .from("projects")
         .update(projectData)
-        .eq("id", projectId);
+        .eq("id", projectId)
+        .eq("user_id", user.id);
 
       if (error) {
         console.error("Error updating project:", error);
@@ -94,6 +95,7 @@ export async function loadProject(
       .from("projects")
       .select("*")
       .eq("id", projectId)
+      .eq("user_id", user.id)
       .single();
 
     if (error) {

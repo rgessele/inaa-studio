@@ -21,11 +21,12 @@ export default async function EditorProjectPage({ params }: PageProps) {
 
   const { id } = await params;
 
-  // Fetch the project
+  // Fetch the project - ensure user owns it
   const { data: project, error } = await supabase
     .from("projects")
     .select("*")
     .eq("id", id)
+    .eq("user_id", user.id)
     .single();
 
   if (error || !project) {

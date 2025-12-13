@@ -39,9 +39,7 @@ export function EditorHeader() {
 
     if (result.success && result.projectId) {
       setProjectName(name);
-      if (!projectId) {
-        setProjectId(result.projectId);
-      }
+      setProjectId(result.projectId);
       setToast({
         message: "Projeto salvo com sucesso!",
         type: "success",
