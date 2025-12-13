@@ -7,6 +7,7 @@ Este PR implementa com sucesso o **Sistema de Seleção e Transformação** para
 ## 🎯 Funcionalidades Implementadas
 
 ### 1. **Seleção de Objetos**
+
 - ✅ Clique em qualquer objeto (retângulo, círculo, linha, curva) para selecioná-lo
 - ✅ Ferramenta "Selecionar" (V) no toolbar
 - ✅ Transformer do Konva aparece ao redor do objeto selecionado
@@ -14,12 +15,14 @@ Este PR implementa com sucesso o **Sistema de Seleção e Transformação** para
 - ✅ Feedback visual com cor primária (#673b45)
 
 ### 2. **Movimentação (Drag)**
+
 - ✅ Objetos selecionados podem ser arrastados para qualquer posição
 - ✅ Funciona com todos os tipos de formas
 - ✅ Posição é preservada no estado
 - ✅ Compatível com zoom e pan do canvas
 
 ### 3. **Redimensionamento**
+
 - ✅ 8 âncoras de redimensionamento (4 cantos + 4 laterais)
 - ✅ Âncoras de canto: redimensionamento proporcional
 - ✅ Âncoras laterais: redimensionamento em uma direção
@@ -31,12 +34,14 @@ Este PR implementa com sucesso o **Sistema de Seleção e Transformação** para
   - **Curvas**: array de `points` e `controlPoint` escalados
 
 ### 4. **Rotação**
+
 - ✅ Âncora de rotação (acima do objeto)
 - ✅ Rotação livre em 360 graus
 - ✅ Valor de rotação armazenado em graus
 - ✅ Funciona com todos os tipos de formas
 
 ### 5. **Curvas Bézier - Recurso Especial**
+
 - ✅ Ponto de controle editável permanece disponível quando selecionado
 - ✅ Linhas guia pontilhadas mostram relação com endpoints
 - ✅ Ponto de controle pode ser arrastado independentemente
@@ -47,12 +52,15 @@ Este PR implementa com sucesso o **Sistema de Seleção e Transformação** para
 ### Arquivos Modificados
 
 #### `components/editor/Canvas.tsx`
+
 1. **Importações Adicionadas**
+
    ```typescript
    import { Transformer } from "react-konva";
    ```
 
 2. **Novos Refs**
+
    ```typescript
    const transformerRef = useRef<Konva.Transformer | null>(null);
    const shapeRefs = useRef<Map<string, Konva.Node>>(new Map());
@@ -93,6 +101,7 @@ Este PR implementa com sucesso o **Sistema de Seleção e Transformação** para
 **Problema Original**: Linhas e curvas usavam coordenadas absolutas, tornando transformações impossíveis.
 
 **Solução Implementada**:
+
 ```typescript
 // Criação de linha/curva
 points: [0, 0]  // Ponto inicial relativo a x,y
@@ -107,6 +116,7 @@ points: [0, 0, endX - startX, endY - startY]  // Pontos relativos
 ```
 
 Isso permite que transformações do Konva funcionem corretamente porque:
+
 - `x, y` define a origem da forma
 - `points` são relativos a essa origem
 - Rotação, escala e arrasto funcionam naturalmente
@@ -114,6 +124,7 @@ Isso permite que transformações do Konva funcionem corretamente porque:
 ### Normalização de Escala
 
 Após cada transformação, o código:
+
 1. Captura `scaleX` e `scaleY` do node
 2. Aplica escala às dimensões reais (width, height, radius, points)
 3. Reseta scale para 1
@@ -124,27 +135,32 @@ Isso mantém o modelo de dados limpo e evita acumulação de valores de escala.
 ## 📊 Testes e Validação
 
 ### ✅ Build
+
 - Compilação TypeScript: **Sucesso**
 - Sem erros de tipo
 - Sem warnings adicionais
 
 ### ✅ Lint
+
 - ESLint: **Aprovado**
 - Sem novos warnings ou erros
 - Código segue convenções do projeto
 
 ### ✅ Code Review
+
 - Review automatizada executada
 - Comentários analisados e endereçados
 - Confirmado: uso de x,y em Lines é correto (padrão Konva)
 
 ### ✅ Security
+
 - CodeQL checker: **0 alertas**
 - Nenhuma vulnerabilidade de segurança introduzida
 
 ## 📚 Documentação Criada
 
 ### 1. `SELECTION_TRANSFORMATION_GUIDE.md`
+
 - Guia completo para usuários
 - Documentação técnica da implementação
 - Como usar cada funcionalidade
@@ -152,6 +168,7 @@ Isso mantém o modelo de dados limpo e evita acumulação de valores de escala.
 - Limitações conhecidas
 
 ### 2. `TESTING_TRANSFORMATION.md`
+
 - Checklist completo de testes
 - Casos de teste específicos para cada tipo de forma
 - Testes de integração
@@ -161,6 +178,7 @@ Isso mantém o modelo de dados limpo e evita acumulação de valores de escala.
 ## 🎨 Experiência do Usuário
 
 ### Feedback Visual
+
 - Objeto selecionado: Borda destacada com cor primária
 - Transformer: Bordas e âncoras em #673b45
 - Cursor: Muda para "default" com ferramenta select
@@ -168,6 +186,7 @@ Isso mantém o modelo de dados limpo e evita acumulação de valores de escala.
 - Âncora de rotação: 20px acima do objeto
 
 ### Interatividade
+
 - Transformações em tempo real
 - Sem lag ou atraso visível
 - Funciona suavemente com zoom/pan
@@ -176,6 +195,7 @@ Isso mantém o modelo de dados limpo e evita acumulação de valores de escala.
 ## 🔄 Integração com Sistema Existente
 
 ### Compatibilidade
+
 - ✅ Sistema de Undo/Redo: Funciona automaticamente
 - ✅ Zoom: Transformações independentes do nível de zoom
 - ✅ Pan: Transformações em coordenadas de mundo
@@ -184,6 +204,7 @@ Isso mantém o modelo de dados limpo e evita acumulação de valores de escala.
 - ✅ Outros tools: Seleção só ativa com tool "select"
 
 ### Sem Quebras
+
 - ✅ Nenhuma funcionalidade existente foi quebrada
 - ✅ Desenho de novas formas continua funcionando
 - ✅ Controle de curva via ponto de controle preservado
@@ -218,15 +239,19 @@ Isso mantém o modelo de dados limpo e evita acumulação de valores de escala.
 ## 🎓 Aprendizados e Decisões de Design
 
 ### Por que Coordenadas Relativas?
+
 Linhas e curvas precisam de coordenadas relativas para que transformações funcionem. Se usássemos coordenadas absolutas, seria impossível rotar ou escalar corretamente.
 
 ### Por que Resetar Scale?
+
 Manter scale em 1 e aplicar mudanças às dimensões reais mantém o modelo de dados consistente e previsível. Evita bugs de escala acumulativa.
 
 ### Por que Um Único Transformer?
+
 Performance. Reutilizar o mesmo transformer e apenas mudar os nodes anexados é muito mais eficiente que criar/destruir transformers.
 
 ### Por que shapeRefs Map?
+
 Acesso O(1) aos nodes do Konva por ID. Necessário para anexar o transformer ao node correto rapidamente.
 
 ## ✨ Conclusão

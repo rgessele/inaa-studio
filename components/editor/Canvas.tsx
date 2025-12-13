@@ -250,7 +250,7 @@ export default function Canvas() {
 
     currentShape.current = newShape;
     currentShapeIndex.current = shapes.length;
-    setShapes([...shapes, newShape]);
+    setShapes([...shapes, newShape], false); // Don't save to history yet (temporary)
   };
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -302,7 +302,7 @@ export default function Canvas() {
       };
     }
 
-    setShapes(updatedShapes);
+    setShapes(updatedShapes, false); // Don't save to history during drawing
   };
 
   const handleStageEnter = () => {
@@ -315,6 +315,13 @@ export default function Canvas() {
   };
 
   const handleMouseUp = () => {
+    // If we were drawing, save the final state to history
+    if (isDrawing.current && currentShape.current) {
+      // Use identity function to capture and save current state to history
+      // (previous updates used saveHistory=false, so we need to commit to history now)
+      setShapes((current) => current, true);
+    }
+
     isDrawing.current = false;
     currentShape.current = null;
     currentShapeIndex.current = -1;
@@ -373,7 +380,10 @@ export default function Canvas() {
     }
   };
 
-  const handleShapeDragEnd = (id: string, e: Konva.KonvaEventObject<DragEvent>) => {
+  const handleShapeDragEnd = (
+    id: string,
+    e: Konva.KonvaEventObject<DragEvent>
+  ) => {
     const node = e.target;
     const updatedShapes = shapes.map((shape) => {
       if (shape.id === id) {
@@ -389,7 +399,10 @@ export default function Canvas() {
     setShapes(updatedShapes);
   };
 
-  const handleShapeTransformEnd = (id: string, e: Konva.KonvaEventObject<Event>) => {
+  const handleShapeTransformEnd = (
+    id: string,
+    e: Konva.KonvaEventObject<Event>
+  ) => {
     const node = e.target;
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();
@@ -422,7 +435,11 @@ export default function Canvas() {
             }
           });
           updated.points = scaledPoints;
-        } else if (shape.tool === "curve" && shape.points && shape.controlPoint) {
+        } else if (
+          shape.tool === "curve" &&
+          shape.points &&
+          shape.controlPoint
+        ) {
           // Scale curve points and control point
           const scaledPoints = shape.points.map((point, index) => {
             if (index % 2 === 0) {
@@ -636,7 +653,9 @@ export default function Canvas() {
                       onClick={() => handleShapeClick(shape.id)}
                       onTap={() => handleShapeClick(shape.id)}
                       onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
-                      onTransformEnd={(e) => handleShapeTransformEnd(shape.id, e)}
+                      onTransformEnd={(e) =>
+                        handleShapeTransformEnd(shape.id, e)
+                      }
                     />
                   );
                 } else if (shape.tool === "circle") {
@@ -661,7 +680,9 @@ export default function Canvas() {
                       onClick={() => handleShapeClick(shape.id)}
                       onTap={() => handleShapeClick(shape.id)}
                       onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
-                      onTransformEnd={(e) => handleShapeTransformEnd(shape.id, e)}
+                      onTransformEnd={(e) =>
+                        handleShapeTransformEnd(shape.id, e)
+                      }
                     />
                   );
                 } else if (shape.tool === "line") {
@@ -685,7 +706,9 @@ export default function Canvas() {
                       onClick={() => handleShapeClick(shape.id)}
                       onTap={() => handleShapeClick(shape.id)}
                       onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
-                      onTransformEnd={(e) => handleShapeTransformEnd(shape.id, e)}
+                      onTransformEnd={(e) =>
+                        handleShapeTransformEnd(shape.id, e)
+                      }
                     />
                   );
                 } else if (shape.tool === "curve") {
@@ -743,7 +766,9 @@ export default function Canvas() {
                           onClick={() => handleShapeClick(shape.id)}
                           onTap={() => handleShapeClick(shape.id)}
                           onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
-                          onTransformEnd={(e) => handleShapeTransformEnd(shape.id, e)}
+                          onTransformEnd={(e) =>
+                            handleShapeTransformEnd(shape.id, e)
+                          }
                         />
                         {/* Show control point anchor when selected */}
                         {isSelected && (
