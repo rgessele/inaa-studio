@@ -130,8 +130,8 @@ inaa-studio/
 ### Migrations
 
 - SQL migrations located in `supabase/migrations/`
-- Follow timestamp naming: `YYYYMMDDHHMMSS_description.sql`
-- See `supabase/migrations/20231213000000_initial_schema.sql` for reference
+- Follow timestamp naming convention: `YYYYMMDDHHMMSS_description.sql`
+- Refer to existing migration files for examples and patterns
 
 ## Component Patterns
 
