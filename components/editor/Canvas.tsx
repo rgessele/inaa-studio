@@ -39,7 +39,7 @@ export default function Canvas() {
     selectedShapeId,
     setSelectedShapeId,
     showRulers,
-    setStageRef,
+    registerStage,
     showGrid,
   } = useEditor();
 
@@ -107,8 +107,8 @@ export default function Canvas() {
 
   // Register stage ref with context
   useEffect(() => {
-    setStageRef(stageRef);
-  }, [setStageRef]);
+    registerStage(stageRef.current);
+  }, [registerStage]);
 
   useEffect(() => {
     const isTypingElement = (target: EventTarget | null) => {

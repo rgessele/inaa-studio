@@ -337,10 +337,10 @@ export function generateSVG(shapes: Shape[]): void {
     const fill = shape.fill || "none";
     const opacity = shape.opacity !== undefined ? shape.opacity : 1;
 
-    if (shape.tool === "rectangle") {
+    if (shape.tool === "rectangle" && shape.width && shape.height) {
       svgContent += `  <rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" `;
       svgContent += `stroke="${stroke}" stroke-width="${strokeWidth}" fill="${fill}" opacity="${opacity}" />\n`;
-    } else if (shape.tool === "circle") {
+    } else if (shape.tool === "circle" && shape.radius) {
       svgContent += `  <circle cx="${shape.x}" cy="${shape.y}" r="${shape.radius}" `;
       svgContent += `stroke="${stroke}" stroke-width="${strokeWidth}" fill="${fill}" opacity="${opacity}" />\n`;
     } else if (shape.tool === "line" && shape.points) {

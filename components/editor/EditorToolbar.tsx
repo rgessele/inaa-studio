@@ -6,7 +6,7 @@ import { Tool } from "./types";
 import { generateTiledPDF, generateSVG } from "./export";
 
 export function EditorToolbar() {
-  const { tool, setTool, setShapes, undo, redo, canUndo, canRedo, shapes, stageRef, showGrid, setShowGrid } =
+  const { tool, setTool, setShapes, undo, redo, canUndo, canRedo, shapes, getStage, showGrid, setShowGrid } =
     useEditor();
   const [showExportModal, setShowExportModal] = useState(false);
 
@@ -21,7 +21,8 @@ export function EditorToolbar() {
   };
 
   const handleExportPDF = async () => {
-    if (!stageRef?.current) {
+    const stage = getStage();
+    if (!stage) {
       alert("Canvas ainda não está pronto.");
       return;
     }
@@ -29,7 +30,7 @@ export function EditorToolbar() {
     setShowExportModal(false);
 
     await generateTiledPDF(
-      stageRef.current,
+      stage,
       shapes,
       () => setShowGrid(false),
       () => setShowGrid(true)
