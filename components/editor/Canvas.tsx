@@ -317,7 +317,8 @@ export default function Canvas() {
   const handleMouseUp = () => {
     // If we were drawing, save the final state to history
     if (isDrawing.current && currentShape.current) {
-      // Use function form to get the latest state and save it to history
+      // Use identity function to capture and save current state to history
+      // (previous updates used saveHistory=false, so we need to commit to history now)
       setShapes((current) => current, true);
     }
 
