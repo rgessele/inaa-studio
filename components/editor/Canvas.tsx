@@ -5,6 +5,7 @@ import { Stage, Layer, Line, Rect, Circle as KonvaCircle } from "react-konva";
 import Konva from "konva";
 import { useEditor } from "./EditorContext";
 import { DrawingTool, Shape } from "./types";
+import { GRID_SIZE_PX } from "./constants";
 
 import { Ruler } from "./Ruler";
 
@@ -16,7 +17,6 @@ const ZOOM_FACTOR = 1.08;
 const DEFAULT_STROKE = "#e5e7eb"; // Light stroke for dark mode
 const DEFAULT_FILL = "transparent";
 const WORKSPACE_BACKGROUND = "#121212"; // Dark background
-const GRID_SIZE = 20;
 const GRID_COLOR = "rgba(255, 255, 255, 0.05)";
 const CONTROL_POINT_RADIUS = 6; // Radius for control point anchor
 
@@ -44,13 +44,13 @@ export default function Canvas() {
   const stageRef = useRef<Konva.Stage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Generate grid lines
+  // Generate grid lines - 1cm x 1cm squares
   const gridLines = [];
-  const numLines = WORKSPACE_SIZE / GRID_SIZE;
+  const numLines = Math.ceil(WORKSPACE_SIZE / GRID_SIZE_PX);
   const offset = WORKSPACE_SIZE / 2;
 
   for (let i = 0; i <= numLines; i++) {
-    const pos = i * GRID_SIZE - offset;
+    const pos = i * GRID_SIZE_PX - offset;
     // Vertical lines
     gridLines.push(
       <Line
@@ -346,7 +346,9 @@ export default function Canvas() {
     }
   };
 
-  const handleControlPointDragStart = (e: Konva.KonvaEventObject<DragEvent>) => {
+  const handleControlPointDragStart = (
+    e: Konva.KonvaEventObject<DragEvent>
+  ) => {
     e.cancelBubble = true;
   };
 

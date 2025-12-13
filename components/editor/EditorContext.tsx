@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, ReactNode } from "react";
 import { Tool, Shape } from "./types";
+import { DEFAULT_UNIT, DEFAULT_PIXELS_PER_UNIT } from "./constants";
 
 interface EditorContextType {
   tool: Tool;
@@ -34,8 +35,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [unit, setUnit] = useState("px");
-  const [pixelsPerUnit, setPixelsPerUnit] = useState(1);
+  const [unit, setUnit] = useState(DEFAULT_UNIT);
+  const [pixelsPerUnit, setPixelsPerUnit] = useState(DEFAULT_PIXELS_PER_UNIT);
   const [showRulers, setShowRulers] = useState(true);
 
   // History for undo/redo

@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { useEditor } from "./EditorContext";
+import { PX_PER_CM, PX_PER_MM, PX_PER_IN } from "./constants";
 
 export function UnitSettings() {
   const {
@@ -28,16 +29,20 @@ export function UnitSettings() {
     };
   }, []);
 
-  // Update pixels per unit when unit changes to reasonable defaults if it's 1 (default)
-  // This is a helper to make switching easier, but user can override
-  useEffect(() => {
-    if (pixelsPerUnit === 1) {
-      if (unit === "cm")
-        setPixelsPerUnit(37.8); // approx 96 DPI / 2.54
-      else if (unit === "mm") setPixelsPerUnit(3.78);
-      else if (unit === "in") setPixelsPerUnit(96);
+  // Update pixels per unit when unit changes
+  const handleUnitChange = (newUnit: string) => {
+    setUnit(newUnit);
+    // Set accurate conversion constants
+    if (newUnit === "cm") {
+      setPixelsPerUnit(PX_PER_CM);
+    } else if (newUnit === "mm") {
+      setPixelsPerUnit(PX_PER_MM);
+    } else if (newUnit === "in") {
+      setPixelsPerUnit(PX_PER_IN);
+    } else if (newUnit === "px") {
+      setPixelsPerUnit(1);
     }
-  }, [unit, pixelsPerUnit, setPixelsPerUnit]);
+  };
 
   return (
     <div className="relative" ref={menuRef}>
@@ -79,7 +84,7 @@ export function UnitSettings() {
               </label>
               <select
                 value={unit}
-                onChange={(e) => setUnit(e.target.value)}
+                onChange={(e) => handleUnitChange(e.target.value)}
                 className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 <option value="px">Pixels (px)</option>
