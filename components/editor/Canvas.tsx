@@ -8,53 +8,38 @@ import {
   Rect,
   Circle as KonvaCircle,
 } from "react-konva";
-import {
-  Circle as CircleIcon,
-  Hand,
-  LineChart,
-  MousePointer2,
-  Square,
-  Trash2,
-} from "lucide-react";
 import Konva from "konva";
+import { useEditor } from "./EditorContext";
+import { DrawingTool, Shape } from "./types";
 
-export interface CanvasProps {
-  width?: number;
-  height?: number;
-}
-
-type DrawingTool = "rectangle" | "circle" | "line";
-type Tool = DrawingTool | "select" | "pan";
-
-interface Shape {
-  id: string;
-  tool: DrawingTool;
-  x: number;
-  y: number;
-  width?: number;
-  height?: number;
-  radius?: number;
-  points?: number[];
-  stroke: string;
-  strokeWidth: number;
-  fill?: string;
-}
+import { Ruler } from "./Ruler";
 
 // Large virtual area to keep the background visible while navigating the canvas.
-const WORKSPACE_SIZE = 4000;
-const MIN_ZOOM_SCALE = 0.25;
-const MAX_ZOOM_SCALE = 6;
+const WORKSPACE_SIZE = 8000; // Increased size
+const MIN_ZOOM_SCALE = 0.1;
+const MAX_ZOOM_SCALE = 10;
 const ZOOM_FACTOR = 1.08;
-const DEFAULT_STROKE = "#111827";
-const DEFAULT_FILL = "#e5e7eb";
-const WORKSPACE_BACKGROUND = "#f8fafc";
+const DEFAULT_STROKE = "#e5e7eb"; // Light stroke for dark mode
+const DEFAULT_FILL = "transparent";
+const WORKSPACE_BACKGROUND = "#121212"; // Dark background
+const GRID_SIZE = 20;
+const GRID_COLOR = "rgba(255, 255, 255, 0.05)";
 
-export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
-  const [tool, setTool] = useState<Tool>("select");
-  const [shapes, setShapes] = useState<Shape[]>([]);
-  const [stageScale, setStageScale] = useState(1);
-  const [stagePosition, setStagePosition] = useState({ x: 0, y: 0 });
-  const [stageSize, setStageSize] = useState({ width, height });
+export default function Canvas() {
+  const {
+    tool,
+    shapes,
+    setShapes,
+    scale: stageScale,
+    setScale: setStageScale,
+    position: stagePosition,
+    setPosition: setStagePosition,
+    selectedShapeId,
+    setSelectedShapeId,
+    showRulers,
+  } = useEditor();
+
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isKeyboardActive, setIsKeyboardActive] = useState(false);
   const [isPanDrag, setIsPanDrag] = useState(false);
@@ -63,6 +48,35 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
   const currentShapeIndex = useRef<number>(-1);
   const stageRef = useRef<Konva.Stage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Generate grid lines
+  const gridLines = [];
+  const numLines = WORKSPACE_SIZE / GRID_SIZE;
+  const offset = WORKSPACE_SIZE / 2;
+
+  for (let i = 0; i <= numLines; i++) {
+    const pos = i * GRID_SIZE - offset;
+    // Vertical lines
+    gridLines.push(
+      <Line
+        key={`v-${i}`}
+        points={[pos, -offset, pos, offset]}
+        stroke={GRID_COLOR}
+        strokeWidth={1}
+        listening={false}
+      />
+    );
+    // Horizontal lines
+    gridLines.push(
+      <Line
+        key={`h-${i}`}
+        points={[-offset, pos, offset, pos]}
+        stroke={GRID_COLOR}
+        strokeWidth={1}
+        listening={false}
+      />
+    );
+  }
 
   // Space-bar panning needs preventDefault to avoid page scroll, so listeners are active only while the canvas is active.
   useEffect(() => {
@@ -126,10 +140,6 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
 
   const isPanning = tool === "pan" || isSpacePressed || isPanDrag;
 
-  const clearCanvas = () => {
-    setShapes([]);
-  };
-
   const getRelativePointer = (stage: Konva.Stage) => {
     const pointer = stage.getPointerPosition();
     if (!pointer) return null;
@@ -182,14 +192,20 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
       return;
     }
 
-    if (tool === "select") return;
+    if (tool === "select") {
+        // Handle selection logic here if needed, Konva handles click on shapes usually
+        if (isBackground) {
+            setSelectedShapeId(null);
+        }
+        return;
+    }
 
     const pos = getRelativePointer(stage);
     if (!pos) return;
 
     isDrawing.current = true;
 
-    const drawTool: DrawingTool = tool;
+    const drawTool: DrawingTool = tool as DrawingTool;
     const newShape: Shape = {
       id: crypto.randomUUID(),
       tool: drawTool,
@@ -275,7 +291,7 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
       if (stageRef.current?.isDragging()) {
         stageRef.current.stopDrag();
       }
-      stageRef.current?.draggable(tool === "pan" || isSpacePressed);
+      stageRef.current?.draggable(false);
     }
   };
 
@@ -315,6 +331,12 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
     setStagePosition({ x: stage.x(), y: stage.y() });
   };
 
+  const handleShapeClick = (id: string) => {
+      if (tool === 'select') {
+          setSelectedShapeId(id);
+      }
+  }
+
   const cursor =
     tool === "pan" || isSpacePressed || isPanDrag
       ? isPanDrag
@@ -324,127 +346,31 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
         ? "default"
         : "crosshair";
 
-  const tools: {
-    id: Tool;
-    label: string;
-    description: string;
-    icon: typeof MousePointer2;
-  }[] = [
-    {
-      id: "select",
-      label: "Selecionar",
-      description: "Selecionar e arrastar objetos",
-      icon: MousePointer2,
-    },
-    {
-      id: "pan",
-      label: "Mover",
-      description: "Segure espaço ou botão do meio e arraste",
-      icon: Hand,
-    },
-    {
-      id: "rectangle",
-      label: "Retângulo",
-      description: "Clique e arraste para desenhar retângulos",
-      icon: Square,
-    },
-    {
-      id: "circle",
-      label: "Círculo",
-      description: "Clique e arraste para desenhar círculos",
-      icon: CircleIcon,
-    },
-    {
-      id: "line",
-      label: "Linha",
-      description: "Clique e arraste para desenhar linhas",
-      icon: LineChart,
-    },
-  ] as const;
-
-  const zoomLabel = `${Math.round(stageScale * 100)}%`;
+  const RULER_THICKNESS = 24;
 
   return (
-    <div className="flex h-full w-full gap-4">
-      <div className="flex w-64 flex-col rounded-2xl bg-white p-4 shadow">
-        <div className="mb-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Ferramentas
-          </p>
-          <p className="text-sm text-gray-600">
-            Pan (espaço/botão do meio) e Zoom com scroll.
-          </p>
+    <div ref={containerRef} className="h-full w-full bg-canvas-bg dark:bg-canvas-bg-dark relative flex flex-col">
+      {showRulers && (
+        <div className="flex h-6 shrink-0 z-10 bg-surface-light dark:bg-surface-dark border-b border-gray-200 dark:border-gray-700">
+          <div className="w-6 shrink-0 border-r border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark z-20"></div>
+          <div className="flex-1 relative overflow-hidden">
+             <Ruler orientation="horizontal" />
+          </div>
         </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          {tools.map((item) => {
-            const Icon = item.icon;
-            const isActive = tool === item.id;
-
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTool(item.id)}
-                title={item.description}
-                aria-label={item.description}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition ${
-                  isActive
-                    ? "border-blue-500 bg-blue-50 text-blue-700"
-                    : "border-gray-200 bg-gray-50 text-gray-700 hover:border-blue-200 hover:bg-blue-50"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                <span className="text-xs font-medium">{item.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-4 flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700">
-          <span className="font-medium">Zoom</span>
-          <span className="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-800 shadow-inner">
-            {zoomLabel}
-          </span>
-        </div>
-
-        <div className="mt-4 space-y-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-600">
-          <p>
-            <span className="font-semibold text-gray-700">Pan:</span> espaço ou
-            botão do meio + arrastar.
-          </p>
-          <p>
-            <span className="font-semibold text-gray-700">Zoom:</span> roda do
-            mouse focada no cursor.
-          </p>
-          <p>
-            <span className="font-semibold text-gray-700">Dicas:</span>{" "}
-            arraste o fundo vazio para navegar.
-          </p>
-        </div>
-
-        <div className="mt-4 flex items-center justify-between text-sm text-gray-700">
-          <span>
-            Formas: <span className="font-semibold">{shapes.length}</span>
-          </span>
-          <button
-            type="button"
-            onClick={clearCanvas}
-            className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100"
-            title="Limpar todas as formas"
-          >
-            <Trash2 className="h-4 w-4" />
-            Limpar
-          </button>
-        </div>
-      </div>
-
-      <div className="relative flex-1 min-h-0 overflow-hidden rounded-2xl bg-white shadow">
-        <div ref={containerRef} className="h-full w-full">
+      )}
+      
+      <div className="flex-1 flex min-h-0 relative">
+        {showRulers && (
+          <div className="w-6 shrink-0 h-full border-r border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark z-10 relative overflow-hidden">
+            <Ruler orientation="vertical" />
+          </div>
+        )}
+        
+        <div className="flex-1 relative overflow-hidden">
           <Stage
             ref={stageRef}
-            width={stageSize.width}
-            height={stageSize.height}
+            width={stageSize.width - (showRulers ? RULER_THICKNESS : 0)}
+            height={stageSize.height - (showRulers ? RULER_THICKNESS : 0)}
             scaleX={stageScale}
             scaleY={stageScale}
             x={stagePosition.x}
@@ -470,8 +396,15 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
                 fill={WORKSPACE_BACKGROUND}
                 name="workspace-background"
               />
+              
+              {/* Grid lines */}
+              {gridLines}
 
               {shapes.map((shape) => {
+                const isSelected = shape.id === selectedShapeId;
+                const stroke = isSelected ? "#673b45" : shape.stroke; // Primary color for selection
+                const strokeWidth = isSelected ? shape.strokeWidth + 1 : shape.strokeWidth;
+
                 if (shape.tool === "rectangle") {
                   return (
                     <Rect
@@ -481,8 +414,10 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
                       width={shape.width}
                       height={shape.height}
                       fill={shape.fill}
-                      stroke={shape.stroke}
-                      strokeWidth={shape.strokeWidth}
+                      stroke={stroke}
+                      strokeWidth={strokeWidth}
+                      onClick={() => handleShapeClick(shape.id)}
+                      onTap={() => handleShapeClick(shape.id)}
                     />
                   );
                 } else if (shape.tool === "circle") {
@@ -493,8 +428,10 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
                       y={shape.y}
                       radius={shape.radius}
                       fill={shape.fill}
-                      stroke={shape.stroke}
-                      strokeWidth={shape.strokeWidth}
+                      stroke={stroke}
+                      strokeWidth={strokeWidth}
+                      onClick={() => handleShapeClick(shape.id)}
+                      onTap={() => handleShapeClick(shape.id)}
                     />
                   );
                 } else if (shape.tool === "line") {
@@ -502,8 +439,10 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
                     <Line
                       key={shape.id}
                       points={shape.points}
-                      stroke={shape.stroke}
-                      strokeWidth={shape.strokeWidth}
+                      stroke={stroke}
+                      strokeWidth={strokeWidth}
+                      onClick={() => handleShapeClick(shape.id)}
+                      onTap={() => handleShapeClick(shape.id)}
                     />
                   );
                 }
@@ -511,6 +450,11 @@ export default function Canvas({ width = 800, height = 600 }: CanvasProps) {
               })}
             </Layer>
           </Stage>
+          
+          {/* Overlay UI elements like zoom level could go here if not in toolbar */}
+          <div className="absolute bottom-4 left-4 bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 rounded px-2 py-1 text-xs text-text-muted dark:text-text-muted-dark shadow-sm pointer-events-none">
+              {Math.round(stageScale * 100)}%
+          </div>
         </div>
       </div>
     </div>
