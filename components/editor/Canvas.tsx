@@ -238,8 +238,8 @@ export default function Canvas() {
       width: 0,
       height: 0,
       radius: 0,
-      points: drawTool === "line" || drawTool === "curve" ? [pos.x, pos.y] : [],
-      controlPoint: drawTool === "curve" ? { x: pos.x, y: pos.y } : undefined,
+      points: drawTool === "line" || drawTool === "curve" ? [0, 0] : [],
+      controlPoint: drawTool === "curve" ? { x: 0, y: 0 } : undefined,
       stroke: DEFAULT_STROKE,
       strokeWidth: 2,
       fill:
@@ -287,15 +287,17 @@ export default function Canvas() {
     } else if (lastShape.tool === "line") {
       updatedShapes[shapeIndex] = {
         ...lastShape,
-        points: [lastShape.x, lastShape.y, pos.x, pos.y],
+        points: [0, 0, pos.x - lastShape.x, pos.y - lastShape.y],
       };
     } else if (lastShape.tool === "curve") {
-      // Calculate midpoint for control point
-      const midX = (lastShape.x + pos.x) / 2;
-      const midY = (lastShape.y + pos.y) / 2;
+      // Calculate midpoint for control point (relative to shape origin)
+      const endX = pos.x - lastShape.x;
+      const endY = pos.y - lastShape.y;
+      const midX = endX / 2;
+      const midY = endY / 2;
       updatedShapes[shapeIndex] = {
         ...lastShape,
-        points: [lastShape.x, lastShape.y, pos.x, pos.y],
+        points: [0, 0, endX, endY],
         controlPoint: { x: midX, y: midY },
       };
     }
@@ -375,11 +377,12 @@ export default function Canvas() {
     const node = e.target;
     const updatedShapes = shapes.map((shape) => {
       if (shape.id === id) {
-        return {
+        const updated = {
           ...shape,
           x: node.x(),
           y: node.y(),
         };
+        return updated;
       }
       return shape;
     });
@@ -458,12 +461,16 @@ export default function Canvas() {
     if (!stage) return;
 
     const circle = e.target as Konva.Circle;
-    const cx = circle.x();
-    const cy = circle.y();
+    const absoluteCx = circle.x();
+    const absoluteCy = circle.y();
 
     // Find the shape to get start/end points
     const shape = shapes.find((s) => s.id === shapeId);
     if (!shape || !shape.points || shape.points.length < 4) return;
+
+    // Convert to relative coordinates
+    const cx = absoluteCx - shape.x;
+    const cy = absoluteCy - shape.y;
 
     const x1 = shape.points[0];
     const y1 = shape.points[1];
@@ -496,12 +503,12 @@ export default function Canvas() {
 
       const guide1 = layer.findOne(`.guide1-${shapeId}`) as Konva.Line;
       if (guide1) {
-        guide1.points([x1, y1, cx, cy]);
+        guide1.points([shape.x + x1, shape.y + y1, absoluteCx, absoluteCy]);
       }
 
       const guide2 = layer.findOne(`.guide2-${shapeId}`) as Konva.Line;
       if (guide2) {
-        guide2.points([cx, cy, x2, y2]);
+        guide2.points([absoluteCx, absoluteCy, shape.x + x2, shape.y + y2]);
       }
     }
   };
@@ -512,13 +519,18 @@ export default function Canvas() {
   ) => {
     e.cancelBubble = true;
     const circle = e.target as Konva.Circle;
-    const pos = { x: circle.x(), y: circle.y() };
+    const absoluteX = circle.x();
+    const absoluteY = circle.y();
 
     const updatedShapes = shapes.map((shape) => {
       if (shape.id === shapeId && shape.tool === "curve") {
+        // Convert to relative coordinates
         return {
           ...shape,
-          controlPoint: pos,
+          controlPoint: {
+            x: absoluteX - shape.x,
+            y: absoluteY - shape.y,
+          },
         };
       }
       return shape;
@@ -708,15 +720,28 @@ export default function Canvas() {
                       <>
                         <Line
                           key={shape.id}
+                          ref={(node) => {
+                            if (node) {
+                              shapeRefs.current.set(shape.id, node);
+                            } else {
+                              shapeRefs.current.delete(shape.id);
+                            }
+                          }}
                           name={`curve-${shape.id}`}
+                          x={shape.x}
+                          y={shape.y}
                           points={curvePoints}
                           stroke={stroke}
                           strokeWidth={strokeWidth}
+                          rotation={shape.rotation || 0}
                           tension={0}
                           lineCap="round"
                           lineJoin="round"
+                          draggable={isDraggable}
                           onClick={() => handleShapeClick(shape.id)}
                           onTap={() => handleShapeClick(shape.id)}
+                          onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
+                          onTransformEnd={(e) => handleShapeTransformEnd(shape.id, e)}
                         />
                         {/* Show control point anchor when selected */}
                         {isSelected && (
@@ -725,7 +750,12 @@ export default function Canvas() {
                             <Line
                               key={`${shape.id}-guide1`}
                               name={`guide1-${shape.id}`}
-                              points={[x1, y1, cx, cy]}
+                              points={[
+                                shape.x + x1,
+                                shape.y + y1,
+                                shape.x + cx,
+                                shape.y + cy,
+                              ]}
                               stroke="#673b45"
                               strokeWidth={1}
                               dash={[5, 5]}
@@ -736,7 +766,12 @@ export default function Canvas() {
                             <Line
                               key={`${shape.id}-guide2`}
                               name={`guide2-${shape.id}`}
-                              points={[cx, cy, x2, y2]}
+                              points={[
+                                shape.x + cx,
+                                shape.y + cy,
+                                shape.x + x2,
+                                shape.y + y2,
+                              ]}
                               stroke="#673b45"
                               strokeWidth={1}
                               dash={[5, 5]}
@@ -746,8 +781,8 @@ export default function Canvas() {
                             {/* Draggable control point anchor */}
                             <KonvaCircle
                               key={`${shape.id}-control`}
-                              x={cx}
-                              y={cy}
+                              x={shape.x + cx}
+                              y={shape.y + cy}
                               radius={CONTROL_POINT_RADIUS}
                               fill="#673b45"
                               stroke="#ffffff"
