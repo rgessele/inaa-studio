@@ -2,6 +2,7 @@
 
 import React from "react";
 import { UnitSettings } from "./UnitSettings";
+import { ViewMenu } from "./ViewMenu";
 
 export function EditorHeader() {
   const toggleTheme = () => {
@@ -29,9 +30,7 @@ export function EditorHeader() {
           <button className="hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-primary dark:hover:text-white px-3 py-1.5 rounded transition-colors">
             Objeto
           </button>
-          <button className="hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-primary dark:hover:text-white px-3 py-1.5 rounded transition-colors">
-            Visualizar
-          </button>
+          <ViewMenu />
           <button className="hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-primary dark:hover:text-white px-3 py-1.5 rounded transition-colors">
             Janela
           </button>

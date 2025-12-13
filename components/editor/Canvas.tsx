@@ -5,14 +5,15 @@ import {
   Stage,
   Layer,
   Line,
-  Rect,
+  Rect as KonvaRect,
   Circle as KonvaCircle,
   Transformer,
 } from "react-konva";
 import Konva from "konva";
 import { useEditor } from "./EditorContext";
 import { DrawingTool, Shape } from "./types";
-import { GRID_SIZE_PX } from "./constants";
+import { GRID_SIZE_PX, PX_PER_CM } from "./constants";
+import { getPaperDimensionsCm } from "./exportSettings";
 
 import { Ruler } from "./Ruler";
 
@@ -41,7 +42,11 @@ export default function Canvas() {
     showRulers,
     registerStage,
     showGrid,
+    showPageGuides,
+    pageGuideSettings,
   } = useEditor();
+
+  const RULER_THICKNESS = 24;
 
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -82,6 +87,54 @@ export default function Canvas() {
         listening={false}
       />
     );
+  }
+
+  // Page boundary guides (based on export/print tile size)
+  const viewportWidth =
+    stageSize.width - (showRulers ? RULER_THICKNESS : 0);
+  const viewportHeight =
+    stageSize.height - (showRulers ? RULER_THICKNESS : 0);
+
+  const pageGuideRects = [];
+  if (showPageGuides && viewportWidth > 0 && viewportHeight > 0) {
+    const { widthCm, heightCm } = getPaperDimensionsCm(
+      pageGuideSettings.paperSize,
+      pageGuideSettings.orientation
+    );
+    const marginCm = Math.max(0, Math.min(pageGuideSettings.marginCm, 10));
+    const safeWidthCm = widthCm - 2 * marginCm;
+    const safeHeightCm = heightCm - 2 * marginCm;
+
+    const tileWidthPx = Math.max(1, safeWidthCm * PX_PER_CM);
+    const tileHeightPx = Math.max(1, safeHeightCm * PX_PER_CM);
+
+    const startX = -stagePosition.x / stageScale;
+    const startY = -stagePosition.y / stageScale;
+    const endX = startX + viewportWidth / stageScale;
+    const endY = startY + viewportHeight / stageScale;
+
+    const iStart = Math.floor(startX / tileWidthPx) - 1;
+    const iEnd = Math.floor(endX / tileWidthPx) + 1;
+    const jStart = Math.floor(startY / tileHeightPx) - 1;
+    const jEnd = Math.floor(endY / tileHeightPx) + 1;
+
+    for (let j = jStart; j <= jEnd; j++) {
+      for (let i = iStart; i <= iEnd; i++) {
+        pageGuideRects.push(
+          <KonvaRect
+            key={`page-guide-${i}-${j}`}
+            x={i * tileWidthPx}
+            y={j * tileHeightPx}
+            width={tileWidthPx}
+            height={tileHeightPx}
+            stroke={DEFAULT_STROKE}
+            strokeWidth={1}
+            opacity={0.18}
+            listening={false}
+          />
+        );
+      }
+    }
   }
 
   // Space-bar panning needs preventDefault to avoid page scroll, so listeners are active only while the canvas is active.
@@ -572,8 +625,6 @@ export default function Canvas() {
         ? "default"
         : "crosshair";
 
-  const RULER_THICKNESS = 24;
-
   return (
     <div
       ref={containerRef}
@@ -617,7 +668,7 @@ export default function Canvas() {
             style={{ cursor }}
           >
             <Layer>
-              <Rect
+              <KonvaRect
                 x={-WORKSPACE_SIZE / 2}
                 y={-WORKSPACE_SIZE / 2}
                 width={WORKSPACE_SIZE}
@@ -629,6 +680,9 @@ export default function Canvas() {
               {/* Grid lines */}
               {showGrid && gridLines}
 
+              {/* Page guides */}
+              {showPageGuides && pageGuideRects}
+
               {shapes.map((shape) => {
                 const isSelected = shape.id === selectedShapeId;
                 const stroke = isSelected ? "#673b45" : shape.stroke; // Primary color for selection
@@ -639,7 +693,7 @@ export default function Canvas() {
 
                 if (shape.tool === "rectangle") {
                   return (
-                    <Rect
+                    <KonvaRect
                       key={shape.id}
                       ref={(node) => {
                         if (node) {

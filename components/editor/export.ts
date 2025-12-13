@@ -1,147 +1,56 @@
-import jsPDF from "jspdf";
+import { jsPDF } from "jspdf";
 import Konva from "konva";
-import { DrawingTool, Shape } from "./types";
 import { PX_PER_CM } from "./constants";
+import {
+  ExportSettings,
+  getPaperDimensionsCm,
+  resolveExportSettings,
+} from "./exportSettings";
+import {
+  BoundingBox,
+  calculateBoundingBox,
+  getShapeBoundingBox,
+  intersectsRect,
+} from "./shapeBounds";
+import { Shape } from "./types";
 
-// A4 dimensions in cm
-const A4_WIDTH_CM = 21.0;
-const A4_HEIGHT_CM = 29.7;
+export type { ExportSettings, PaperOrientation, PaperSize } from "./exportSettings";
+export {
+  createDefaultExportSettings,
+  getPaperDimensionsCm,
+  resolveExportSettings,
+} from "./exportSettings";
 
 // Crop mark size in cm
 const CROP_MARK_SIZE_CM = 0.5;
 const CROP_MARK_SIZE_PX = CROP_MARK_SIZE_CM * PX_PER_CM;
 
-export type PaperSize = "A4";
-export type PaperOrientation = "portrait" | "landscape";
-
-export interface ExportSettings {
-  paperSize: PaperSize;
-  orientation: PaperOrientation;
-  marginCm: number;
-  includeBlankPages: boolean;
-  dashedLines: boolean;
-  showBaseSize: boolean;
-  toolFilter: Record<DrawingTool, boolean>;
-}
-
-export function createDefaultExportSettings(): ExportSettings {
-  return {
-    paperSize: "A4",
-    orientation: "portrait",
-    marginCm: 1,
-    includeBlankPages: false,
-    dashedLines: false,
-    showBaseSize: false,
-    toolFilter: {
-      rectangle: true,
-      circle: true,
-      line: true,
-      curve: true,
-    },
-  };
-}
-
-function resolveExportSettings(
-  partial?: Partial<ExportSettings>
-): ExportSettings {
-  const defaults = createDefaultExportSettings();
-  return {
-    ...defaults,
-    ...partial,
-    toolFilter: {
-      ...defaults.toolFilter,
-      ...(partial?.toolFilter ?? {}),
-    },
-  };
-}
-
-function getPaperDimensionsCm(
-  paperSize: PaperSize,
-  orientation: PaperOrientation
-): { widthCm: number; heightCm: number } {
-  const base =
-    paperSize === "A4"
-      ? { widthCm: A4_WIDTH_CM, heightCm: A4_HEIGHT_CM }
-      : { widthCm: A4_WIDTH_CM, heightCm: A4_HEIGHT_CM };
-
-  if (orientation === "landscape") {
-    return { widthCm: base.heightCm, heightCm: base.widthCm };
-  }
-
-  return base;
-}
-
-function getShapeBoundingBox(shape: Shape): BoundingBox {
-  let minX = shape.x;
-  let minY = shape.y;
-  let maxX = shape.x;
-  let maxY = shape.y;
-
-  if (shape.tool === "rectangle") {
-    const width = shape.width || 0;
-    const height = shape.height || 0;
-    maxX = shape.x + width;
-    maxY = shape.y + height;
-  } else if (shape.tool === "circle") {
-    const radius = shape.radius || 0;
-    minX = shape.x - radius;
-    minY = shape.y - radius;
-    maxX = shape.x + radius;
-    maxY = shape.y + radius;
-  } else if (shape.tool === "line" || shape.tool === "curve") {
-    const points = shape.points || [];
-    for (let i = 0; i < points.length; i += 2) {
-      const px = shape.x + points[i];
-      const py = shape.y + points[i + 1];
-      minX = Math.min(minX, px);
-      minY = Math.min(minY, py);
-      maxX = Math.max(maxX, px);
-      maxY = Math.max(maxY, py);
-    }
-  }
-
-  const strokeWidth = shape.strokeWidth || 0;
-  const halfStroke = strokeWidth / 2;
-  minX -= halfStroke;
-  minY -= halfStroke;
-  maxX += halfStroke;
-  maxY += halfStroke;
-
-  return {
-    x: minX,
-    y: minY,
-    width: maxX - minX,
-    height: maxY - minY,
-  };
-}
-
-function intersectsRect(a: BoundingBox, b: BoundingBox): boolean {
-  return !(
-    a.x + a.width <= b.x ||
-    b.x + b.width <= a.x ||
-    a.y + a.height <= b.y ||
-    b.y + b.height <= a.y
-  );
-}
-
-function filterShapesBySettings(
-  shapes: Shape[],
-  settings: ExportSettings
-): Shape[] {
-  return shapes.filter((shape) => settings.toolFilter[shape.tool]);
-}
-
 function drawBaseSizeMarker(layer: Konva.Layer): void {
-  const sizePx = 10 * PX_PER_CM;
-  const x = 40;
+  const lengthCm = 10;
+  const lengthPx = lengthCm * PX_PER_CM;
+
+  const x = 20;
   const y = 40;
 
   layer.add(
-    new Konva.Rect({
-      x,
-      y,
-      width: sizePx,
-      height: sizePx,
+    new Konva.Line({
+      points: [x, y, x + lengthPx, y],
+      stroke: "#000000",
+      strokeWidth: 2,
+    })
+  );
+
+  layer.add(
+    new Konva.Line({
+      points: [x, y - 6, x, y + 6],
+      stroke: "#000000",
+      strokeWidth: 2,
+    })
+  );
+
+  layer.add(
+    new Konva.Line({
+      points: [x + lengthPx, y - 6, x + lengthPx, y + 6],
       stroke: "#000000",
       strokeWidth: 2,
     })
@@ -150,84 +59,13 @@ function drawBaseSizeMarker(layer: Konva.Layer): void {
   layer.add(
     new Konva.Text({
       x,
-      y: y + sizePx + 8,
-      text: "10 cm",
-      fontSize: 14,
+      y: y - 20,
+      text: `${lengthCm} cm`,
+      fontSize: 12,
       fontFamily: "Arial",
       fill: "#000000",
     })
   );
-}
-
-interface BoundingBox {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-/**
- * Calculate the bounding box that contains all shapes
- */
-export function calculateBoundingBox(shapes: Shape[]): BoundingBox | null {
-  if (shapes.length === 0) {
-    return null;
-  }
-
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-
-  shapes.forEach((shape) => {
-    let shapeMinX = shape.x;
-    let shapeMinY = shape.y;
-    let shapeMaxX = shape.x;
-    let shapeMaxY = shape.y;
-
-    if (shape.tool === "rectangle") {
-      const width = shape.width || 0;
-      const height = shape.height || 0;
-      shapeMaxX = shape.x + width;
-      shapeMaxY = shape.y + height;
-    } else if (shape.tool === "circle") {
-      const radius = shape.radius || 0;
-      shapeMinX = shape.x - radius;
-      shapeMinY = shape.y - radius;
-      shapeMaxX = shape.x + radius;
-      shapeMaxY = shape.y + radius;
-    } else if (shape.tool === "line" || shape.tool === "curve") {
-      const points = shape.points || [];
-      for (let i = 0; i < points.length; i += 2) {
-        const px = shape.x + points[i];
-        const py = shape.y + points[i + 1];
-        shapeMinX = Math.min(shapeMinX, px);
-        shapeMinY = Math.min(shapeMinY, py);
-        shapeMaxX = Math.max(shapeMaxX, px);
-        shapeMaxY = Math.max(shapeMaxY, py);
-      }
-    }
-
-    // Account for stroke width
-    const strokeWidth = shape.strokeWidth || 0;
-    const halfStroke = strokeWidth / 2;
-    shapeMinX -= halfStroke;
-    shapeMinY -= halfStroke;
-    shapeMaxX += halfStroke;
-    shapeMaxY += halfStroke;
-
-    minX = Math.min(minX, shapeMinX);
-    minY = Math.min(minY, shapeMinY);
-    maxX = Math.max(maxX, shapeMaxX);
-    maxY = Math.max(maxY, shapeMaxY);
-  });
-
-  return {
-    x: minX,
-    y: minY,
-    width: maxX - minX,
-    height: maxY - minY,
-  };
 }
 
 /**
@@ -308,6 +146,16 @@ function drawPageNumber(
 
   layer.add(text);
   return text;
+}
+
+function filterShapesBySettings(
+  shapes: Shape[],
+  settings: ExportSettings
+): Shape[] {
+  return shapes.filter((shape) => {
+    const enabled = settings.toolFilter[shape.tool as keyof ExportSettings["toolFilter"]];
+    return enabled !== false;
+  });
 }
 
 /**

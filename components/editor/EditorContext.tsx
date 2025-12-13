@@ -12,6 +12,17 @@ import Konva from "konva";
 import { Tool, Shape } from "./types";
 import { DEFAULT_UNIT, DEFAULT_PIXELS_PER_UNIT } from "./constants";
 import { useHistory } from "./useHistory";
+import {
+  createDefaultExportSettings,
+  type PaperOrientation,
+  type PaperSize,
+} from "./exportSettings";
+
+export interface PageGuideSettings {
+  paperSize: PaperSize;
+  orientation: PaperOrientation;
+  marginCm: number;
+}
 
 interface EditorContextType {
   tool: Tool;
@@ -41,6 +52,11 @@ interface EditorContextType {
   registerStage: (stage: Konva.Stage | null) => void;
   showGrid: boolean;
   setShowGrid: (show: boolean) => void;
+
+  showPageGuides: boolean;
+  setShowPageGuides: (show: boolean) => void;
+  pageGuideSettings: PageGuideSettings;
+  setPageGuideSettings: (settings: PageGuideSettings) => void;
 }
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
@@ -54,6 +70,16 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [pixelsPerUnit, setPixelsPerUnit] = useState(DEFAULT_PIXELS_PER_UNIT);
   const [showRulers, setShowRulers] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
+
+  const defaultExportSettings = createDefaultExportSettings();
+  const [showPageGuides, setShowPageGuides] = useState(false);
+  const [pageGuideSettings, setPageGuideSettings] = useState<PageGuideSettings>(
+    {
+      paperSize: defaultExportSettings.paperSize,
+      orientation: defaultExportSettings.orientation,
+      marginCm: defaultExportSettings.marginCm,
+    }
+  );
   
   // Store stage reference without triggering re-renders
   const stageRef = useRef<Konva.Stage | null>(null);
@@ -115,6 +141,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         registerStage,
         showGrid,
         setShowGrid,
+        showPageGuides,
+        setShowPageGuides,
+        pageGuideSettings,
+        setPageGuideSettings,
       }}
     >
       {children}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useEditor } from "./EditorContext";
 import { DrawingTool, Tool } from "./types";
 import {
@@ -11,8 +11,19 @@ import {
 } from "./export";
 
 export function EditorToolbar() {
-  const { tool, setTool, setShapes, undo, redo, canUndo, canRedo, shapes, getStage, setShowGrid } =
-    useEditor();
+  const {
+    tool,
+    setTool,
+    setShapes,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    shapes,
+    getStage,
+    setShowGrid,
+    setPageGuideSettings,
+  } = useEditor();
   const [showExportModal, setShowExportModal] = useState(false);
 
   const [exportSettings, setExportSettings] = useState<ExportSettings>(() =>
@@ -22,6 +33,14 @@ export function EditorToolbar() {
   const [includePatternName, setIncludePatternName] = useState(true);
   const [includePatternTexts, setIncludePatternTexts] = useState(true);
   const [includeSeamAllowance, setIncludeSeamAllowance] = useState(true);
+
+  useEffect(() => {
+    setPageGuideSettings({
+      paperSize: exportSettings.paperSize,
+      orientation: exportSettings.orientation,
+      marginCm: customMargins ? exportSettings.marginCm : 1,
+    });
+  }, [customMargins, exportSettings, setPageGuideSettings]);
 
   const handleToolChange = (newTool: Tool) => {
     setTool(newTool);
