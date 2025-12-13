@@ -5,7 +5,8 @@ import { useEditor } from "./EditorContext";
 import { Tool } from "./types";
 
 export function EditorToolbar() {
-  const { tool, setTool, setShapes } = useEditor();
+  const { tool, setTool, setShapes, undo, redo, canUndo, canRedo } =
+    useEditor();
 
   const handleToolChange = (newTool: Tool) => {
     setTool(newTool);
@@ -28,6 +29,41 @@ export function EditorToolbar() {
           Salvar
         </span>
       </button>
+
+      <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
+
+      <button
+        onClick={undo}
+        disabled={!canUndo}
+        className={`group relative flex items-center justify-center p-2 rounded transition-all ${
+          !canUndo
+            ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+            : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+        }`}
+        title="Desfazer (Ctrl+Z)"
+      >
+        <span className="material-symbols-outlined text-[20px]">undo</span>
+        <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
+          Desfazer (Ctrl+Z)
+        </span>
+      </button>
+
+      <button
+        onClick={redo}
+        disabled={!canRedo}
+        className={`group relative flex items-center justify-center p-2 rounded transition-all ${
+          !canRedo
+            ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+            : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+        }`}
+        title="Refazer (Ctrl+Y)"
+      >
+        <span className="material-symbols-outlined text-[20px]">redo</span>
+        <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
+          Refazer (Ctrl+Y)
+        </span>
+      </button>
+
       <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
 
       <ToolButton

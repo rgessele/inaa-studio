@@ -1,14 +1,24 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  ReactNode,
+  useCallback,
+} from "react";
 import { Tool, Shape } from "./types";
 import { DEFAULT_UNIT, DEFAULT_PIXELS_PER_UNIT } from "./constants";
+import { useHistory } from "./useHistory";
 
 interface EditorContextType {
   tool: Tool;
   setTool: (tool: Tool) => void;
   shapes: Shape[];
-  setShapes: (shapes: Shape[] | ((prev: Shape[]) => Shape[])) => void;
+  setShapes: (
+    shapes: Shape[] | ((prev: Shape[]) => Shape[]),
+    saveHistory?: boolean
+  ) => void;
   selectedShapeId: string | null;
   setSelectedShapeId: (id: string | null) => void;
   scale: number;
@@ -31,7 +41,6 @@ const EditorContext = createContext<EditorContextType | undefined>(undefined);
 
 export function EditorProvider({ children }: { children: ReactNode }) {
   const [tool, setTool] = useState<Tool>("select");
-  const [shapes, setShapes] = useState<Shape[]>([]);
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -39,49 +48,38 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [pixelsPerUnit, setPixelsPerUnit] = useState(DEFAULT_PIXELS_PER_UNIT);
   const [showRulers, setShowRulers] = useState(true);
 
-  // History for undo/redo
-  const [history, setHistory] = useState<Shape[][]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
+  // Use the history hook for shapes
+  const {
+    state: shapes,
+    setState: setShapesState,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useHistory<Shape[]>([]);
 
-  const updateShapes = (newShapes: Shape[] | ((prev: Shape[]) => Shape[])) => {
-    setShapes((prev) => {
+  const setShapes = useCallback(
+    (
+      newShapes: Shape[] | ((prev: Shape[]) => Shape[]),
+      saveHistory = true
+    ) => {
       const resolvedShapes =
-        typeof newShapes === "function" ? newShapes(prev) : newShapes;
+        typeof newShapes === "function"
+          ? newShapes(shapes || [])
+          : newShapes;
 
-      // Add to history
-      const newHistory = history.slice(0, historyIndex + 1);
-      newHistory.push(resolvedShapes);
-      setHistory(newHistory);
-      setHistoryIndex(newHistory.length - 1);
-
-      return resolvedShapes;
-    });
-  };
-
-  const undo = () => {
-    if (historyIndex > 0) {
-      setHistoryIndex(historyIndex - 1);
-      setShapes(history[historyIndex - 1]);
-    } else if (historyIndex === 0) {
-      setHistoryIndex(-1);
-      setShapes([]);
-    }
-  };
-
-  const redo = () => {
-    if (historyIndex < history.length - 1) {
-      setHistoryIndex(historyIndex + 1);
-      setShapes(history[historyIndex + 1]);
-    }
-  };
+      setShapesState(resolvedShapes, saveHistory);
+    },
+    [shapes, setShapesState]
+  );
 
   return (
     <EditorContext.Provider
       value={{
         tool,
         setTool,
-        shapes,
-        setShapes: updateShapes,
+        shapes: shapes || [],
+        setShapes,
         selectedShapeId,
         setSelectedShapeId,
         scale,
@@ -90,8 +88,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setPosition,
         undo,
         redo,
-        canUndo: historyIndex >= 0,
-        canRedo: historyIndex < history.length - 1,
+        canUndo,
+        canRedo,
         unit,
         setUnit,
         pixelsPerUnit,

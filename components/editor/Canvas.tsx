@@ -250,7 +250,7 @@ export default function Canvas() {
 
     currentShape.current = newShape;
     currentShapeIndex.current = shapes.length;
-    setShapes([...shapes, newShape]);
+    setShapes([...shapes, newShape], false); // Don't save to history yet (temporary)
   };
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -302,7 +302,7 @@ export default function Canvas() {
       };
     }
 
-    setShapes(updatedShapes);
+    setShapes(updatedShapes, false); // Don't save to history during drawing
   };
 
   const handleStageEnter = () => {
@@ -315,6 +315,11 @@ export default function Canvas() {
   };
 
   const handleMouseUp = () => {
+    // If we were drawing, save the final state to history
+    if (isDrawing.current && currentShape.current) {
+      setShapes(shapes, true); // Save current state to history
+    }
+
     isDrawing.current = false;
     currentShape.current = null;
     currentShapeIndex.current = -1;
