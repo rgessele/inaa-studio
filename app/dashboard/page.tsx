@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { NewProjectButton } from "@/components/dashboard/NewProjectButton";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -52,13 +53,7 @@ export default async function DashboardPage() {
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-3xl font-bold text-gray-900">Seus Projetos</h2>
-          <Link
-            href="/editor"
-            className="inline-flex items-center rounded-md bg-blue-600 px-6 py-3 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-          >
-            <span className="mr-2 text-xl">+</span>
-            Novo Projeto
-          </Link>
+          <NewProjectButton />
         </div>
 
         {error ? (
@@ -116,13 +111,7 @@ export default async function DashboardPage() {
             <p className="text-gray-600 mb-6">
               Comece criando seu primeiro projeto de modelagem.
             </p>
-            <Link
-              href="/editor"
-              className="inline-flex items-center rounded-md bg-blue-600 px-6 py-3 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-            >
-              <span className="mr-2 text-xl">+</span>
-              Criar Primeiro Projeto
-            </Link>
+            <NewProjectButton className="inline-flex items-center rounded-md bg-blue-600 px-6 py-3 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2" />
           </div>
         )}
       </main>

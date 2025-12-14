@@ -8,6 +8,17 @@ export interface Project {
   description: string | null;
   design_data: {
     shapes: Shape[];
+    meta?: {
+      fabric?: string | null;
+      notes?: string | null;
+      print?: {
+        widthCm: number;
+        heightCm: number;
+        unit: "cm";
+      };
+      grade?: string;
+      coverUrl?: string | null;
+    };
   };
   created_at: string;
   updated_at: string;
