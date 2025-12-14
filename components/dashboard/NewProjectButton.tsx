@@ -8,9 +8,10 @@ type GradeOption = "none";
 
 interface NewProjectButtonProps {
   className?: string;
+  children?: React.ReactNode;
 }
 
-export function NewProjectButton({ className }: NewProjectButtonProps) {
+export function NewProjectButton({ className, children }: NewProjectButtonProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -174,8 +175,12 @@ export function NewProjectButton({ className }: NewProjectButtonProps) {
           "inline-flex items-center rounded-md bg-blue-600 px-6 py-3 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
         }
       >
-        <span className="mr-2 text-xl">+</span>
-        Novo Projeto
+        {children ?? (
+          <>
+            <span className="mr-2 text-xl">+</span>
+            Novo Projeto
+          </>
+        )}
       </button>
 
       {open && (
