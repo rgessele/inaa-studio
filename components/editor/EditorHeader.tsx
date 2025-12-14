@@ -180,25 +180,14 @@ export function EditorHeader() {
   return (
     <>
       <header className="h-12 bg-surface-light dark:bg-surface-dark border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 shrink-0 z-20 shadow-subtle relative">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center shrink-0">
             {/* Logo */}
             <img
               src="/logo.png"
               alt="Inaá Studio"
               className="h-9 w-auto object-contain"
             />
-          </div>
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="text-sm font-semibold text-gray-900 dark:text-white truncate max-w-[280px]">
-              {projectName}
-            </div>
-            {hasUnsavedChanges && (
-              <div className="flex items-center gap-2 text-[10px] text-text-muted dark:text-text-muted-dark">
-                <span className="h-2 w-2 rounded-full bg-accent-gold" />
-                Não salvo
-              </div>
-            )}
           </div>
           <div className="hidden md:flex ml-6 text-xs text-text-muted dark:text-text-muted-dark gap-1">
             <FileMenu
@@ -220,6 +209,18 @@ export function EditorHeader() {
               Janela
             </button>
           </div>
+        </div>
+
+        <div className="hidden md:flex items-center gap-2 absolute left-1/2 -translate-x-1/2 min-w-0">
+          <div className="text-sm font-semibold text-gray-900 dark:text-white truncate max-w-[420px]">
+            {projectName}
+          </div>
+          {hasUnsavedChanges && (
+            <div className="flex items-center gap-2 text-[10px] text-text-muted dark:text-text-muted-dark shrink-0">
+              <span className="h-2 w-2 rounded-full bg-accent-gold" />
+              Não salvo
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {/* Save button */}
