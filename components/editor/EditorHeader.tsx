@@ -10,6 +10,7 @@ import { saveProject, saveProjectAsCopy } from "@/lib/projects";
 import { useRouter } from "next/navigation";
 import { FileMenu } from "./FileMenu";
 import { EditMenu } from "./EditMenu";
+import { createClient } from "@/lib/supabase/client";
 
 export function EditorHeader() {
   const {
@@ -29,6 +30,11 @@ export function EditorHeader() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showSaveAsModal, setShowSaveAsModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [userInfo, setUserInfo] = useState<{
+    displayName: string;
+    email: string;
+    initials: string;
+  } | null>(null);
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "error";
@@ -42,6 +48,50 @@ export function EditorHeader() {
   const toggleTheme = () => {
     document.documentElement.classList.toggle("dark");
   };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadUser = async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!isMounted || !user) return;
+
+      const displayName =
+        (user.user_metadata?.full_name as string | undefined) ||
+        (user.user_metadata?.name as string | undefined) ||
+        (user.email ? user.email.split("@")[0] : "Usuário");
+      const email = user.email ?? "";
+      const initials = displayName
+        .split(" ")
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((p) => p[0]?.toUpperCase())
+        .join("")
+        .slice(0, 2);
+
+      setUserInfo({
+        displayName,
+        email,
+        initials: initials || "U",
+      });
+    };
+
+    void loadUser();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleSignOut = useCallback(async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.replace("/login");
+    router.refresh();
+  }, [router]);
 
   const handleSaveClick = useCallback(async () => {
     if (isSaving) return;
@@ -255,13 +305,34 @@ export function EditorHeader() {
             Dashboard
           </button>
           <div className="h-5 w-px bg-gray-300 dark:bg-gray-700 mx-1"></div>
-          <button
-            className="relative h-8 w-8 rounded-full bg-accent-gold text-white flex items-center justify-center text-xs font-semibold shadow-sm hover:ring-2 hover:ring-offset-2 hover:ring-accent-gold dark:ring-offset-surface-dark transition-all"
-            title="Perfil do Usuário"
-          >
-            JD
-            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 border-2 border-surface-light dark:border-surface-dark rounded-full"></span>
-          </button>
+          <div className="flex items-center gap-3 pl-2">
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-medium text-gray-900 dark:text-accent-gold">
+                {userInfo?.displayName ?? "Usuário"}
+              </p>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                {userInfo?.email ?? ""}
+              </p>
+            </div>
+
+            <div className="relative group cursor-pointer" title="Perfil do Usuário">
+              <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary to-accent-gold flex items-center justify-center text-white font-semibold shadow-subtle border-2 border-white dark:border-gray-700 text-xs">
+                {userInfo?.initials ?? "U"}
+              </div>
+              <div className="absolute bottom-0 right-0 h-3 w-3 bg-green-500 rounded-full border-2 border-white dark:border-surface-dark" />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void handleSignOut()}
+              className="text-red-500 hover:text-red-700 dark:text-accent-rose dark:hover:text-red-300 transition-colors"
+              title="Sair"
+            >
+              <span className="material-symbols-outlined text-[22px]">
+                logout
+              </span>
+            </button>
+          </div>
         </div>
       </header>
 

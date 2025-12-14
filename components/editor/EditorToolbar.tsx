@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEditor } from "./EditorContext";
 import { DrawingTool, Tool } from "./types";
 import {
@@ -12,6 +12,8 @@ import {
 } from "./export";
 
 export function EditorToolbar() {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const {
     tool,
@@ -39,8 +41,23 @@ export function EditorToolbar() {
   const embedded =
     searchParams.get("embedded") === "1" || searchParams.get("embed") === "1";
 
+  const urlWantsExportModal = useMemo(() => {
+    return searchParams.get("export") === "pdf";
+  }, [searchParams]);
+
+  const isExportModalOpen = showExportModal || urlWantsExportModal;
+
   const closeExportModal = () => {
     setShowExportModal(false);
+
+    if (urlWantsExportModal) {
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.delete("export");
+      nextParams.delete("autoExport");
+      const nextQuery = nextParams.toString();
+      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+    }
+
     if (embedded) {
       window.parent?.postMessage({ type: "inaa:exportModalClosed" }, "*");
     }
@@ -56,13 +73,8 @@ export function EditorToolbar() {
 
   useEffect(() => {
     const exportParam = searchParams.get("export");
-    const shouldOpenExportModal = exportParam === "pdf";
     const shouldAutoExportPdf =
       exportParam === "pdf" && searchParams.get("autoExport") === "1";
-
-    if (shouldOpenExportModal) {
-      setShowExportModal(true);
-    }
 
     if (!shouldAutoExportPdf || hasAutoExportedRef.current) {
       return;
@@ -335,7 +347,7 @@ export function EditorToolbar() {
       )}
 
       {/* Export Modal */}
-      {showExportModal && (
+      {isExportModalOpen && (
         <div
           className={
             embedded
