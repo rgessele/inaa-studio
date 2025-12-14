@@ -1,19 +1,33 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { UnitSettings } from "./UnitSettings";
 import { ViewMenu } from "./ViewMenu";
 import { useEditor } from "./EditorContext";
 import { SaveProjectModal } from "./SaveProjectModal";
 import { Toast } from "./Toast";
-import { saveProject } from "@/lib/projects";
+import { saveProject, saveProjectAsCopy } from "@/lib/projects";
 import { useRouter } from "next/navigation";
+import { FileMenu } from "./FileMenu";
+import { EditMenu } from "./EditMenu";
 
 export function EditorHeader() {
-  const { shapes, projectId, setProjectId, projectName, setProjectName } =
-    useEditor();
+  const {
+    shapes,
+    projectId,
+    setProjectId,
+    projectName,
+    setProjectName,
+    hasUnsavedChanges,
+    markProjectSaved,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useEditor();
   const router = useRouter();
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showSaveAsModal, setShowSaveAsModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast] = useState<{
     message: string;
@@ -29,9 +43,79 @@ export function EditorHeader() {
     document.documentElement.classList.toggle("dark");
   };
 
-  const handleSaveClick = () => {
-    setShowSaveModal(true);
-  };
+  const handleSaveClick = useCallback(async () => {
+    if (isSaving) return;
+    if (!projectId) {
+      setShowSaveModal(true);
+      return;
+    }
+
+    setIsSaving(true);
+    const result = await saveProject(projectName, shapes, projectId);
+
+    if (result.success) {
+      markProjectSaved();
+      setToast({
+        message: "Projeto salvo com sucesso!",
+        type: "success",
+        isVisible: true,
+      });
+    } else {
+      setToast({
+        message: result.error || "Erro ao salvar projeto",
+        type: "error",
+        isVisible: true,
+      });
+    }
+
+    setIsSaving(false);
+  }, [isSaving, markProjectSaved, projectId, projectName, shapes]);
+
+  const handleSaveAsShortcut = useCallback(() => {
+    if (isSaving) return;
+    if (!projectId) {
+      setShowSaveModal(true);
+      return;
+    }
+    setShowSaveAsModal(true);
+  }, [isSaving, projectId]);
+
+  useEffect(() => {
+    const isTypingElement = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      return (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable
+      );
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isTypingElement(event.target)) return;
+
+      const isMac = /Mac|iPhone|iPod|iPad/.test(navigator.userAgent);
+      const cmdOrCtrl = isMac ? event.metaKey : event.ctrlKey;
+
+      // Salvar como...: Cmd/Ctrl+Shift+S
+      if (cmdOrCtrl && event.shiftKey && (event.key === "s" || event.key === "S")) {
+        event.preventDefault();
+        handleSaveAsShortcut();
+        return;
+      }
+
+      // Salvar: Cmd/Ctrl+S
+      if (cmdOrCtrl && (event.key === "s" || event.key === "S")) {
+        event.preventDefault();
+        void handleSaveClick();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [handleSaveAsShortcut, handleSaveClick]);
 
   const handleSave = async (name: string) => {
     setIsSaving(true);
@@ -40,12 +124,14 @@ export function EditorHeader() {
     if (result.success && result.projectId) {
       setProjectName(name);
       setProjectId(result.projectId);
+      markProjectSaved();
       setToast({
         message: "Projeto salvo com sucesso!",
         type: "success",
         isVisible: true,
       });
       setShowSaveModal(false);
+      router.replace(`/editor/${result.projectId}`);
     } else {
       setToast({
         message: result.error || "Erro ao salvar projeto",
@@ -53,6 +139,37 @@ export function EditorHeader() {
         isVisible: true,
       });
     }
+    setIsSaving(false);
+  };
+
+  const handleSaveAs = async (name: string) => {
+    if (!projectId) {
+      await handleSave(name);
+      return;
+    }
+
+    setIsSaving(true);
+    const result = await saveProjectAsCopy(projectId, name, shapes);
+
+    if (result.success && result.projectId) {
+      setProjectName(name);
+      setProjectId(result.projectId);
+      markProjectSaved();
+      setToast({
+        message: "Cópia salva com sucesso!",
+        type: "success",
+        isVisible: true,
+      });
+      setShowSaveAsModal(false);
+      router.replace(`/editor/${result.projectId}`);
+    } else {
+      setToast({
+        message: result.error || "Erro ao salvar como...",
+        type: "error",
+        isVisible: true,
+      });
+    }
+
     setIsSaving(false);
   };
 
@@ -72,13 +189,29 @@ export function EditorHeader() {
               className="h-9 w-auto object-contain"
             />
           </div>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="text-sm font-semibold text-gray-900 dark:text-white truncate max-w-[280px]">
+              {projectName}
+            </div>
+            {hasUnsavedChanges && (
+              <div className="flex items-center gap-2 text-[10px] text-text-muted dark:text-text-muted-dark">
+                <span className="h-2 w-2 rounded-full bg-accent-gold" />
+                Não salvo
+              </div>
+            )}
+          </div>
           <div className="hidden md:flex ml-6 text-xs text-text-muted dark:text-text-muted-dark gap-1">
-            <button className="hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-primary dark:hover:text-white px-3 py-1.5 rounded transition-colors">
-              Arquivo
-            </button>
-            <button className="hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-primary dark:hover:text-white px-3 py-1.5 rounded transition-colors">
-              Editar
-            </button>
+            <FileMenu
+              onSave={handleSaveClick}
+              onSaveAs={() => setShowSaveAsModal(true)}
+              disabled={isSaving}
+            />
+            <EditMenu
+              onUndo={undo}
+              onRedo={redo}
+              canUndo={canUndo}
+              canRedo={canRedo}
+            />
             <button className="hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-primary dark:hover:text-white px-3 py-1.5 rounded transition-colors">
               Objeto
             </button>
@@ -92,11 +225,12 @@ export function EditorHeader() {
           {/* Save button */}
           <button
             onClick={handleSaveClick}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-4 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2"
+            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-4 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             title="Salvar Projeto"
+            disabled={isSaving}
           >
             <span className="material-symbols-outlined text-[16px]">save</span>
-            Salvar
+            {isSaving ? "Salvando..." : "Salvar"}
           </button>
           <UnitSettings />
           <div className="flex items-center mr-2">
@@ -130,13 +264,28 @@ export function EditorHeader() {
         </div>
       </header>
 
-      <SaveProjectModal
-        isOpen={showSaveModal}
-        onClose={() => setShowSaveModal(false)}
-        onSave={handleSave}
-        currentName={projectName}
-        isSaving={isSaving}
-      />
+      {showSaveModal && (
+        <SaveProjectModal
+          isOpen={showSaveModal}
+          onClose={() => setShowSaveModal(false)}
+          onSave={handleSave}
+          currentName={projectName}
+          isSaving={isSaving}
+        />
+      )}
+
+      {showSaveAsModal && (
+        <SaveProjectModal
+          isOpen={showSaveAsModal}
+          onClose={() => setShowSaveAsModal(false)}
+          onSave={handleSaveAs}
+          currentName={projectName}
+          isSaving={isSaving}
+          title="Salvar como..."
+          nameLabel="Nome da Cópia"
+          confirmLabel="Salvar cópia"
+        />
+      )}
 
       <Toast
         message={toast.message}

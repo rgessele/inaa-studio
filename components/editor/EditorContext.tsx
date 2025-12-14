@@ -63,6 +63,8 @@ interface EditorContextType {
   setProjectId: (id: string | null) => void;
   projectName: string;
   setProjectName: (name: string) => void;
+  hasUnsavedChanges: boolean;
+  markProjectSaved: () => void;
   loadProject: (
     shapes: Shape[],
     projectId: string,
@@ -85,6 +87,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   // Project state
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("Projeto Sem Nome");
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string>("[]");
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const defaultExportSettings = createDefaultExportSettings();
   const [showPageGuides, setShowPageGuides] = useState(false);
@@ -117,6 +121,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     canRedo,
   } = useHistory<Shape[]>([]);
 
+  React.useEffect(() => {
+    const current = JSON.stringify(shapes || []);
+    setHasUnsavedChanges(current !== lastSavedSnapshot);
+  }, [shapes, lastSavedSnapshot]);
+
   const setShapes = useCallback(
     (newShapes: Shape[] | ((prev: Shape[]) => Shape[]), saveHistory = true) => {
       // Cast to match useHistory signature (it accepts null but we always have Shape[])
@@ -135,10 +144,15 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       setShapesState(shapes, false); // Load without saving to history
       setProjectId(projectId);
       setProjectName(projectName);
+      setLastSavedSnapshot(JSON.stringify(shapes));
       setSelectedShapeId(null);
     },
     [setShapesState]
   );
+
+  const markProjectSaved = useCallback(() => {
+    setLastSavedSnapshot(JSON.stringify(shapes || []));
+  }, [shapes]);
 
   return (
     <EditorContext.Provider
@@ -175,6 +189,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setProjectId,
         projectName,
         setProjectName,
+        hasUnsavedChanges,
+        markProjectSaved,
         loadProject,
       }}
     >

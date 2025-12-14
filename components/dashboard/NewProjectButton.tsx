@@ -157,7 +157,7 @@ export function NewProjectButton({ className }: NewProjectButtonProps) {
 
       setOpen(false);
       router.push(`/editor/${projectId}`);
-    } catch (e) {
+    } catch {
       setError("Erro inesperado ao criar projeto.");
     } finally {
       setIsSubmitting(false);

@@ -8,6 +8,9 @@ interface SaveProjectModalProps {
   onSave: (projectName: string) => void;
   currentName: string;
   isSaving: boolean;
+  title?: string;
+  nameLabel?: string;
+  confirmLabel?: string;
 }
 
 export function SaveProjectModal({
@@ -16,6 +19,9 @@ export function SaveProjectModal({
   onSave,
   currentName,
   isSaving,
+  title = "Salvar Projeto",
+  nameLabel = "Nome do Projeto",
+  confirmLabel = "Salvar",
 }: SaveProjectModalProps) {
   const [projectName, setProjectName] = useState(currentName);
 
@@ -60,7 +66,7 @@ export function SaveProjectModal({
           id="modal-title"
           className="text-xl font-semibold text-gray-900 dark:text-white mb-4"
         >
-          Salvar Projeto
+          {title}
         </h2>
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
@@ -68,7 +74,7 @@ export function SaveProjectModal({
               htmlFor="projectName"
               className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
             >
-              Nome do Projeto
+              {nameLabel}
             </label>
             <input
               type="text"
@@ -95,7 +101,7 @@ export function SaveProjectModal({
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={!projectName.trim() || isSaving}
             >
-              {isSaving ? "Salvando..." : "Salvar"}
+              {isSaving ? "Salvando..." : confirmLabel}
             </button>
           </div>
         </form>

@@ -42,17 +42,33 @@ export async function saveProject(
       return { success: false, error: "Usuário não autenticado" };
     }
 
-    const projectData = {
+    const baseProjectData = {
       name: projectName,
-      design_data: { shapes },
       user_id: user.id,
     };
 
     if (projectId) {
-      // Update existing project - ensure user owns it
+      // Update existing project - preserve existing design_data (e.g., meta)
+      const { data: existing, error: loadError } = await supabase
+        .from("projects")
+        .select("design_data")
+        .eq("id", projectId)
+        .eq("user_id", user.id)
+        .single();
+
+      if (loadError) {
+        console.error("Error loading project before update:", loadError);
+        return { success: false, error: loadError.message };
+      }
+
+      const mergedDesignData = {
+        ...(existing?.design_data ?? {}),
+        shapes,
+      };
+
       const { error } = await supabase
         .from("projects")
-        .update(projectData)
+        .update({ ...baseProjectData, design_data: mergedDesignData })
         .eq("id", projectId)
         .eq("user_id", user.id);
 
@@ -64,6 +80,11 @@ export async function saveProject(
       return { success: true, projectId };
     } else {
       // Insert new project
+      const projectData = {
+        ...baseProjectData,
+        design_data: { shapes },
+      };
+
       const { data, error } = await supabase
         .from("projects")
         .insert([projectData])
@@ -82,6 +103,67 @@ export async function saveProject(
     return {
       success: false,
       error: "Erro inesperado ao salvar projeto",
+    };
+  }
+}
+
+export async function saveProjectAsCopy(
+  sourceProjectId: string,
+  newProjectName: string,
+  shapes: Shape[]
+): Promise<{ success: boolean; projectId?: string; error?: string }> {
+  try {
+    const supabase = createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { success: false, error: "Usuário não autenticado" };
+    }
+
+    const { data: source, error: sourceError } = await supabase
+      .from("projects")
+      .select("design_data")
+      .eq("id", sourceProjectId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (sourceError) {
+      console.error("Error loading source project:", sourceError);
+      return { success: false, error: sourceError.message };
+    }
+
+    const designData = {
+      ...(source?.design_data ?? {}),
+      shapes,
+    };
+
+    const { data, error } = await supabase
+      .from("projects")
+      .insert([
+        {
+          name: newProjectName,
+          user_id: user.id,
+          design_data: designData,
+        },
+      ])
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error("Error creating project copy:", error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, projectId: data.id };
+  } catch (error) {
+    console.error("Unexpected error saving project as copy:", error);
+    return {
+      success: false,
+      error: "Erro inesperado ao salvar como...",
     };
   }
 }
