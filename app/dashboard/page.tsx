@@ -43,7 +43,7 @@ export default async function DashboardPage() {
     .slice(0, 2);
 
   return (
-    <div className="bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 transition-colors min-h-screen flex flex-col">
+    <div className="relative overflow-hidden isolate bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 transition-colors min-h-screen flex flex-col before:content-[''] before:absolute before:inset-0 before:bg-[url('/dashboard-bg.png')] before:bg-right before:bg-no-repeat before:bg-[length:80%] before:opacity-10 before:pointer-events-none before:select-none before:z-0">
       <nav className="sticky top-0 z-50 w-full bg-surface-light dark:bg-surface-dark border-b border-gray-200 dark:border-gray-700 shadow-subtle">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
@@ -93,7 +93,7 @@ export default async function DashboardPage() {
         </div>
       </nav>
 
-      <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
+      <main className="relative z-10 flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-accent-gold">
@@ -121,7 +121,7 @@ export default async function DashboardPage() {
         )}
       </main>
 
-      <footer className="mt-auto py-6 border-t border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark">
+      <footer className="relative z-10 mt-auto py-6 border-t border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark">
         <div className="max-w-7xl mx-auto px-4 text-center text-sm text-gray-500 dark:text-gray-400">
           © 2025 Inaá Studio. Todos os direitos reservados.
         </div>
