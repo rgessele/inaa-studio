@@ -91,7 +91,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       {filtered.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filtered.map((project) => {
-            const coverUrl = getCoverUrl(project);
+            const coverUrl = getCoverUrl(project) || "/no-banner.png";
 
             return (
               <Link
@@ -100,16 +100,12 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                 className="group bg-surface-light dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-floating transition-all duration-300 flex flex-col"
               >
                 <div className="relative h-48 w-full overflow-hidden bg-gray-200 dark:bg-gray-700">
-                  {coverUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      alt={project.name}
-                      className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
-                      src={coverUrl}
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-primary/20 to-accent-gold/20 dark:from-primary/25 dark:to-accent-gold/15" />
-                  )}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    alt={project.name}
+                    className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
+                    src={coverUrl}
+                  />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60" />
 
                   <div className="absolute top-4 right-4 bg-white/10 backdrop-blur-md rounded-full p-1.5 text-white transition-colors pointer-events-none">
