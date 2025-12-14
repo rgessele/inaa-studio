@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useSearchParams } from "next/navigation";
 import { EditorHeader } from "./EditorHeader";
 import { EditorToolbar } from "./EditorToolbar";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -9,6 +10,9 @@ import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 
 function EditorLayoutContent({ children }: { children: React.ReactNode }) {
   const { undo, redo } = useEditor();
+  const searchParams = useSearchParams();
+  const embedded =
+    searchParams.get("embedded") === "1" || searchParams.get("embed") === "1";
 
   // Setup keyboard shortcuts
   useKeyboardShortcuts({
@@ -18,13 +22,19 @@ function EditorLayoutContent({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background-light dark:bg-background-dark text-text-main dark:text-text-main-dark transition-colors duration-200 selection:bg-primary selection:text-white">
-      <EditorHeader />
+      {embedded ? null : <EditorHeader />}
       <main className="flex-1 flex overflow-hidden">
         <EditorToolbar />
-        <div className="flex-1 relative bg-canvas-bg dark:bg-canvas-bg-dark overflow-hidden flex flex-col">
+        <div
+          className={
+            embedded
+              ? "flex-1 relative bg-canvas-bg dark:bg-canvas-bg-dark overflow-hidden flex flex-col opacity-0 pointer-events-none select-none"
+              : "flex-1 relative bg-canvas-bg dark:bg-canvas-bg-dark overflow-hidden flex flex-col"
+          }
+        >
           {children}
         </div>
-        <PropertiesPanel />
+        {embedded ? null : <PropertiesPanel />}
       </main>
     </div>
   );

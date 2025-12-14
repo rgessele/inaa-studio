@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useEditor } from "./EditorContext";
 import { DrawingTool, Tool } from "./types";
 import {
@@ -11,6 +12,7 @@ import {
 } from "./export";
 
 export function EditorToolbar() {
+  const searchParams = useSearchParams();
   const {
     tool,
     setTool,
@@ -33,6 +35,16 @@ export function EditorToolbar() {
   const [includePatternName, setIncludePatternName] = useState(true);
   const [includePatternTexts, setIncludePatternTexts] = useState(true);
   const [includeSeamAllowance, setIncludeSeamAllowance] = useState(true);
+  const hasAutoExportedRef = useRef(false);
+  const embedded =
+    searchParams.get("embedded") === "1" || searchParams.get("embed") === "1";
+
+  const closeExportModal = () => {
+    setShowExportModal(false);
+    if (embedded) {
+      window.parent?.postMessage({ type: "inaa:exportModalClosed" }, "*");
+    }
+  };
 
   useEffect(() => {
     setPageGuideSettings({
@@ -41,6 +53,56 @@ export function EditorToolbar() {
       marginCm: customMargins ? exportSettings.marginCm : 1,
     });
   }, [customMargins, exportSettings, setPageGuideSettings]);
+
+  useEffect(() => {
+    const exportParam = searchParams.get("export");
+    const shouldOpenExportModal = exportParam === "pdf";
+    const shouldAutoExportPdf =
+      exportParam === "pdf" && searchParams.get("autoExport") === "1";
+
+    if (shouldOpenExportModal) {
+      setShowExportModal(true);
+    }
+
+    if (!shouldAutoExportPdf || hasAutoExportedRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const tryExport = async () => {
+      if (cancelled || hasAutoExportedRef.current) {
+        return;
+      }
+
+      const stage = getStage();
+      if (!stage) {
+        window.setTimeout(tryExport, 200);
+        return;
+      }
+
+      hasAutoExportedRef.current = true;
+
+      const resolvedSettings: ExportSettings = {
+        ...exportSettings,
+        marginCm: customMargins ? exportSettings.marginCm : 1,
+      };
+
+      await generateTiledPDF(
+        stage,
+        shapes,
+        () => setShowGrid(false),
+        () => setShowGrid(true),
+        resolvedSettings
+      );
+    };
+
+    tryExport();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [customMargins, exportSettings, getStage, searchParams, setShowGrid, shapes]);
 
   const handleToolChange = (newTool: Tool) => {
     setTool(newTool);
@@ -59,7 +121,7 @@ export function EditorToolbar() {
       return;
     }
 
-    setShowExportModal(false);
+    closeExportModal();
 
     const resolvedSettings: ExportSettings = {
       ...exportSettings,
@@ -76,7 +138,7 @@ export function EditorToolbar() {
   };
 
   const handleExportSVG = () => {
-    setShowExportModal(false);
+    closeExportModal();
 
     const resolvedSettings: ExportSettings = {
       ...exportSettings,
@@ -98,7 +160,8 @@ export function EditorToolbar() {
 
   return (
     <>
-      <aside className="w-12 bg-surface-light dark:bg-surface-dark border-r border-gray-200 dark:border-gray-700 flex flex-col relative z-50 shadow-subtle shrink-0 items-center py-4 gap-1">
+      {embedded ? null : (
+        <aside className="w-12 bg-surface-light dark:bg-surface-dark border-r border-gray-200 dark:border-gray-700 flex flex-col relative z-50 shadow-subtle shrink-0 items-center py-4 gap-1">
         <button
           className="group relative flex items-center justify-center p-2 rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
           aria-label="Salvar"
@@ -268,13 +331,18 @@ export function EditorToolbar() {
         >
           <span className="material-symbols-outlined text-[20px]">delete</span>
         </button>
-      </aside>
+        </aside>
+      )}
 
       {/* Export Modal */}
       {showExportModal && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-          onClick={() => setShowExportModal(false)}
+          className={
+            embedded
+              ? "fixed inset-0 bg-surface-light dark:bg-surface-dark flex items-center justify-center z-50"
+              : "fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          }
+          onClick={closeExportModal}
         >
           <div
             className="bg-white dark:bg-gray-800 rounded-lg p-8 max-w-5xl w-full mx-4 shadow-xl"
@@ -291,7 +359,7 @@ export function EditorToolbar() {
                 type="button"
                 className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors"
                 aria-label="Fechar"
-                onClick={() => setShowExportModal(false)}
+                onClick={closeExportModal}
               >
                 <span className="material-symbols-outlined text-[20px]">
                   close
