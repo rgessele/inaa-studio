@@ -410,24 +410,38 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
         </div>
       </div>
 
-      {filtered.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleBannerFileSelected}
-          />
-          {filtered.map((project) => {
-            const coverUrl = getCoverUrl(project) || "/no-banner.png";
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleBannerFileSelected}
+        />
 
-            return (
-              <Link
-                key={project.id}
-                href={`/editor/${project.id}`}
-                className="group bg-surface-light dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-floating transition-all duration-300 flex flex-col"
-              >
+        <NewProjectButton className="group flex flex-col items-center justify-center h-full min-h-[350px] rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 hover:border-primary hover:bg-white dark:hover:bg-white/5 transition-all duration-300">
+          <div className="h-16 w-16 rounded-full bg-accent-gold/15 dark:bg-accent-gold/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+            <span className="material-symbols-outlined text-primary dark:text-accent-gold text-[32px]">
+              add
+            </span>
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-text-main-dark">
+            Criar novo design
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-text-muted-dark mt-2">
+            Comece um projeto do zero
+          </p>
+        </NewProjectButton>
+
+        {filtered.map((project) => {
+          const coverUrl = getCoverUrl(project) || "/no-banner.png";
+
+          return (
+            <Link
+              key={project.id}
+              href={`/editor/${project.id}`}
+              className="group bg-surface-light dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-floating transition-all duration-300 flex flex-col"
+            >
                 <div className="relative h-48 w-full bg-gray-200 dark:bg-gray-700">
                   <div className="absolute inset-0 overflow-hidden">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -551,24 +565,11 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                 </div>
               </Link>
             );
-          })}
+        })}
+      </div>
 
-          <NewProjectButton className="group flex flex-col items-center justify-center h-full min-h-[350px] rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 hover:border-primary hover:bg-white dark:hover:bg-white/5 transition-all duration-300">
-            <div className="h-16 w-16 rounded-full bg-accent-gold/15 dark:bg-accent-gold/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-              <span className="material-symbols-outlined text-primary dark:text-accent-gold text-[32px]">
-                add
-              </span>
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-text-main-dark">
-              Criar novo design
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-text-muted-dark mt-2">
-              Comece um projeto do zero
-            </p>
-          </NewProjectButton>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark p-8 text-center">
+      {filtered.length === 0 ? (
+        <div className="mt-6 rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark p-8 text-center">
           <div className="mx-auto w-16 h-16 mb-4 flex items-center justify-center rounded-full bg-accent-gold/15">
             <span className="material-symbols-outlined text-[32px] text-primary">
               folder_open
@@ -582,11 +583,8 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
               ? "Comece criando seu primeiro projeto de modelagem."
               : "Tente ajustar sua busca."}
           </p>
-          <div className="mt-6">
-            <NewProjectButton className="inline-flex items-center rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-hover shadow-lg shadow-black/20 dark:shadow-black/40" />
-          </div>
         </div>
-      )}
+      ) : null}
     </>
   );
 }
