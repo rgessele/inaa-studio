@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   Stage,
   Layer,
@@ -801,9 +801,8 @@ export default function Canvas() {
                     }
 
                     return (
-                      <>
+                      <Fragment key={shape.id}>
                         <Line
-                          key={shape.id}
                           ref={(node) => {
                             if (node) {
                               shapeRefs.current.set(shape.id, node);
@@ -884,7 +883,7 @@ export default function Canvas() {
                             />
                           </>
                         )}
-                      </>
+                      </Fragment>
                     );
                   }
                 }
