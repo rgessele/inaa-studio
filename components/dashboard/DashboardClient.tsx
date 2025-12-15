@@ -10,6 +10,7 @@ import type { Project } from "@/lib/projects";
 import { saveProjectAsCopy } from "@/lib/projects";
 
 type SortOption = "recent" | "old" | "name";
+type ViewMode = "grid" | "list";
 
 function formatDatePtBr(value: string) {
   return new Date(value).toLocaleDateString("pt-BR");
@@ -23,6 +24,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortOption>("recent");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [items, setItems] = useState<Project[]>(projects);
   const [isClient, setIsClient] = useState(false);
   const [openMenuForProjectId, setOpenMenuForProjectId] = useState<string | null>(
@@ -397,7 +399,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
           />
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <select
             className="block w-full pl-3 pr-10 py-2 text-base border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md bg-surface-light dark:bg-surface-dark text-gray-900 dark:text-text-main-dark shadow-subtle"
             value={sort}
@@ -407,10 +409,38 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
             <option value="old">Antigos</option>
             <option value="name">Nome (A-Z)</option>
           </select>
+
+          <button
+            type="button"
+            onClick={() =>
+              setViewMode((prev) => (prev === "grid" ? "list" : "grid"))
+            }
+            className="inline-flex items-center justify-center h-10 w-10 rounded-md border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors shadow-subtle"
+            title={
+              viewMode === "grid"
+                ? "Alternar para lista"
+                : "Alternar para grade"
+            }
+            aria-label={
+              viewMode === "grid"
+                ? "Alternar para lista"
+                : "Alternar para grade"
+            }
+          >
+            <span className="material-symbols-outlined text-[20px]">
+              {viewMode === "grid" ? "view_list" : "grid_view"}
+            </span>
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div
+        className={
+          viewMode === "grid"
+            ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+            : "flex flex-col gap-4"
+        }
+      >
         <input
           ref={fileInputRef}
           type="file"
@@ -419,18 +449,26 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
           onChange={handleBannerFileSelected}
         />
 
-        <NewProjectButton className="group flex flex-col items-center justify-center h-full min-h-[350px] rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 hover:border-primary hover:bg-white dark:hover:bg-white/5 transition-all duration-300">
+        <NewProjectButton
+          className={
+            viewMode === "grid"
+              ? "group flex flex-col items-center justify-center h-full min-h-[350px] rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 hover:border-primary hover:bg-white dark:hover:bg-white/5 transition-all duration-300"
+              : "group flex items-center justify-between gap-6 px-6 py-5 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 hover:border-primary hover:bg-white dark:hover:bg-white/5 transition-all duration-300"
+          }
+        >
           <div className="h-16 w-16 rounded-full bg-accent-gold/15 dark:bg-accent-gold/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
             <span className="material-symbols-outlined text-primary dark:text-accent-gold text-[32px]">
               add
             </span>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-text-main-dark">
-            Criar novo design
-          </h3>
-          <p className="text-sm text-gray-500 dark:text-text-muted-dark mt-2">
-            Comece um projeto do zero
-          </p>
+          <div className={viewMode === "grid" ? "text-center" : "flex-1"}>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-text-main-dark">
+              Criar novo design
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-text-muted-dark mt-2">
+              Comece um projeto do zero
+            </p>
+          </div>
         </NewProjectButton>
 
         {filtered.map((project) => {
@@ -440,9 +478,19 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
             <Link
               key={project.id}
               href={`/editor/${project.id}`}
-              className="group bg-surface-light dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-floating transition-all duration-300 flex flex-col"
+              className={
+                viewMode === "grid"
+                  ? "group bg-surface-light dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-floating transition-all duration-300 flex flex-col"
+                  : "group bg-surface-light dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-floating transition-all duration-300 flex flex-col sm:flex-row"
+              }
             >
-                <div className="relative h-48 w-full bg-gray-200 dark:bg-gray-700">
+              <div
+                className={
+                  viewMode === "grid"
+                    ? "relative h-48 w-full bg-gray-200 dark:bg-gray-700"
+                    : "relative h-28 w-full sm:w-56 sm:h-auto bg-gray-200 dark:bg-gray-700 shrink-0"
+                }
+              >
                   <div className="absolute inset-0 overflow-hidden">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -453,6 +501,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60" />
                   </div>
 
+                {viewMode === "grid" ? (
                   <div
                     className="absolute top-4 right-4 z-30"
                     data-project-menu="true"
@@ -520,27 +569,135 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                       </div>
                     ) : null}
                   </div>
+                ) : null}
                 </div>
 
-                <div className="p-5 flex-grow flex flex-col">
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-text-main-dark group-hover:text-primary transition-colors line-clamp-1">
-                      {project.name}
-                    </h3>
-                  </div>
+                <div
+                  className={
+                    viewMode === "grid"
+                      ? "p-5 flex-grow flex flex-col"
+                      : "p-4 flex-grow flex flex-col"
+                  }
+                >
+                <div className="flex justify-between items-start gap-3 mb-2">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-text-main-dark group-hover:text-primary transition-colors line-clamp-1">
+                    {project.name}
+                  </h3>
+
+                  {viewMode === "list" ? (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        title="Duplicar"
+                        aria-label="Duplicar"
+                        disabled={isWorking}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void handleDuplicate(project);
+                        }}
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-md text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">
+                          content_copy
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        title="Renomear"
+                        aria-label="Renomear"
+                        disabled={isWorking}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void handleRename(project);
+                        }}
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-md text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">
+                          edit
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        title="Alterar banner"
+                        aria-label="Alterar banner"
+                        disabled={isWorking}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openBannerPicker(project.id);
+                        }}
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-md text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">
+                          image
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        title="Remover banner"
+                        aria-label="Remover banner"
+                        disabled={isWorking}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void handleRemoveBanner(project);
+                        }}
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-md text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">
+                          hide_image
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        title="Baixar / Imprimir"
+                        aria-label="Baixar / Imprimir"
+                        disabled={isWorking}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setPrintProjectId(project.id);
+                        }}
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-md text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">
+                          print
+                        </span>
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
 
                   {project.description ? (
-                    <p className="text-sm text-gray-500 dark:text-text-muted-dark mb-4 line-clamp-2">
+                    <p
+                      className={
+                        viewMode === "grid"
+                          ? "text-sm text-gray-500 dark:text-text-muted-dark mb-4 line-clamp-2"
+                          : "text-sm text-gray-500 dark:text-text-muted-dark mb-3 line-clamp-1"
+                      }
+                    >
                       {project.description}
                     </p>
                   ) : (
-                    <p className="text-sm text-gray-500 dark:text-text-muted-dark mb-4 line-clamp-2">
+                    <p
+                      className={
+                        viewMode === "grid"
+                          ? "text-sm text-gray-500 dark:text-text-muted-dark mb-4 line-clamp-2"
+                          : "text-sm text-gray-500 dark:text-text-muted-dark mb-3 line-clamp-1"
+                      }
+                    >
                       {project.design_data?.meta?.notes ||
                         "Gerencie e edite seu molde digital."}
                     </p>
                   )}
 
-                  <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="mt-auto pt-3 border-t border-gray-200 dark:border-gray-700">
                     <div className="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500">
                       <div className="flex items-center gap-1">
                         <span className="material-symbols-outlined text-[16px]">
