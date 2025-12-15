@@ -347,7 +347,7 @@ export function NewProjectButton({ className, children }: NewProjectButtonProps)
                               Selecionar Imagem
                             </div>
                             <div className="mt-2 text-sm text-gray-500">
-                              Clique aqui ou arraste e solte a ficha técnica ou imagem da peça
+                              Clique aqui ou arraste e solte a imagem de capa do projeto
                             </div>
                           </>
                         )}
