@@ -352,12 +352,16 @@ export function EditorToolbar() {
           className={
             embedded
               ? "fixed inset-0 bg-surface-light dark:bg-surface-dark flex items-center justify-center z-50"
-              : "fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+              : "fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
           }
           onClick={closeExportModal}
         >
           <div
-            className="bg-white dark:bg-gray-800 rounded-lg p-8 max-w-5xl w-full mx-4 shadow-xl"
+            className={
+              embedded
+                ? "bg-white dark:bg-gray-800 w-full h-full p-8 shadow-none overflow-auto"
+                : "bg-white dark:bg-gray-800 rounded-lg p-8 max-w-5xl w-full mx-4 shadow-xl"
+            }
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-6 mb-8">

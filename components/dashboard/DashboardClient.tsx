@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { NewProjectButton } from "@/components/dashboard/NewProjectButton";
@@ -23,6 +24,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortOption>("recent");
   const [items, setItems] = useState<Project[]>(projects);
+  const [isClient, setIsClient] = useState(false);
   const [openMenuForProjectId, setOpenMenuForProjectId] = useState<string | null>(
     null
   );
@@ -30,6 +32,22 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   const [isWorking, setIsWorking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingBannerProjectIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  useEffect(() => {
+    if (!printProjectId) return;
+    setOpenMenuForProjectId(null);
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [printProjectId]);
 
   useEffect(() => {
     setItems(projects);
@@ -343,22 +361,25 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
 
   return (
     <>
-      {printProjectId ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setPrintProjectId(null)}
-          />
+      {isClient && printProjectId
+        ? createPortal(
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center">
+              <div
+                className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                onClick={() => setPrintProjectId(null)}
+              />
 
-          <div className="relative w-[95vw] h-[90vh] max-w-6xl rounded-2xl bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 shadow-floating overflow-hidden">
-            <iframe
-              title="Imprimir projeto"
-              className="w-full h-full"
-              src={`/editor/${printProjectId}?export=pdf&embedded=1`}
-            />
-          </div>
-        </div>
-      ) : null}
+              <div className="relative w-[95vw] h-[90vh] max-w-6xl rounded-2xl bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 shadow-floating overflow-hidden">
+                <iframe
+                  title="Imprimir projeto"
+                  className="w-full h-full"
+                  src={`/editor/${printProjectId}?export=pdf&embedded=1`}
+                />
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
 
       <div className="flex flex-col sm:flex-row gap-4 mb-8">
         <div className="relative flex-grow max-w-md">
