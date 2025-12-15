@@ -186,7 +186,7 @@ export function NewProjectButton({ className, children }: NewProjectButtonProps)
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
-            className="absolute inset-0 bg-black/30"
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
             onClick={() => (!isSubmitting ? setOpen(false) : null)}
           />
 
