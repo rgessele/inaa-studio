@@ -411,7 +411,7 @@ export default function Canvas() {
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
     // Handle measure tool
-    if (isMeasuring && tool === "measure") {
+    if (isMeasuring) {
       const stage = e.target.getStage();
       if (!stage) return;
 
@@ -501,7 +501,7 @@ export default function Canvas() {
 
   const handleMouseUp = () => {
     // Clear measure tool state
-    if (isMeasuring && tool === "measure") {
+    if (isMeasuring) {
       setIsMeasuring(false);
       setMeasureStart(null);
       setMeasureEnd(null);
@@ -1299,7 +1299,7 @@ export default function Canvas() {
               style={{
                 left: `${measureTooltipData.screenX + 15}px`,
                 top: `${measureTooltipData.screenY - 10}px`,
-                transform: 'translateY(-50%)',
+                transform: "translateY(-50%)",
               }}
             >
               {measureTooltipData.distanceCm.toFixed(1)} cm
