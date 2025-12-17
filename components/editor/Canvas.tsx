@@ -165,7 +165,6 @@ export default function Canvas() {
     measureSnapStrengthPx,
     offsetValueCm,
     setOffsetValueCm,
-    pixelsPerUnit,
   } = useEditor();
 
   const RULER_THICKNESS = 24;
@@ -810,10 +809,11 @@ export default function Canvas() {
       if (!shape) return;
 
       // Apply offset and get new shapes
+      // Use PX_PER_CM constant for consistent centimeter-based calculations
       const { offsetShapes, dashedOriginal } = applyOffset(
         shape,
         offsetValueCm,
-        pixelsPerUnit
+        PX_PER_CM
       );
 
       // Replace original with dashed version and add offset shapes
@@ -1597,7 +1597,7 @@ export default function Canvas() {
               value={offsetValueCm}
               onChange={(e) => {
                 const value = parseFloat(e.target.value);
-                if (!isNaN(value) && value > 0) {
+                if (!isNaN(value) && value >= 0.1 && value <= 10) {
                   setOffsetValueCm(value);
                 }
               }}
