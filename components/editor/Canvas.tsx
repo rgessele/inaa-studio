@@ -66,6 +66,7 @@ export default function Canvas() {
 
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
   const [isKeyboardActive, setIsKeyboardActive] = useState(false);
   const [isPanDrag, setIsPanDrag] = useState(false);
   const [selectedNodeIndex, setSelectedNodeIndex] = useState<number | null>(
@@ -199,6 +200,9 @@ export default function Canvas() {
         event.preventDefault();
         setIsSpacePressed(true);
       }
+      if (event.key === "Shift") {
+        setIsShiftPressed(true);
+      }
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
@@ -207,6 +211,9 @@ export default function Canvas() {
         event.preventDefault();
         setIsSpacePressed(false);
         setIsPanDrag(false);
+      }
+      if (event.key === "Shift") {
+        setIsShiftPressed(false);
       }
     };
 
@@ -365,7 +372,15 @@ export default function Canvas() {
     const updatedShapes = shapes.slice();
 
     if (lastShape.tool === "rectangle") {
-      const rect = normalizeRectangle({ x: lastShape.x, y: lastShape.y }, pos);
+      let rect = normalizeRectangle({ x: lastShape.x, y: lastShape.y }, pos);
+
+      // If SHIFT is pressed, force 1:1 aspect ratio (square)
+      if (isShiftPressed) {
+        const size = Math.min(rect.width, rect.height);
+        rect.width = size;
+        rect.height = size;
+      }
+
       updatedShapes[shapeIndex] = {
         ...lastShape,
         width: rect.width,
@@ -377,7 +392,11 @@ export default function Canvas() {
     } else if (lastShape.tool === "circle") {
       const dx = pos.x - lastShape.x;
       const dy = pos.y - lastShape.y;
+
+      // Circles always use diagonal distance for radius (naturally perfect circles)
+      // SHIFT key has no effect on circle behavior
       const radius = Math.sqrt(dx * dx + dy * dy);
+
       updatedShapes[shapeIndex] = {
         ...lastShape,
         radius,
