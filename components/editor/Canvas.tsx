@@ -45,6 +45,28 @@ function createRectanglePoints(width: number, height: number): number[] {
   return [0, 0, width, 0, width, height, 0, height];
 }
 
+// Helper function to calculate measure tooltip data
+function calculateMeasureTooltip(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  scale: number,
+  position: { x: number; y: number }
+) {
+  // Calculate distance in pixels
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const distancePx = Math.sqrt(dx * dx + dy * dy);
+
+  // Convert to centimeters
+  const distanceCm = distancePx / PX_PER_CM;
+
+  // Calculate screen position (follows the end point)
+  const screenX = end.x * scale + position.x;
+  const screenY = end.y * scale + position.y;
+
+  return { distanceCm, screenX, screenY };
+}
+
 export default function Canvas() {
   const {
     tool,
@@ -249,6 +271,15 @@ export default function Canvas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tool]);
 
+  // Clear measure tool state when switching away from measure tool
+  useEffect(() => {
+    if (tool !== "measure") {
+      setIsMeasuring(false);
+      setMeasureStart(null);
+      setMeasureEnd(null);
+    }
+  }, [tool]);
+
   // Attach transformer to selected shape
   useEffect(() => {
     if (!transformerRef.current) return;
@@ -335,7 +366,7 @@ export default function Canvas() {
       const pos = getRelativePointer(stage);
       if (!pos) return;
 
-      // Start measuring
+      // Clear any previous measurement and start new one
       setMeasureStart(pos);
       setMeasureEnd(pos);
       setIsMeasuring(true);
@@ -1250,17 +1281,12 @@ export default function Canvas() {
 
           {/* Measure tool tooltip */}
           {isMeasuring && measureStart && measureEnd && (() => {
-            // Calculate distance in pixels
-            const dx = measureEnd.x - measureStart.x;
-            const dy = measureEnd.y - measureStart.y;
-            const distancePx = Math.sqrt(dx * dx + dy * dy);
-            
-            // Convert to centimeters
-            const distanceCm = distancePx / PX_PER_CM;
-
-            // Calculate screen position (follows the end point)
-            const screenX = measureEnd.x * stageScale + stagePosition.x;
-            const screenY = measureEnd.y * stageScale + stagePosition.y;
+            const { distanceCm, screenX, screenY } = calculateMeasureTooltip(
+              measureStart,
+              measureEnd,
+              stageScale,
+              stagePosition
+            );
 
             return (
               <div
