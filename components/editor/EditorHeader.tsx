@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { UnitSettings } from "./UnitSettings";
 import { ViewMenu } from "./ViewMenu";
 import { useEditor } from "./EditorContext";
@@ -44,6 +44,11 @@ export function EditorHeader() {
     type: "success",
     isVisible: false,
   });
+
+  const saveTooltip = useDelayedTooltip(true);
+  const themeTooltip = useDelayedTooltip(true);
+  const profileTooltip = useDelayedTooltip(true);
+  const signOutTooltip = useDelayedTooltip(true);
 
   const toggleTheme = () => {
     document.documentElement.classList.toggle("dark");
@@ -280,23 +285,35 @@ export function EditorHeader() {
           {/* Save button */}
           <button
             onClick={handleSaveClick}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-4 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Salvar Projeto"
+            onMouseEnter={saveTooltip.onMouseEnter}
+            onMouseLeave={saveTooltip.onMouseLeave}
+            className="group relative bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-4 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isSaving}
           >
             <span className="material-symbols-outlined text-[16px]">save</span>
             {isSaving ? "Salvando..." : "Salvar"}
+            <HeaderTooltip
+              title="Salvar Projeto"
+              expanded={saveTooltip.expanded}
+              details={["Salva as alterações do projeto atual."]}
+            />
           </button>
           <UnitSettings />
           <div className="flex items-center mr-2">
             <button
-              className="p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
+              onMouseEnter={themeTooltip.onMouseEnter}
+              onMouseLeave={themeTooltip.onMouseLeave}
+              className="group relative p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
               onClick={toggleTheme}
-              title="Alternar Tema"
             >
               <span className="material-symbols-outlined text-[18px]">
                 brightness_4
               </span>
+              <HeaderTooltip
+                title="Alternar Tema"
+                expanded={themeTooltip.expanded}
+                details={["Alterna entre modo claro e escuro."]}
+              />
             </button>
           </div>
           <button
@@ -320,24 +337,36 @@ export function EditorHeader() {
             </div>
 
             <div
+              onMouseEnter={profileTooltip.onMouseEnter}
+              onMouseLeave={profileTooltip.onMouseLeave}
               className="relative group cursor-pointer"
-              title="Perfil do Usuário"
             >
               <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary to-accent-gold flex items-center justify-center text-white font-semibold shadow-subtle border-2 border-white dark:border-gray-700 text-xs">
                 {userInfo?.initials ?? "U"}
               </div>
               <div className="absolute bottom-0 right-0 h-3 w-3 bg-green-500 rounded-full border-2 border-white dark:border-surface-dark" />
+              <HeaderTooltip
+                title="Perfil do Usuário"
+                expanded={profileTooltip.expanded}
+                details={["Informações da conta e sessão."]}
+              />
             </div>
 
             <button
               type="button"
               onClick={() => void handleSignOut()}
               className="text-red-500 hover:text-red-700 dark:text-accent-rose dark:hover:text-red-300 transition-colors"
-              title="Sair"
+              onMouseEnter={signOutTooltip.onMouseEnter}
+              onMouseLeave={signOutTooltip.onMouseLeave}
             >
               <span className="material-symbols-outlined text-[22px]">
                 logout
               </span>
+              <HeaderTooltip
+                title="Sair"
+                expanded={signOutTooltip.expanded}
+                details={["Encerra sua sessão e volta para o login."]}
+              />
             </button>
           </div>
         </div>
@@ -374,4 +403,71 @@ export function EditorHeader() {
       />
     </>
   );
+}
+
+function HeaderTooltip({
+  title,
+  details,
+  expanded,
+}: {
+  title: string;
+  details?: string[];
+  expanded?: boolean;
+}) {
+  const hasDetails = Boolean(details && details.length > 0);
+
+  return (
+    <span className="absolute left-1/2 top-full -translate-x-1/2 mt-2 z-50">
+      <span
+        className={
+          "bg-gray-900 text-white rounded px-2 py-1 pointer-events-none whitespace-nowrap " +
+          "opacity-0 group-hover:opacity-100 transition-opacity " +
+          (expanded ? "text-[11px]" : "text-[10px]")
+        }
+      >
+        <span className="inline-flex items-center gap-2">
+          <span>{title}</span>
+        </span>
+        {expanded && hasDetails ? (
+          <span className="mt-1 block max-w-[220px] whitespace-normal text-[10px] text-white/90">
+            {details!.slice(0, 4).map((line, index) => (
+              <span key={index} className="block leading-snug">
+                {line}
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </span>
+    </span>
+  );
+}
+
+function useDelayedTooltip(hasDetails: boolean) {
+  const [expanded, setExpanded] = useState(false);
+  const timerRef = useRef<number | null>(null);
+
+  const onMouseEnter = useCallback(() => {
+    if (!hasDetails) return;
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => setExpanded(true), 3000);
+  }, [hasDetails]);
+
+  const onMouseLeave = useCallback(() => {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    setExpanded(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
+
+  return { expanded, onMouseEnter, onMouseLeave };
 }

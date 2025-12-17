@@ -154,6 +154,7 @@ export function EditorToolbar() {
   const undoTooltip = useDelayedTooltip(true);
   const redoTooltip = useDelayedTooltip(true);
   const eraseTooltip = useDelayedTooltip(true);
+  const clearTooltip = useDelayedTooltip(true);
 
   const handleClear = () => {
     if (confirm("Tem certeza que deseja limpar tudo?")) {
@@ -530,13 +531,21 @@ export function EditorToolbar() {
           <div className="flex-1"></div>
 
           <button
+            onMouseEnter={clearTooltip.onMouseEnter}
+            onMouseLeave={clearTooltip.onMouseLeave}
             className="mb-2 p-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors"
-            title="Limpar Tudo"
             onClick={handleClear}
+            aria-label="Limpar Tudo"
           >
             <span className="material-symbols-outlined text-[20px]">
               delete
             </span>
+            <ToolbarTooltip
+              isMac={isMac}
+              title="Limpar Tudo"
+              expanded={clearTooltip.expanded}
+              details={["Remove todas as formas do projeto."]}
+            />
           </button>
         </aside>
       )}
