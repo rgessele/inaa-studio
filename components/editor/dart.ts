@@ -24,10 +24,10 @@ function getInwardNormal(
   }
   
   // Normal vector (perpendicular, pointing left/inward)
-  // Rotate 90 degrees counter-clockwise: (dx, dy) -> (-dy, dx)
+  // Rotate 90 degrees clockwise for inward direction: (dx, dy) -> (dy, -dx)
   return {
-    x: -dy / length,
-    y: dx / length,
+    x: dy / length,
+    y: -dx / length,
   };
 }
 
