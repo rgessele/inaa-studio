@@ -221,6 +221,14 @@ export default function Canvas() {
 
   const isPanning = tool === "pan" || isSpacePressed || isPanDrag;
 
+  // Clear selected node when switching tools
+  useEffect(() => {
+    if (selectedNodeIndex !== null) {
+      setSelectedNodeIndex(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool]);
+
   // Attach transformer to selected shape
   useEffect(() => {
     if (!transformerRef.current) return;
@@ -283,20 +291,22 @@ export default function Canvas() {
       isMiddleButton ||
       isSpacePressed ||
       tool === "pan" ||
-      (tool === "select" && isBackground)
+      ((tool === "select" || tool === "node") && isBackground)
     ) {
-      // Deselect if clicking on background with select tool
-      if (tool === "select" && isBackground) {
+      // Deselect if clicking on background with select or node tool
+      if ((tool === "select" || tool === "node") && isBackground) {
         setSelectedShapeId(null);
+        setSelectedNodeIndex(null);
       }
       beginPan(stage);
       return;
     }
 
-    if (tool === "select") {
+    if (tool === "select" || tool === "node") {
       // Handle selection logic here if needed, Konva handles click on shapes usually
       if (isBackground) {
         setSelectedShapeId(null);
+        setSelectedNodeIndex(null);
       }
       return;
     }
@@ -512,8 +522,12 @@ export default function Canvas() {
         if (shape.tool === "rectangle") {
           updated.width = Math.max(5, (shape.width || 0) * scaleX);
           updated.height = Math.max(5, (shape.height || 0) * scaleY);
+          // Update points array to match new dimensions
+          updated.points = createRectanglePoints(updated.width, updated.height);
         } else if (shape.tool === "circle") {
           updated.radius = Math.max(2.5, (shape.radius || 0) * scaleX);
+          // Update points array to match new radius
+          updated.points = createCirclePoints(updated.radius);
         } else if (shape.tool === "line" && shape.points) {
           // Scale line points
           const scaledPoints = shape.points.map((point, index) => {
