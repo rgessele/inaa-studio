@@ -17,6 +17,7 @@ import { getPaperDimensionsCm } from "./exportSettings";
 
 import { Ruler } from "./Ruler";
 import { getAllSnapPoints, findNearestSnapPoint, SnapPoint } from "./snapping";
+import { applyOffset } from "./offset";
 
 // Large virtual area to keep the background visible while navigating the canvas.
 const WORKSPACE_SIZE = 8000; // Increased size
@@ -147,6 +148,7 @@ function calculateMeasureTooltip(
 export default function Canvas() {
   const {
     tool,
+    setTool,
     shapes,
     setShapes,
     scale: stageScale,
@@ -161,6 +163,8 @@ export default function Canvas() {
     showPageGuides,
     pageGuideSettings,
     measureSnapStrengthPx,
+    offsetValueCm,
+    setOffsetValueCm,
   } = useEditor();
 
   const RULER_THICKNESS = 24;
@@ -313,6 +317,40 @@ export default function Canvas() {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isTypingElement(event.target)) return;
+      
+      // Handle tool shortcuts
+      if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+        switch (event.code) {
+          case "KeyV":
+            setTool("select");
+            break;
+          case "KeyN":
+            setTool("node");
+            break;
+          case "KeyH":
+            setTool("pan");
+            break;
+          case "KeyR":
+            setTool("rectangle");
+            break;
+          case "KeyC":
+            setTool("circle");
+            break;
+          case "KeyL":
+            setTool("line");
+            break;
+          case "KeyU":
+            setTool("curve");
+            break;
+          case "KeyM":
+            setTool("measure");
+            break;
+          case "KeyO":
+            setTool("offset");
+            break;
+        }
+      }
+      
       if (event.code === "Space") {
         event.preventDefault();
         setIsSpacePressed(true);
@@ -341,7 +379,7 @@ export default function Canvas() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [isKeyboardActive]);
+  }, [isKeyboardActive, setTool]);
 
   const isPanning = tool === "pan" || isSpacePressed || isPanDrag;
 
@@ -765,6 +803,30 @@ export default function Canvas() {
   };
 
   const handleShapeClick = (id: string) => {
+    // If offset tool is active, apply offset to the clicked shape
+    if (tool === "offset") {
+      const shape = shapes.find((s) => s.id === id);
+      if (!shape) return;
+
+      // Apply offset and get new shapes
+      // Use PX_PER_CM constant for consistent centimeter-based calculations
+      const { offsetShapes, dashedOriginal } = applyOffset(
+        shape,
+        offsetValueCm,
+        PX_PER_CM
+      );
+
+      // Replace original with dashed version and add offset shapes
+      const updatedShapes = shapes.map((s) =>
+        s.id === id ? dashedOriginal : s
+      );
+      setShapes([...updatedShapes, ...offsetShapes]);
+      
+      // Keep the offset tool active for multiple applications
+      return;
+    }
+
+    // Normal selection behavior
     if (tool === "select") {
       setSelectedShapeId(id);
     }
@@ -1061,13 +1123,15 @@ export default function Canvas() {
   };
 
   const cursor =
-    tool === "pan" || isSpacePressed || isPanDrag
-      ? isPanDrag
-        ? "grabbing"
-        : "grab"
-      : tool === "select" || tool === "node"
-        ? "default"
-        : "crosshair";
+    tool === "offset"
+      ? "pointer"
+      : tool === "pan" || isSpacePressed || isPanDrag
+        ? isPanDrag
+          ? "grabbing"
+          : "grab"
+        : tool === "select" || tool === "node"
+          ? "default"
+          : "crosshair";
 
   // Calculate measure tooltip data
   const measureTooltipData = useMemo(() => {
@@ -1518,6 +1582,47 @@ export default function Canvas() {
           )}
         </div>
       </div>
+      {/* Offset tool configuration panel */}
+      {tool === "offset" && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+              Margem de Costura:
+            </span>
+            <input
+              type="number"
+              min="0.1"
+              max="10"
+              step="0.1"
+              value={offsetValueCm}
+              onChange={(e) => {
+                const value = parseFloat(e.target.value);
+                // Allow empty or intermediate states during typing
+                if (e.target.value === "" || e.target.value === ".") {
+                  return;
+                }
+                // Clamp value to valid range
+                if (!isNaN(value)) {
+                  const clampedValue = Math.max(0.1, Math.min(10, value));
+                  setOffsetValueCm(clampedValue);
+                }
+              }}
+              onBlur={(e) => {
+                // On blur, ensure we have a valid value
+                const value = parseFloat(e.target.value);
+                if (isNaN(value) || value < 0.1) {
+                  setOffsetValueCm(1); // Reset to default
+                }
+              }}
+              className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+            />
+            <span className="text-sm text-gray-500 dark:text-gray-400">cm</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500 ml-2">
+              Clique em uma forma para adicionar margem
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

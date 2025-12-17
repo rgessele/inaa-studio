@@ -366,6 +366,29 @@ export function EditorToolbar() {
             label="Medir (M)"
           />
 
+          <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
+
+          <ToolButton
+            active={tool === "offset"}
+            onClick={() => handleToolChange("offset")}
+            icon="format_indent_increase"
+            label="Margem de Costura (O)"
+            customIcon={
+              <svg
+                className="w-5 h-5 stroke-current"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.5"
+                viewBox="0 0 24 24"
+              >
+                <rect x="6" y="6" width="12" height="12" />
+                <rect x="3" y="3" width="18" height="18" strokeDasharray="2 2" />
+              </svg>
+            }
+          />
+
           <div className="flex-1"></div>
 
           <button

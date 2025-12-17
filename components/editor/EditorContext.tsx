@@ -61,6 +61,10 @@ interface EditorContextType {
   measureSnapStrengthPx: number;
   setMeasureSnapStrengthPx: (strengthPx: number) => void;
 
+  // Offset tool
+  offsetValueCm: number;
+  setOffsetValueCm: (value: number) => void;
+
   // Project management
   projectId: string | null;
   setProjectId: (id: string | null) => void;
@@ -107,6 +111,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [measureSnapStrengthPx, setMeasureSnapStrengthPxState] = useState(
     MEASURE_SNAP_MIN_PX
   );
+
+  // Offset tool state (default 1cm for seam allowance)
+  const [offsetValueCm, setOffsetValueCm] = useState(1);
 
   React.useEffect(() => {
     try {
@@ -220,6 +227,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setPageGuideSettings,
         measureSnapStrengthPx,
         setMeasureSnapStrengthPx,
+        offsetValueCm,
+        setOffsetValueCm,
         projectId,
         setProjectId,
         projectName,
