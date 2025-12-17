@@ -29,6 +29,83 @@ const WORKSPACE_BACKGROUND = "#121212"; // Dark background
 const GRID_COLOR = "rgba(255, 255, 255, 0.05)";
 const CONTROL_POINT_RADIUS = 6; // Radius for control point anchor
 const NODE_ANCHOR_RADIUS = 5; // Radius for node anchors
+const MEASURE_SNAP_THRESHOLD_PX = 12;
+
+function degreesToRadians(degrees: number): number {
+  return (degrees * Math.PI) / 180;
+}
+
+function localToWorldPoint(
+  shape: Pick<Shape, "x" | "y" | "rotation">,
+  localX: number,
+  localY: number
+): { x: number; y: number } {
+  const rotation = shape.rotation || 0;
+  if (!rotation) {
+    return { x: shape.x + localX, y: shape.y + localY };
+  }
+
+  const rad = degreesToRadians(rotation);
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const rotatedX = localX * cos - localY * sin;
+  const rotatedY = localX * sin + localY * cos;
+  return { x: shape.x + rotatedX, y: shape.y + rotatedY };
+}
+
+function closestPointOnSegment(
+  point: { x: number; y: number },
+  segment: { x1: number; y1: number; x2: number; y2: number }
+): { x: number; y: number; distance: number } {
+  const vx = segment.x2 - segment.x1;
+  const vy = segment.y2 - segment.y1;
+  const wx = point.x - segment.x1;
+  const wy = point.y - segment.y1;
+
+  const vv = vx * vx + vy * vy;
+  if (vv < 0.0000001) {
+    const dx = point.x - segment.x1;
+    const dy = point.y - segment.y1;
+    return {
+      x: segment.x1,
+      y: segment.y1,
+      distance: Math.sqrt(dx * dx + dy * dy),
+    };
+  }
+
+  let t = (wx * vx + wy * vy) / vv;
+  t = Math.max(0, Math.min(1, t));
+  const x = segment.x1 + t * vx;
+  const y = segment.y1 + t * vy;
+  const dx = point.x - x;
+  const dy = point.y - y;
+  return { x, y, distance: Math.sqrt(dx * dx + dy * dy) };
+}
+
+function getCurvePolylineLocal(
+  points: number[],
+  controlPoint: { x: number; y: number },
+  steps: number = 50
+): number[] {
+  const x1 = points[0];
+  const y1 = points[1];
+  const x2 = points[2];
+  const y2 = points[3];
+  const cx = controlPoint.x;
+  const cy = controlPoint.y;
+
+  const curvePoints: number[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const mt = 1 - t;
+    const mt2 = mt * mt;
+    const t2 = t * t;
+    const x = mt2 * x1 + 2 * mt * t * cx + t2 * x2;
+    const y = mt2 * y1 + 2 * mt * t * cy + t2 * y2;
+    curvePoints.push(x, y);
+  }
+  return curvePoints;
+}
 
 // Helper function to create a circle as a closed path with points
 function createCirclePoints(radius: number, segments: number = 32): number[] {
@@ -106,6 +183,10 @@ export default function Canvas() {
     null
   );
   const [isMeasuring, setIsMeasuring] = useState(false);
+  const [measureSnapPreview, setMeasureSnapPreview] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const cachedSnapPoints = useRef<SnapPoint[] | null>(null);
   const isDrawing = useRef(false);
   const currentShape = useRef<Shape | null>(null);
@@ -277,8 +358,14 @@ export default function Canvas() {
       setIsMeasuring(false);
       setMeasureStart(null);
       setMeasureEnd(null);
+      setMeasureSnapPreview(null);
     }
   }, [tool]);
+
+  // Invalidate cached snap points whenever shapes change
+  useEffect(() => {
+    cachedSnapPoints.current = null;
+  }, [shapes]);
 
   // Attach transformer to selected shape
   useEffect(() => {
@@ -306,6 +393,93 @@ export default function Canvas() {
     return {
       x: (pointer.x - position.x) / scale,
       y: (pointer.y - position.y) / scale,
+    };
+  };
+
+  const getMeasureMagneticResult = (pos: { x: number; y: number }) => {
+    const thresholdWorld = MEASURE_SNAP_THRESHOLD_PX / stageScale;
+
+    // Prefer snapping to explicit snap points (endpoints/midpoints/intersections)
+    // but also support snapping to the closest point along any segment (edge).
+    let bestPoint: { x: number; y: number } | null = null;
+    let bestDistance = thresholdWorld;
+
+    // 1) Snap points (vertices/midpoints/intersections)
+    const snapPoints =
+      cachedSnapPoints.current || getAllSnapPoints(shapes, undefined, undefined);
+    cachedSnapPoints.current = snapPoints;
+    const nearestSnapPoint = findNearestSnapPoint(
+      pos.x,
+      pos.y,
+      snapPoints,
+      thresholdWorld
+    );
+    if (nearestSnapPoint) {
+      const dx = nearestSnapPoint.x - pos.x;
+      const dy = nearestSnapPoint.y - pos.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestPoint = { x: nearestSnapPoint.x, y: nearestSnapPoint.y };
+      }
+    }
+
+    // 2) Segment/edge snapping
+    for (const shape of shapes) {
+      // Build a list of local polyline points for the shape
+      let localPoints: number[] | null = null;
+      let isClosed = false;
+
+      if (shape.tool === "rectangle") {
+        const w = shape.width || 0;
+        const h = shape.height || 0;
+        localPoints = [0, 0, w, 0, w, h, 0, h];
+        isClosed = true;
+      } else if (shape.tool === "circle") {
+        localPoints = shape.points || null;
+        isClosed = true;
+      } else if (shape.tool === "line") {
+        localPoints = shape.points || null;
+        isClosed = false;
+      } else if (shape.tool === "curve") {
+        if (shape.points && shape.points.length >= 4 && shape.controlPoint) {
+          localPoints = getCurvePolylineLocal(shape.points, shape.controlPoint);
+          isClosed = false;
+        }
+      }
+
+      if (!localPoints || localPoints.length < 4) continue;
+
+      const numPoints = Math.floor(localPoints.length / 2);
+      const segmentsCount = isClosed ? numPoints : numPoints - 1;
+      for (let i = 0; i < segmentsCount; i++) {
+        const nextIndex = (i + 1) % numPoints;
+        const p1 = localToWorldPoint(
+          shape,
+          localPoints[i * 2],
+          localPoints[i * 2 + 1]
+        );
+        const p2 = localToWorldPoint(
+          shape,
+          localPoints[nextIndex * 2],
+          localPoints[nextIndex * 2 + 1]
+        );
+        const closest = closestPointOnSegment(pos, {
+          x1: p1.x,
+          y1: p1.y,
+          x2: p2.x,
+          y2: p2.y,
+        });
+        if (closest.distance < bestDistance) {
+          bestDistance = closest.distance;
+          bestPoint = { x: closest.x, y: closest.y };
+        }
+      }
+    }
+
+    return {
+      point: bestPoint || pos,
+      isSnapped: Boolean(bestPoint),
     };
   };
 
@@ -366,9 +540,12 @@ export default function Canvas() {
       const pos = getRelativePointer(stage);
       if (!pos) return;
 
+      const result = getMeasureMagneticResult(pos);
+
       // Clear any previous measurement and start new one
-      setMeasureStart(pos);
-      setMeasureEnd(pos);
+      setMeasureStart(result.point);
+      setMeasureEnd(result.point);
+      setMeasureSnapPreview(result.isSnapped ? result.point : null);
       setIsMeasuring(true);
       return;
     }
@@ -410,6 +587,19 @@ export default function Canvas() {
   };
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    // Preview snap before starting measure
+    if (tool === "measure" && !isMeasuring) {
+      const stage = e.target.getStage();
+      if (!stage) return;
+
+      const pos = getRelativePointer(stage);
+      if (!pos) return;
+
+      const result = getMeasureMagneticResult(pos);
+      setMeasureSnapPreview(result.isSnapped ? result.point : null);
+      return;
+    }
+
     // Handle measure tool
     if (isMeasuring) {
       const stage = e.target.getStage();
@@ -418,7 +608,9 @@ export default function Canvas() {
       const pos = getRelativePointer(stage);
       if (!pos) return;
 
-      setMeasureEnd(pos);
+      const result = getMeasureMagneticResult(pos);
+      setMeasureEnd(result.point);
+      setMeasureSnapPreview(result.isSnapped ? result.point : null);
       return;
     }
 
@@ -1233,6 +1425,20 @@ export default function Canvas() {
                   strokeWidth={1}
                   listening={false}
                   opacity={0.8}
+                />
+              )}
+
+              {/* Measure snap preview indicator (blue dot) */}
+              {tool === "measure" && measureSnapPreview && (
+                <KonvaCircle
+                  x={measureSnapPreview.x}
+                  y={measureSnapPreview.y}
+                  radius={3}
+                  fill="#3b82f6"
+                  stroke="#ffffff"
+                  strokeWidth={1}
+                  listening={false}
+                  opacity={0.9}
                 />
               )}
 
