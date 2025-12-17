@@ -1,94 +1,114 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
+  <head>
     <title>Canvas Test</title>
     <script src="https://unpkg.com/konva@10.0.12/konva.min.js"></script>
     <style>
-        body { margin: 0; background: #121212; }
-        #container { width: 800px; height: 600px; }
-        .toolbar { position: fixed; top: 10px; left: 10px; background: white; padding: 10px; }
-        button { margin: 5px; padding: 5px 10px; }
-        button.active { background: #673b45; color: white; }
+      body {
+        margin: 0;
+        background: #121212;
+      }
+      #container {
+        width: 800px;
+        height: 600px;
+      }
+      .toolbar {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        background: white;
+        padding: 10px;
+      }
+      button {
+        margin: 5px;
+        padding: 5px 10px;
+      }
+      button.active {
+        background: #673b45;
+        color: white;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="toolbar">
-        <button id="btnRect">Rectangle</button>
-        <button id="btnCircle">Circle</button>
-        <button id="btnNode" class="active">Node Tool</button>
+      <button id="btnRect">Rectangle</button>
+      <button id="btnCircle">Circle</button>
+      <button id="btnNode" class="active">Node Tool</button>
     </div>
     <div id="container"></div>
-    
+
     <script>
-        const NODE_ANCHOR_RADIUS = 5;
-        
-        // Create stage
-        const stage = new Konva.Stage({
-            container: 'container',
-            width: 800,
-            height: 600
+      const NODE_ANCHOR_RADIUS = 5;
+
+      // Create stage
+      const stage = new Konva.Stage({
+        container: "container",
+        width: 800,
+        height: 600,
+      });
+
+      const layer = new Konva.Layer();
+      stage.add(layer);
+
+      // Helper functions
+      function createRectanglePoints(width, height) {
+        return [0, 0, width, 0, width, height, 0, height];
+      }
+
+      function createCirclePoints(radius, segments = 32) {
+        const points = [];
+        for (let i = 0; i < segments; i++) {
+          const angle = (i / segments) * Math.PI * 2;
+          points.push(Math.cos(angle) * radius, Math.sin(angle) * radius);
+        }
+        return points;
+      }
+
+      // Create a test rectangle
+      const rectPoints = createRectanglePoints(200, 150);
+      const rect = new Konva.Line({
+        x: 100,
+        y: 100,
+        points: rectPoints,
+        stroke: "#e5e7eb",
+        strokeWidth: 2,
+        fill: "transparent",
+        closed: true,
+      });
+      layer.add(rect);
+
+      // Create anchors for the rectangle
+      const anchors = [];
+      for (let i = 0; i < rectPoints.length; i += 2) {
+        const anchor = new Konva.Circle({
+          x: rect.x() + rectPoints[i],
+          y: rect.y() + rectPoints[i + 1],
+          radius: NODE_ANCHOR_RADIUS,
+          fill: "#673b45",
+          stroke: "#ffffff",
+          strokeWidth: 2,
+          draggable: true,
         });
-        
-        const layer = new Konva.Layer();
-        stage.add(layer);
-        
-        // Helper functions
-        function createRectanglePoints(width, height) {
-            return [0, 0, width, 0, width, height, 0, height];
-        }
-        
-        function createCirclePoints(radius, segments = 32) {
-            const points = [];
-            for (let i = 0; i < segments; i++) {
-                const angle = (i / segments) * Math.PI * 2;
-                points.push(Math.cos(angle) * radius, Math.sin(angle) * radius);
-            }
-            return points;
-        }
-        
-        // Create a test rectangle
-        const rectPoints = createRectanglePoints(200, 150);
-        const rect = new Konva.Line({
-            x: 100,
-            y: 100,
-            points: rectPoints,
-            stroke: '#e5e7eb',
-            strokeWidth: 2,
-            fill: 'transparent',
-            closed: true
+
+        const nodeIndex = i / 2;
+        anchor.on("dragmove", function () {
+          const newX = this.x() - rect.x();
+          const newY = this.y() - rect.y();
+          rectPoints[i] = newX;
+          rectPoints[i + 1] = newY;
+          rect.points(rectPoints);
+          layer.batchDraw();
         });
-        layer.add(rect);
-        
-        // Create anchors for the rectangle
-        const anchors = [];
-        for (let i = 0; i < rectPoints.length; i += 2) {
-            const anchor = new Konva.Circle({
-                x: rect.x() + rectPoints[i],
-                y: rect.y() + rectPoints[i + 1],
-                radius: NODE_ANCHOR_RADIUS,
-                fill: '#673b45',
-                stroke: '#ffffff',
-                strokeWidth: 2,
-                draggable: true
-            });
-            
-            const nodeIndex = i / 2;
-            anchor.on('dragmove', function() {
-                const newX = this.x() - rect.x();
-                const newY = this.y() - rect.y();
-                rectPoints[i] = newX;
-                rectPoints[i + 1] = newY;
-                rect.points(rectPoints);
-                layer.batchDraw();
-            });
-            
-            anchors.push(anchor);
-            layer.add(anchor);
-        }
-        
-        layer.draw();
-        
-        console.log('Canvas test loaded. Drag the corner nodes to transform the rectangle!');
+
+        anchors.push(anchor);
+        layer.add(anchor);
+      }
+
+      layer.draw();
+
+      console.log(
+        "Canvas test loaded. Drag the corner nodes to transform the rectangle!"
+      );
     </script>
-</body>
+  </body>
 </html>

@@ -1010,7 +1010,9 @@ export default function Canvas() {
 
                         return (
                           <Fragment key={`${shape.id}-node-${nodeIndex}`}>
-                            {/* Highlight segment to previous node */}
+                            {/* Highlight segments adjacent to selected node.
+                                Only for closed shapes (rectangles, circles) since open shapes
+                                (lines) don't have well-defined "adjacent" segments in the same way. */}
                             {isNodeSelected && isClosed && (
                               <>
                                 <Line
