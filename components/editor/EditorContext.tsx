@@ -68,6 +68,14 @@ interface EditorContextType {
   offsetTargetId: string | null;
   setOffsetTargetId: (id: string | null) => void;
 
+  // Dart tool
+  dartDepthCm: number;
+  setDartDepthCm: (value: number) => void;
+  dartOpeningCm: number;
+  setDartOpeningCm: (value: number) => void;
+  dartTargetId: string | null;
+  setDartTargetId: (id: string | null) => void;
+
   // Project management
   projectId: string | null;
   setProjectId: (id: string | null) => void;
@@ -118,6 +126,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   // Offset tool state (default 1cm for seam allowance)
   const [offsetValueCm, setOffsetValueCm] = useState(1);
   const [offsetTargetId, setOffsetTargetId] = useState<string | null>(null);
+
+  // Dart tool state (default values for dart depth and opening)
+  const [dartDepthCm, setDartDepthCm] = useState(3); // 3cm depth
+  const [dartOpeningCm, setDartOpeningCm] = useState(2); // 2cm opening
+  const [dartTargetId, setDartTargetId] = useState<string | null>(null);
 
   React.useEffect(() => {
     try {
@@ -257,6 +270,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setOffsetValueCm,
         offsetTargetId,
         setOffsetTargetId,
+        dartDepthCm,
+        setDartDepthCm,
+        dartOpeningCm,
+        setDartOpeningCm,
+        dartTargetId,
+        setDartTargetId,
         projectId,
         setProjectId,
         projectName,

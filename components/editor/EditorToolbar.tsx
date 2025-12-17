@@ -528,6 +528,32 @@ export function EditorToolbar() {
             }
           />
 
+          <ToolButton
+            active={tool === "dart"}
+            onClick={() => handleToolChange("dart")}
+            icon="change_history"
+            isMac={isMac}
+            title="Pence"
+            shortcuts={[{ key: "D" }]}
+            details={[
+              "Clique em uma linha para inserir uma pence.",
+              "Configure a profundidade e abertura nas propriedades.",
+            ]}
+            customIcon={
+              <svg
+                className="w-5 h-5 stroke-current"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.5"
+                viewBox="0 0 24 24"
+              >
+                <path d="M12 2 L6 12 L12 10 L18 12 Z" />
+              </svg>
+            }
+          />
+
           <div className="flex-1"></div>
 
           <button
@@ -668,6 +694,11 @@ export function EditorToolbar() {
                       label="Curvas"
                       checked={exportSettings.toolFilter.curve}
                       onCheckedChange={() => toggleToolFilter("curve")}
+                    />
+                    <CheckboxRow
+                      label="Pences"
+                      checked={exportSettings.toolFilter.dart}
+                      onCheckedChange={() => toggleToolFilter("dart")}
                     />
                   </div>
                 </div>

@@ -18,6 +18,7 @@ import { getPaperDimensionsCm } from "./exportSettings";
 import { Ruler } from "./Ruler";
 import { getAllSnapPoints, findNearestSnapPoint, SnapPoint } from "./snapping";
 import { upsertSeamAllowance } from "./offset";
+import { applyDartToShape } from "./dart";
 
 // Large virtual area to keep the background visible while navigating the canvas.
 const WORKSPACE_SIZE = 8000; // Increased size
@@ -166,6 +167,12 @@ export default function Canvas() {
     setOffsetValueCm,
     offsetTargetId,
     setOffsetTargetId,
+    dartDepthCm,
+    setDartDepthCm,
+    dartOpeningCm,
+    setDartOpeningCm,
+    dartTargetId,
+    setDartTargetId,
   } = useEditor();
 
   const RULER_THICKNESS = 24;
@@ -473,6 +480,13 @@ export default function Canvas() {
     }
   }, [offsetTargetId, setOffsetTargetId, tool]);
 
+  // Clear dart target when switching away from dart tool
+  useEffect(() => {
+    if (tool !== "dart" && dartTargetId) {
+      setDartTargetId(null);
+    }
+  }, [dartTargetId, setDartTargetId, tool]);
+
   // If the target shape is deleted, clear selection
   useEffect(() => {
     if (!offsetTargetId) return;
@@ -481,6 +495,15 @@ export default function Canvas() {
       setOffsetTargetId(null);
     }
   }, [offsetTargetId, setOffsetTargetId, shapes]);
+
+  // If the dart target shape is deleted, clear selection
+  useEffect(() => {
+    if (!dartTargetId) return;
+    const exists = shapes.some((s) => s.id === dartTargetId);
+    if (!exists) {
+      setDartTargetId(null);
+    }
+  }, [dartTargetId, setDartTargetId, shapes]);
 
   // Invalidate cached snap points whenever shapes change
   useEffect(() => {
@@ -885,6 +908,31 @@ export default function Canvas() {
 
   const handleShapeClick = (id: string) => {
     const parentId = getParentIdForShape(id);
+
+    // If dart tool is active, apply dart to the clicked shape
+    if (tool === "dart") {
+      const base = shapes.find((s) => s.id === parentId);
+      if (!base) return;
+
+      setSelectedShapeId(parentId);
+      setDartTargetId(parentId);
+
+      // Apply dart with default parameters (position at 50%, depth 3cm, opening 2cm)
+      const depthPx = dartDepthCm * PX_PER_CM;
+      const openingPx = dartOpeningCm * PX_PER_CM;
+      const positionRatio = 0.5; // Default to middle of the edge
+
+      setShapes((prev) => {
+        return prev.map((shape) => {
+          if (shape.id === parentId) {
+            return applyDartToShape(shape, positionRatio, depthPx, openingPx, 0);
+          }
+          return shape;
+        });
+      });
+
+      return;
+    }
 
     // If offset tool is active, apply or edit seam allowance for the clicked shape
     if (tool === "offset") {
@@ -1773,6 +1821,90 @@ export default function Canvas() {
               {hasOffsetTarget
                 ? "Clique em outra forma para editar"
                 : "Clique em uma forma para adicionar/editar margem"}
+            </span>
+          </div>
+        </div>
+      )}
+      {/* Dart tool configuration panel */}
+      {tool === "dart" && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                Profundidade:
+              </span>
+              <input
+                type="number"
+                min="0.5"
+                max="20"
+                step="0.1"
+                value={dartDepthCm}
+                onChange={(e) => {
+                  const value = parseFloat(e.target.value);
+                  if (!isNaN(value)) {
+                    const clampedValue = Math.max(0.5, Math.min(20, value));
+                    setDartDepthCm(clampedValue);
+                    
+                    // If editing an existing dart, update it
+                    if (dartTargetId) {
+                      const depthPx = clampedValue * PX_PER_CM;
+                      const openingPx = dartOpeningCm * PX_PER_CM;
+                      setShapes((prev) =>
+                        prev.map((shape) => {
+                          if (shape.id === dartTargetId) {
+                            return applyDartToShape(shape, 0.5, depthPx, openingPx, 0);
+                          }
+                          return shape;
+                        })
+                      );
+                    }
+                  }
+                }}
+                className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              />
+              <span className="text-sm text-gray-500 dark:text-gray-400">cm</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                Abertura:
+              </span>
+              <input
+                type="number"
+                min="0.5"
+                max="20"
+                step="0.1"
+                value={dartOpeningCm}
+                onChange={(e) => {
+                  const value = parseFloat(e.target.value);
+                  if (!isNaN(value)) {
+                    const clampedValue = Math.max(0.5, Math.min(20, value));
+                    setDartOpeningCm(clampedValue);
+                    
+                    // If editing an existing dart, update it
+                    if (dartTargetId) {
+                      const depthPx = dartDepthCm * PX_PER_CM;
+                      const openingPx = clampedValue * PX_PER_CM;
+                      setShapes((prev) =>
+                        prev.map((shape) => {
+                          if (shape.id === dartTargetId) {
+                            return applyDartToShape(shape, 0.5, depthPx, openingPx, 0);
+                          }
+                          return shape;
+                        })
+                      );
+                    }
+                  }
+                }}
+                className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              />
+              <span className="text-sm text-gray-500 dark:text-gray-400">cm</span>
+            </div>
+
+            <span className="text-xs text-gray-400 dark:text-gray-500 ml-2">
+              {dartTargetId
+                ? "Clique em outra forma para adicionar pence"
+                : "Clique em uma forma para adicionar pence"}
             </span>
           </div>
         </div>
