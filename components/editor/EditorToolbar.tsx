@@ -554,6 +554,60 @@ export function EditorToolbar() {
             }
           />
 
+          <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
+
+          <ToolButton
+            active={tool === "mirror"}
+            onClick={() => handleToolChange("mirror")}
+            icon="flip"
+            isMac={isMac}
+            title="Espelhar"
+            shortcuts={[{ key: "F" }]}
+            details={[
+              "Clique em uma forma para criar cópia espelhada.",
+              "Configure o eixo (vertical/horizontal) nas propriedades.",
+            ]}
+            customIcon={
+              <svg
+                className="w-5 h-5 stroke-current"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.5"
+                viewBox="0 0 24 24"
+              >
+                <path d="M12 3 L12 21 M9 6 L6 9 L9 12 M15 12 L18 9 L15 6" />
+              </svg>
+            }
+          />
+
+          <ToolButton
+            active={tool === "unfold"}
+            onClick={() => handleToolChange("unfold")}
+            icon="unfold_more"
+            isMac={isMac}
+            title="Desdobrar"
+            shortcuts={[{ key: "G" }]}
+            details={[
+              "Clique em uma forma pela metade para desdobrar.",
+              "Duplica, espelha e une as metades numa peça única.",
+            ]}
+            customIcon={
+              <svg
+                className="w-5 h-5 stroke-current"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.5"
+                viewBox="0 0 24 24"
+              >
+                <path d="M12 3 L12 21 M8 6 L12 10 L16 6 M8 18 L12 14 L16 18" />
+              </svg>
+            }
+          />
+
           <div className="flex-1"></div>
 
           <button

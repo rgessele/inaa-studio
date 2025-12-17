@@ -175,6 +175,8 @@ export default function Canvas() {
     setDartOpeningCm,
     dartTargetId,
     setDartTargetId,
+    mirrorAxis,
+    unfoldAxis,
   } = useEditor();
 
   const RULER_THICKNESS = 24;
@@ -933,6 +935,66 @@ export default function Canvas() {
               openingPx,
               DEFAULT_DART_EDGE_INDEX
             );
+          }
+          return shape;
+        });
+      });
+
+      return;
+    }
+
+    // If mirror tool is active, create a mirrored copy of the clicked shape
+    if (tool === "mirror") {
+      const base = shapes.find((s) => s.id === parentId);
+      if (!base) return;
+
+      setSelectedShapeId(parentId);
+
+      // Import mirror function
+      const { mirrorShape, getAxisPositionForShape } = require("./mirror");
+
+      // Get axis position from shape center
+      const axisPosition = getAxisPositionForShape(base, mirrorAxis, "center");
+
+      // Create mirrored shape
+      const mirrored = mirrorShape(base, mirrorAxis, axisPosition);
+
+      // Add the mirrored shape to canvas
+      setShapes((prev) => [...prev, mirrored]);
+
+      return;
+    }
+
+    // If unfold tool is active, unfold the clicked shape
+    if (tool === "unfold") {
+      const base = shapes.find((s) => s.id === parentId);
+      if (!base) return;
+
+      setSelectedShapeId(parentId);
+
+      // Import unfold functions
+      const { unfoldShape, canUnfoldShape, getSuggestedUnfoldAxis } =
+        require("./unfold");
+
+      // Check if shape can be unfolded
+      if (!canUnfoldShape(base)) {
+        // Shape can't be unfolded (only lines and curves supported)
+        return;
+      }
+
+      // Get suggested axis position
+      const axisPosition = getSuggestedUnfoldAxis(base, unfoldAxis);
+
+      // Create unfolded shape
+      const unfolded = unfoldShape(base, unfoldAxis, axisPosition);
+
+      if (!unfolded) return;
+
+      // Replace the original shape with the unfolded version
+      setShapes((prev) => {
+        return prev.map((shape) => {
+          if (shape.id === parentId) {
+            return unfolded;
           }
           return shape;
         });

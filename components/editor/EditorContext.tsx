@@ -76,6 +76,14 @@ interface EditorContextType {
   dartTargetId: string | null;
   setDartTargetId: (id: string | null) => void;
 
+  // Mirror tool
+  mirrorAxis: "vertical" | "horizontal";
+  setMirrorAxis: (axis: "vertical" | "horizontal") => void;
+
+  // Unfold tool
+  unfoldAxis: "vertical" | "horizontal";
+  setUnfoldAxis: (axis: "vertical" | "horizontal") => void;
+
   // Project management
   projectId: string | null;
   setProjectId: (id: string | null) => void;
@@ -131,6 +139,16 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [dartDepthCm, setDartDepthCm] = useState(3); // 3cm depth
   const [dartOpeningCm, setDartOpeningCm] = useState(2); // 2cm opening
   const [dartTargetId, setDartTargetId] = useState<string | null>(null);
+
+  // Mirror tool state
+  const [mirrorAxis, setMirrorAxis] = useState<"vertical" | "horizontal">(
+    "vertical"
+  );
+
+  // Unfold tool state
+  const [unfoldAxis, setUnfoldAxis] = useState<"vertical" | "horizontal">(
+    "vertical"
+  );
 
   React.useEffect(() => {
     try {
@@ -276,6 +294,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setDartOpeningCm,
         dartTargetId,
         setDartTargetId,
+        mirrorAxis,
+        setMirrorAxis,
+        unfoldAxis,
+        setUnfoldAxis,
         projectId,
         setProjectId,
         projectName,
