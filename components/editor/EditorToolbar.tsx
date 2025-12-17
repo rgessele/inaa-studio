@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEditor } from "./EditorContext";
 import { DrawingTool, Tool } from "./types";
@@ -127,6 +127,17 @@ export function EditorToolbar() {
     setTool(newTool);
   };
 
+  const [isMac, setIsMac] = useState(false);
+
+  useEffect(() => {
+    setIsMac(/Mac|iPhone|iPod|iPad/.test(navigator.userAgent));
+  }, []);
+
+  const saveTooltip = useDelayedTooltip(true);
+  const exportTooltip = useDelayedTooltip(true);
+  const undoTooltip = useDelayedTooltip(true);
+  const redoTooltip = useDelayedTooltip(true);
+
   const handleClear = () => {
     if (confirm("Tem certeza que deseja limpar tudo?")) {
       setShapes([]);
@@ -182,26 +193,43 @@ export function EditorToolbar() {
       {embedded ? null : (
         <aside className="w-12 bg-surface-light dark:bg-surface-dark border-r border-gray-200 dark:border-gray-700 flex flex-col relative z-50 shadow-subtle shrink-0 items-center py-4 gap-1">
           <button
+            onMouseEnter={saveTooltip.onMouseEnter}
+            onMouseLeave={saveTooltip.onMouseLeave}
             className="group relative flex items-center justify-center p-2 rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
             aria-label="Salvar"
           >
             <span className="material-symbols-outlined text-[20px]">save</span>
-            <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
-              Salvar
-            </span>
+            <ToolbarTooltip
+              isMac={isMac}
+              title="Salvar"
+              shortcuts={[{ cmdOrCtrl: true, key: "S" }]}
+              expanded={saveTooltip.expanded}
+              details={[
+                "Salva as alterações do projeto.",
+                "Se ainda não existir, abre o fluxo de Salvar como.",
+              ]}
+            />
           </button>
 
           <button
             onClick={() => setShowExportModal(true)}
+            onMouseEnter={exportTooltip.onMouseEnter}
+            onMouseLeave={exportTooltip.onMouseLeave}
             className="group relative flex items-center justify-center p-2 rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
             aria-label="Exportar"
           >
             <span className="material-symbols-outlined text-[20px]">
               download
             </span>
-            <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
-              Exportar
-            </span>
+            <ToolbarTooltip
+              isMac={isMac}
+              title="Exportar"
+              expanded={exportTooltip.expanded}
+              details={[
+                "Abre as opções de exportação e impressão.",
+                "Use para PDF (paginado) ou SVG.",
+              ]}
+            />
           </button>
 
           <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
@@ -209,33 +237,48 @@ export function EditorToolbar() {
           <button
             onClick={undo}
             disabled={!canUndo}
+            onMouseEnter={undoTooltip.onMouseEnter}
+            onMouseLeave={undoTooltip.onMouseLeave}
             className={`group relative flex items-center justify-center p-2 rounded transition-all ${
               !canUndo
                 ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
                 : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
             }`}
-            aria-label="Desfazer (Ctrl+Z)"
+            aria-label="Desfazer"
           >
             <span className="material-symbols-outlined text-[20px]">undo</span>
-            <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
-              Desfazer (Ctrl+Z)
-            </span>
+            <ToolbarTooltip
+              isMac={isMac}
+              title="Desfazer"
+              shortcuts={[{ cmdOrCtrl: true, key: "Z" }]}
+              expanded={undoTooltip.expanded}
+              details={["Desfaz a última ação."]}
+            />
           </button>
 
           <button
             onClick={redo}
             disabled={!canRedo}
+            onMouseEnter={redoTooltip.onMouseEnter}
+            onMouseLeave={redoTooltip.onMouseLeave}
             className={`group relative flex items-center justify-center p-2 rounded transition-all ${
               !canRedo
                 ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
                 : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
             }`}
-            aria-label="Refazer (Ctrl+Y)"
+            aria-label="Refazer"
           >
             <span className="material-symbols-outlined text-[20px]">redo</span>
-            <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
-              Refazer (Ctrl+Y)
-            </span>
+            <ToolbarTooltip
+              isMac={isMac}
+              title="Refazer"
+              shortcuts={[
+                { cmdOrCtrl: true, shift: true, key: "Z" },
+                { cmdOrCtrl: true, key: "Y" },
+              ]}
+              expanded={redoTooltip.expanded}
+              details={["Refaz a última ação desfeita."]}
+            />
           </button>
 
           <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
@@ -244,14 +287,26 @@ export function EditorToolbar() {
             active={tool === "select"}
             onClick={() => handleToolChange("select")}
             icon="arrow_selector_tool"
-            label="Selecionar (V)"
+            isMac={isMac}
+            title="Selecionar"
+            shortcuts={[{ key: "V" }]}
+            details={[
+              "Clique em objetos para selecionar.",
+              "Arraste para mover o objeto selecionado.",
+            ]}
           />
 
           <ToolButton
             active={tool === "node"}
             onClick={() => handleToolChange("node")}
             icon="radio_button_unchecked"
-            label="Editar Nós (N)"
+            isMac={isMac}
+            title="Editar nós"
+            shortcuts={[{ key: "N" }]}
+            details={[
+              "Clique em uma forma para exibir os nós.",
+              "Arraste os nós para deformar a geometria.",
+            ]}
             customIcon={
               <svg
                 className="w-5 h-5 stroke-current"
@@ -278,7 +333,13 @@ export function EditorToolbar() {
             active={tool === "pan"}
             onClick={() => handleToolChange("pan")}
             icon="pan_tool"
-            label="Mover (H)"
+            isMac={isMac}
+            title="Mover"
+            shortcuts={[{ key: "H" }]}
+            details={[
+              "Clique e arraste para mover o canvas.",
+              "Segure Espaço para pan temporário.",
+            ]}
           />
 
           <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
@@ -287,7 +348,13 @@ export function EditorToolbar() {
             active={tool === "rectangle"}
             onClick={() => handleToolChange("rectangle")}
             icon="rectangle"
-            label="Retângulo (R)"
+            isMac={isMac}
+            title="Retângulo"
+            shortcuts={[{ key: "R" }]}
+            details={[
+              "Clique e arraste para desenhar.",
+              "Segure Shift para manter 1:1 (quadrado).",
+            ]}
             filled
           />
 
@@ -295,7 +362,10 @@ export function EditorToolbar() {
             active={tool === "circle"}
             onClick={() => handleToolChange("circle")}
             icon="circle"
-            label="Círculo (C)"
+            isMac={isMac}
+            title="Círculo"
+            shortcuts={[{ key: "C" }]}
+            details={["Clique e arraste para definir o raio."]}
             filled
           />
 
@@ -303,7 +373,10 @@ export function EditorToolbar() {
             active={tool === "line"}
             onClick={() => handleToolChange("line")}
             icon="horizontal_rule" // Using horizontal_rule as line icon replacement or custom svg
-            label="Linha (L)"
+            isMac={isMac}
+            title="Linha"
+            shortcuts={[{ key: "L" }]}
+            details={["Clique e arraste para desenhar uma linha."]}
             customIcon={
               <svg
                 className="w-5 h-5 stroke-current"
@@ -323,7 +396,13 @@ export function EditorToolbar() {
             active={tool === "curve"}
             onClick={() => handleToolChange("curve")}
             icon="timeline"
-            label="Curva (U)"
+            isMac={isMac}
+            title="Curva"
+            shortcuts={[{ key: "U" }]}
+            details={[
+              "Clique e arraste para criar uma curva.",
+              "Use Editar nós (N) para ajustar a curvatura.",
+            ]}
             customIcon={
               <svg
                 className="w-5 h-5 stroke-current"
@@ -339,31 +418,34 @@ export function EditorToolbar() {
             }
           />
 
-          <button
-            className="group relative flex items-center justify-center p-2 rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
-            aria-label="Caneta (P)"
-          >
-            <span className="material-symbols-outlined text-[20px]">edit</span>
-            <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
-              Caneta (P)
-            </span>
-          </button>
+          <StaticToolbarButton
+            icon="edit"
+            ariaLabel="Caneta"
+            isMac={isMac}
+            tooltipTitle="Caneta"
+            tooltipDetails={["Em breve."]}
+          />
 
           <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
 
-          <button
-            className="group relative flex items-center justify-center p-2 rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
-            title="Texto (T)"
-          >
-            <span className="material-symbols-outlined text-[20px]">
-              text_fields
-            </span>
-          </button>
+          <StaticToolbarButton
+            icon="text_fields"
+            ariaLabel="Texto"
+            isMac={isMac}
+            tooltipTitle="Texto"
+            tooltipDetails={["Em breve."]}
+          />
           <ToolButton
             active={tool === "measure"}
             onClick={() => handleToolChange("measure")}
             icon="straighten"
-            label="Medir (M)"
+            isMac={isMac}
+            title="Medir"
+            shortcuts={[{ key: "M" }]}
+            details={[
+              "Clique e arraste para medir distância.",
+              "Aproximar do edge ativa magnetismo.",
+            ]}
           />
 
           <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
@@ -372,7 +454,13 @@ export function EditorToolbar() {
             active={tool === "offset"}
             onClick={() => handleToolChange("offset")}
             icon="format_indent_increase"
-            label="Margem de Costura (O)"
+            isMac={isMac}
+            title="Margem de costura"
+            shortcuts={[{ key: "O" }]}
+            details={[
+              "Clique em uma forma para gerar a margem.",
+              "Use as opções para ajustar a distância.",
+            ]}
             customIcon={
               <svg
                 className="w-5 h-5 stroke-current"
@@ -708,28 +796,37 @@ interface ToolButtonProps {
   active: boolean;
   onClick: () => void;
   icon: string;
-  label: string;
+  title: string;
+  isMac: boolean;
   filled?: boolean;
   customIcon?: React.ReactNode;
+  shortcuts?: ToolbarShortcut[];
+  details?: string[];
 }
 
 function ToolButton({
   active,
   onClick,
   icon,
-  label,
+  title,
+  isMac,
   filled,
   customIcon,
+  shortcuts,
+  details,
 }: ToolButtonProps) {
+  const tooltip = useDelayedTooltip(Boolean(details && details.length > 0));
   return (
     <button
       onClick={onClick}
+      onMouseEnter={tooltip.onMouseEnter}
+      onMouseLeave={tooltip.onMouseLeave}
       className={`group relative flex items-center justify-center p-2 rounded transition-all ${
         active
           ? "bg-primary/10 text-primary border border-primary/20 dark:bg-primary/20 dark:text-primary-light dark:border-primary/40 shadow-sm"
           : "bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
       }`}
-      aria-label={label}
+      aria-label={title}
     >
       {customIcon ? (
         customIcon
@@ -740,9 +837,159 @@ function ToolButton({
           {icon}
         </span>
       )}
-      <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-gray-900 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
-        {label}
-      </span>
+      <ToolbarTooltip
+        isMac={isMac}
+        title={title}
+        shortcuts={shortcuts}
+        details={details}
+        expanded={tooltip.expanded}
+      />
     </button>
   );
+}
+
+function StaticToolbarButton({
+  icon,
+  ariaLabel,
+  isMac,
+  tooltipTitle,
+  tooltipShortcuts,
+  tooltipDetails,
+}: {
+  icon: string;
+  ariaLabel: string;
+  isMac: boolean;
+  tooltipTitle: string;
+  tooltipShortcuts?: ToolbarShortcut[];
+  tooltipDetails?: string[];
+}) {
+  const tooltip = useDelayedTooltip(Boolean(tooltipDetails && tooltipDetails.length > 0));
+
+  return (
+    <button
+      onMouseEnter={tooltip.onMouseEnter}
+      onMouseLeave={tooltip.onMouseLeave}
+      className="group relative flex items-center justify-center p-2 rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
+      aria-label={ariaLabel}
+    >
+      <span className="material-symbols-outlined text-[20px]">{icon}</span>
+      <ToolbarTooltip
+        isMac={isMac}
+        title={tooltipTitle}
+        shortcuts={tooltipShortcuts}
+        details={tooltipDetails}
+        expanded={tooltip.expanded}
+      />
+    </button>
+  );
+}
+
+type ToolbarShortcut = {
+  cmdOrCtrl?: boolean;
+  shift?: boolean;
+  alt?: boolean;
+  key: string;
+};
+
+function renderShortcut(shortcut: ToolbarShortcut, isMac: boolean) {
+  const parts: string[] = [];
+  if (shortcut.cmdOrCtrl) parts.push(isMac ? "⌘" : "Ctrl");
+  if (shortcut.shift) parts.push(isMac ? "⇧" : "Shift");
+  if (shortcut.alt) parts.push(isMac ? "⌥" : "Alt");
+  parts.push(shortcut.key.toUpperCase());
+  return parts;
+}
+
+function Kbd({ children }: { children: string }) {
+  return (
+    <span className="inline-flex items-center rounded border border-white/15 bg-white/10 px-1.5 py-0.5 text-[10px] leading-none">
+      {children}
+    </span>
+  );
+}
+
+function ToolbarTooltip({
+  title,
+  shortcuts,
+  details,
+  expanded,
+  isMac,
+}: {
+  title: string;
+  shortcuts?: ToolbarShortcut[];
+  details?: string[];
+  expanded?: boolean;
+  isMac: boolean;
+}) {
+  const hasDetails = Boolean(details && details.length > 0);
+
+  const shortcutContent = shortcuts?.length
+    ? shortcuts
+        .map((s) => renderShortcut(s, isMac))
+        .map((parts, index) => (
+          <span key={index} className="inline-flex items-center gap-1">
+            {parts.map((p, partIndex) => (
+              <Kbd key={partIndex}>{p}</Kbd>
+            ))}
+          </span>
+        ))
+    : null;
+
+  return (
+    <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50">
+      <span
+        className={
+          "bg-gray-900 text-white rounded px-2 py-1 pointer-events-none whitespace-nowrap " +
+          "opacity-0 group-hover:opacity-100 transition-opacity " +
+          (expanded ? "text-[11px]" : "text-[10px]")
+        }
+      >
+        <span className="inline-flex items-center gap-2">
+          <span>{title}</span>
+          {shortcutContent ? (
+            <span className="inline-flex items-center gap-2">{shortcutContent}</span>
+          ) : null}
+        </span>
+        {expanded && hasDetails ? (
+          <span className="mt-1 block max-w-[220px] whitespace-normal text-[10px] text-white/90">
+            {details!.slice(0, 4).map((line, index) => (
+              <span key={index} className="block leading-snug">
+                {line}
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </span>
+    </span>
+  );
+}
+
+function useDelayedTooltip(hasDetails: boolean) {
+  const [expanded, setExpanded] = useState(false);
+  const timerRef = useRef<number | null>(null);
+
+  const onMouseEnter = useCallback(() => {
+    if (!hasDetails) return;
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => setExpanded(true), 3000);
+  }, [hasDetails]);
+
+  const onMouseLeave = useCallback(() => {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    setExpanded(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
+
+  return { expanded, onMouseEnter, onMouseLeave };
 }

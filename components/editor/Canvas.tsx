@@ -148,7 +148,6 @@ function calculateMeasureTooltip(
 export default function Canvas() {
   const {
     tool,
-    setTool,
     shapes,
     setShapes,
     scale: stageScale,
@@ -317,40 +316,7 @@ export default function Canvas() {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isTypingElement(event.target)) return;
-      
-      // Handle tool shortcuts
-      if (!event.ctrlKey && !event.metaKey && !event.altKey) {
-        switch (event.code) {
-          case "KeyV":
-            setTool("select");
-            break;
-          case "KeyN":
-            setTool("node");
-            break;
-          case "KeyH":
-            setTool("pan");
-            break;
-          case "KeyR":
-            setTool("rectangle");
-            break;
-          case "KeyC":
-            setTool("circle");
-            break;
-          case "KeyL":
-            setTool("line");
-            break;
-          case "KeyU":
-            setTool("curve");
-            break;
-          case "KeyM":
-            setTool("measure");
-            break;
-          case "KeyO":
-            setTool("offset");
-            break;
-        }
-      }
-      
+
       if (event.code === "Space") {
         event.preventDefault();
         setIsSpacePressed(true);
@@ -379,7 +345,7 @@ export default function Canvas() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [isKeyboardActive, setTool]);
+  }, [isKeyboardActive]);
 
   const isPanning = tool === "pan" || isSpacePressed || isPanDrag;
 
@@ -674,7 +640,7 @@ export default function Canvas() {
     const updatedShapes = shapes.slice();
 
     if (lastShape.tool === "rectangle") {
-      let rect = normalizeRectangle({ x: lastShape.x, y: lastShape.y }, pos);
+        const rect = normalizeRectangle({ x: lastShape.x, y: lastShape.y }, pos);
 
       // If SHIFT is pressed, force 1:1 aspect ratio (square)
       if (isShiftPressed) {

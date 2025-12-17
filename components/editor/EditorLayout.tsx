@@ -7,9 +7,10 @@ import { EditorToolbar } from "./EditorToolbar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { EditorProvider, useEditor } from "./EditorContext";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
+import { useToolShortcuts } from "./useToolShortcuts";
 
 function EditorLayoutContent({ children }: { children: React.ReactNode }) {
-  const { undo, redo } = useEditor();
+  const { undo, redo, setTool } = useEditor();
   const searchParams = useSearchParams();
   const embedded =
     searchParams.get("embedded") === "1" || searchParams.get("embed") === "1";
@@ -18,6 +19,11 @@ function EditorLayoutContent({ children }: { children: React.ReactNode }) {
   useKeyboardShortcuts({
     onUndo: undo,
     onRedo: redo,
+  });
+
+  useToolShortcuts({
+    setTool,
+    enabled: !embedded,
   });
 
   return (
