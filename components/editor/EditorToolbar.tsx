@@ -34,6 +34,8 @@ export function EditorToolbar() {
     getStage,
     setShowGrid,
     setPageGuideSettings,
+    selectedShapeId,
+    deleteSelected,
   } = useEditor();
   const [showExportModal, setShowExportModal] = useState(false);
 
@@ -151,6 +153,7 @@ export function EditorToolbar() {
   const exportTooltip = useDelayedTooltip(true);
   const undoTooltip = useDelayedTooltip(true);
   const redoTooltip = useDelayedTooltip(true);
+  const eraseTooltip = useDelayedTooltip(true);
 
   const handleClear = () => {
     if (confirm("Tem certeza que deseja limpar tudo?")) {
@@ -300,6 +303,31 @@ export function EditorToolbar() {
               ]}
               expanded={redoTooltip.expanded}
               details={["Refaz a última ação desfeita."]}
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={deleteSelected}
+            disabled={!selectedShapeId}
+            onMouseEnter={eraseTooltip.onMouseEnter}
+            onMouseLeave={eraseTooltip.onMouseLeave}
+            className={`group relative flex items-center justify-center p-2 rounded transition-all ${
+              !selectedShapeId
+                ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+            }`}
+            aria-label="Borracha"
+          >
+            <span className="material-symbols-outlined text-[20px]">
+              backspace
+            </span>
+            <ToolbarTooltip
+              isMac={isMac}
+              title="Borracha"
+              shortcuts={[{ key: "Backspace" }]}
+              expanded={eraseTooltip.expanded}
+              details={["Apaga a figura selecionada."]}
             />
           </button>
 

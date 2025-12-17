@@ -5,12 +5,16 @@ import { useEffect } from "react";
 interface KeyboardShortcutsOptions {
   onUndo: () => void;
   onRedo: () => void;
+  onDeleteSelected?: () => void;
+  canDeleteSelected?: boolean;
   enabled?: boolean;
 }
 
 export function useKeyboardShortcuts({
   onUndo,
   onRedo,
+  onDeleteSelected,
+  canDeleteSelected = false,
   enabled = true,
 }: KeyboardShortcutsOptions) {
   useEffect(() => {
@@ -29,6 +33,20 @@ export function useKeyboardShortcuts({
     const handleKeyDown = (event: KeyboardEvent) => {
       // Don't trigger shortcuts when typing in input fields
       if (isTypingElement(event.target)) return;
+
+      // Borracha: Backspace (somente quando há seleção)
+      if (
+        event.key === "Backspace" &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey
+      ) {
+        if (!canDeleteSelected || !onDeleteSelected) return;
+        event.preventDefault();
+        onDeleteSelected();
+        return;
+      }
 
       // Use metaKey for Mac (Cmd key) and ctrlKey for Windows/Linux
       // Check userAgent for Mac-like platforms
@@ -62,5 +80,5 @@ export function useKeyboardShortcuts({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [onUndo, onRedo, enabled]);
+  }, [onUndo, onRedo, onDeleteSelected, canDeleteSelected, enabled]);
 }

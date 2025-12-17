@@ -34,6 +34,7 @@ interface EditorContextType {
   ) => void;
   selectedShapeId: string | null;
   setSelectedShapeId: (id: string | null) => void;
+  deleteSelected: () => void;
   scale: number;
   setScale: (scale: number) => void;
   position: { x: number; y: number };
@@ -197,6 +198,27 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setLastSavedSnapshot(JSON.stringify(shapes || []));
   }, [shapes]);
 
+  const deleteSelected = useCallback(() => {
+    if (!selectedShapeId) return;
+
+    const selected = (shapes || []).find((s) => s.id === selectedShapeId);
+    const baseId =
+      selected?.kind === "seam" && selected.parentId
+        ? selected.parentId
+        : selectedShapeId;
+
+    setShapes((prev) => {
+      return prev.filter((shape) => {
+        if (shape.id === baseId) return false;
+        if (shape.kind === "seam" && shape.parentId === baseId) return false;
+        return true;
+      });
+    });
+
+    setSelectedShapeId(null);
+    setOffsetTargetId((prev) => (prev === baseId ? null : prev));
+  }, [selectedShapeId, setShapes, setOffsetTargetId, shapes]);
+
   return (
     <EditorContext.Provider
       value={{
@@ -206,6 +228,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setShapes,
         selectedShapeId,
         setSelectedShapeId,
+        deleteSelected,
         scale,
         setScale,
         position,
