@@ -1,5 +1,13 @@
 export type DrawingTool = "rectangle" | "circle" | "line" | "curve" | "dart";
-export type Tool = DrawingTool | "select" | "pan" | "node" | "measure" | "offset";
+export type Tool =
+  | DrawingTool
+  | "select"
+  | "pan"
+  | "node"
+  | "measure"
+  | "offset"
+  | "mirror"
+  | "unfold";
 
 export interface DartParams {
   depthCm: number; // Profundidade (length of dart from edge to point)

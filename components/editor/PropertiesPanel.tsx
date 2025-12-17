@@ -4,10 +4,22 @@ import React, { useState } from "react";
 import { useEditor } from "./EditorContext";
 
 export function PropertiesPanel() {
-  const { selectedShapeId, shapes } = useEditor();
+  const {
+    tool,
+    selectedShapeId,
+    shapes,
+    mirrorAxis,
+    setMirrorAxis,
+    unfoldAxis,
+    setUnfoldAxis,
+  } = useEditor();
   const selectedShape = shapes.find((s) => s.id === selectedShapeId);
 
   const [collapsed, setCollapsed] = useState(false);
+
+  // Show tool properties when no shape is selected but a tool is active
+  const showToolProperties =
+    !selectedShape && (tool === "mirror" || tool === "unfold");
 
   return (
     <aside
@@ -124,6 +136,86 @@ export function PropertiesPanel() {
               </div>
               <div className="h-px bg-gray-200 dark:bg-gray-700"></div>
               {/* Appearance section omitted for brevity, can be added later */}
+            </div>
+          </>
+        ) : showToolProperties ? (
+          <>
+            <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/30">
+              <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+                {tool === "mirror" ? "Espelhar" : "Desdobrar"}
+              </h3>
+            </div>
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+              {tool === "mirror" && (
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
+                    Eixo de Espelhamento
+                  </label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm text-gray-900 dark:text-white cursor-pointer">
+                      <input
+                        type="radio"
+                        name="mirror-axis"
+                        value="vertical"
+                        checked={mirrorAxis === "vertical"}
+                        onChange={() => setMirrorAxis("vertical")}
+                        className="w-4 h-4"
+                      />
+                      <span>Vertical</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-900 dark:text-white cursor-pointer">
+                      <input
+                        type="radio"
+                        name="mirror-axis"
+                        value="horizontal"
+                        checked={mirrorAxis === "horizontal"}
+                        onChange={() => setMirrorAxis("horizontal")}
+                        className="w-4 h-4"
+                      />
+                      <span>Horizontal</span>
+                    </label>
+                  </div>
+                  <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+                    Clique em uma forma para criar uma cópia espelhada no eixo
+                    selecionado.
+                  </p>
+                </div>
+              )}
+              {tool === "unfold" && (
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
+                    Eixo de Desdobramento
+                  </label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm text-gray-900 dark:text-white cursor-pointer">
+                      <input
+                        type="radio"
+                        name="unfold-axis"
+                        value="vertical"
+                        checked={unfoldAxis === "vertical"}
+                        onChange={() => setUnfoldAxis("vertical")}
+                        className="w-4 h-4"
+                      />
+                      <span>Vertical</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-900 dark:text-white cursor-pointer">
+                      <input
+                        type="radio"
+                        name="unfold-axis"
+                        value="horizontal"
+                        checked={unfoldAxis === "horizontal"}
+                        onChange={() => setUnfoldAxis("horizontal")}
+                        className="w-4 h-4"
+                      />
+                      <span>Horizontal</span>
+                    </label>
+                  </div>
+                  <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+                    Clique em uma forma desenhada pela metade. O sistema irá
+                    duplicar, espelhar e unir as metades numa peça única.
+                  </p>
+                </div>
+              )}
             </div>
           </>
         ) : (
