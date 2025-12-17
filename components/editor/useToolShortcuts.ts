@@ -13,6 +13,7 @@ const TOOL_KEY_TO_TOOL: Record<string, Tool> = {
   KeyU: "curve",
   KeyM: "measure",
   KeyO: "offset",
+  KeyD: "dart",
 };
 
 interface UseToolShortcutsOptions {

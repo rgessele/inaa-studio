@@ -8,7 +8,7 @@ export interface ExportSettings {
   includeBlankPages: boolean;
   dashedLines: boolean;
   showBaseSize: boolean;
-  toolFilter: Record<"rectangle" | "circle" | "line" | "curve", boolean>;
+  toolFilter: Record<"rectangle" | "circle" | "line" | "curve" | "dart", boolean>;
 }
 
 // A4 dimensions in cm
@@ -28,6 +28,7 @@ export function createDefaultExportSettings(): ExportSettings {
       circle: true,
       line: true,
       curve: true,
+      dart: true,
     },
   };
 }
