@@ -32,6 +32,8 @@ const GRID_COLOR = "rgba(255, 255, 255, 0.05)";
 const CONTROL_POINT_RADIUS = 6; // Radius for control point anchor
 const NODE_ANCHOR_RADIUS = 5; // Radius for node anchors
 const MEASURE_SNAP_MIN_THRESHOLD_PX = 12;
+const DEFAULT_DART_POSITION_RATIO = 0.5; // Default dart position at middle of edge (50%)
+const DEFAULT_DART_EDGE_INDEX = 0; // Default edge for rectangles (top edge)
 
 function degreesToRadians(degrees: number): number {
   return (degrees * Math.PI) / 180;
@@ -917,15 +919,20 @@ export default function Canvas() {
       setSelectedShapeId(parentId);
       setDartTargetId(parentId);
 
-      // Apply dart with default parameters (position at 50%, depth 3cm, opening 2cm)
+      // Apply dart with default parameters
       const depthPx = dartDepthCm * PX_PER_CM;
       const openingPx = dartOpeningCm * PX_PER_CM;
-      const positionRatio = 0.5; // Default to middle of the edge
 
       setShapes((prev) => {
         return prev.map((shape) => {
           if (shape.id === parentId) {
-            return applyDartToShape(shape, positionRatio, depthPx, openingPx, 0);
+            return applyDartToShape(
+              shape,
+              DEFAULT_DART_POSITION_RATIO,
+              depthPx,
+              openingPx,
+              DEFAULT_DART_EDGE_INDEX
+            );
           }
           return shape;
         });
@@ -1852,7 +1859,13 @@ export default function Canvas() {
                       setShapes((prev) =>
                         prev.map((shape) => {
                           if (shape.id === dartTargetId) {
-                            return applyDartToShape(shape, 0.5, depthPx, openingPx, 0);
+                            return applyDartToShape(
+                              shape,
+                              DEFAULT_DART_POSITION_RATIO,
+                              depthPx,
+                              openingPx,
+                              DEFAULT_DART_EDGE_INDEX
+                            );
                           }
                           return shape;
                         })
@@ -1888,7 +1901,13 @@ export default function Canvas() {
                       setShapes((prev) =>
                         prev.map((shape) => {
                           if (shape.id === dartTargetId) {
-                            return applyDartToShape(shape, 0.5, depthPx, openingPx, 0);
+                            return applyDartToShape(
+                              shape,
+                              DEFAULT_DART_POSITION_RATIO,
+                              depthPx,
+                              openingPx,
+                              DEFAULT_DART_EDGE_INDEX
+                            );
                           }
                           return shape;
                         })

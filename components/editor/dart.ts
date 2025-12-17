@@ -24,9 +24,10 @@ function getInwardNormal(
     return { x: 0, y: 0 };
   }
   
-  // Normal vector (perpendicular, pointing right when walking forward)
+  // Normal vector (perpendicular, pointing inward)
+  // For a line from p1 to p2, this points to the left (inward direction)
   // Rotate 90 degrees counter-clockwise: (dx, dy) -> (dy, -dx)
-  // For a horizontal line going right, this points downward (into the fabric)
+  // Example: For horizontal line (dx=100, dy=0), normal is (0, -100) pointing down
   return {
     x: dy / length,
     y: -dx / length,
