@@ -7,16 +7,19 @@ This document describes the implementation of the SHIFT key constraint for creat
 ## Feature Requirements (from Issue #13)
 
 ### 1. Deformable Rectangles ✅
+
 - **Requirement**: Don't use Konva.Rect. Generate Konva.Line with 'closed: true' and 4 calculated points.
 - **Status**: Already implemented (see NODE_TOOL_IMPLEMENTATION.md)
 - **Implementation**: Rectangles are created with 4-point closed paths using `createRectanglePoints(width, height)`
 
 ### 2. Deformable Ellipses (Circles) ✅
+
 - **Requirement**: Don't use Konva.Circle. Generate Konva.Path with Bézier curves or high-resolution polygon.
 - **Status**: Already implemented (see NODE_TOOL_IMPLEMENTATION.md)
 - **Implementation**: Circles are created with 32-point closed paths using `createCirclePoints(radius, segments = 32)`
 
 ### 3. SHIFT Constraint ✅ (NEW)
+
 - **Requirement**: Holding SHIFT during creation should force 1:1 proportion (Square/Perfect Circle).
 - **Status**: Newly implemented
 - **Implementation**: See below
@@ -67,14 +70,14 @@ When drawing a rectangle with SHIFT pressed, the smaller of width/height is used
 ```typescript
 if (lastShape.tool === "rectangle") {
   let rect = normalizeRectangle({ x: lastShape.x, y: lastShape.y }, pos);
-  
+
   // If SHIFT is pressed, force 1:1 aspect ratio (square)
   if (isShiftPressed) {
     const size = Math.min(rect.width, rect.height);
     rect.width = size;
     rect.height = size;
   }
-  
+
   updatedShapes[shapeIndex] = {
     ...lastShape,
     width: rect.width,
@@ -94,11 +97,11 @@ Circles already use diagonal distance for radius calculation, so they are always
 } else if (lastShape.tool === "circle") {
   const dx = pos.x - lastShape.x;
   const dy = pos.y - lastShape.y;
-  
+
   // Circles always use diagonal distance for radius (naturally perfect circles)
   // SHIFT key has no effect on circle behavior
   const radius = Math.sqrt(dx * dx + dy * dy);
-  
+
   updatedShapes[shapeIndex] = {
     ...lastShape,
     radius,
@@ -112,10 +115,12 @@ Circles already use diagonal distance for radius calculation, so they are always
 ## User Experience
 
 ### Rectangle Tool
+
 - **Without SHIFT**: Draw any rectangle (any width/height ratio)
 - **With SHIFT**: Draw perfect square (width = height = min(width, height))
 
 ### Circle Tool
+
 - **Without SHIFT**: Draw perfect circle
 - **With SHIFT**: Draw perfect circle (no visual difference)
 
