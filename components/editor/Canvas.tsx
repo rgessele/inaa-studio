@@ -19,6 +19,12 @@ import { Ruler } from "./Ruler";
 import { getAllSnapPoints, findNearestSnapPoint, SnapPoint } from "./snapping";
 import { upsertSeamAllowance } from "./offset";
 import { applyDartToShape } from "./dart";
+import { mirrorShape, getAxisPositionForShape } from "./mirror";
+import {
+  unfoldShape,
+  canUnfoldShape,
+  getSuggestedUnfoldAxis,
+} from "./unfold";
 
 // Large virtual area to keep the background visible while navigating the canvas.
 const WORKSPACE_SIZE = 8000; // Increased size
@@ -950,9 +956,6 @@ export default function Canvas() {
 
       setSelectedShapeId(parentId);
 
-      // Import mirror function
-      const { mirrorShape, getAxisPositionForShape } = require("./mirror");
-
       // Get axis position from shape center
       const axisPosition = getAxisPositionForShape(base, mirrorAxis, "center");
 
@@ -971,10 +974,6 @@ export default function Canvas() {
       if (!base) return;
 
       setSelectedShapeId(parentId);
-
-      // Import unfold functions
-      const { unfoldShape, canUnfoldShape, getSuggestedUnfoldAxis } =
-        require("./unfold");
 
       // Check if shape can be unfolded
       if (!canUnfoldShape(base)) {

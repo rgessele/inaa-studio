@@ -48,10 +48,13 @@ export function unfoldShape(
   // This creates a closed path
   const mergedPoints = [...originalPoints, ...reversedMirrored];
 
+  // Generate unique ID using timestamp + random component
+  const uniqueId = `${shape.id}-unfolded-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
   // Create the unfolded shape
   const unfoldedShape: Shape = {
     ...shape,
-    id: `${shape.id}-unfolded-${Date.now()}`,
+    id: uniqueId,
     tool: "line", // Convert curves to lines for simplicity
     points: mergedPoints,
     controlPoint: undefined, // Remove control point as we're now a polyline

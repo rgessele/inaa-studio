@@ -132,9 +132,12 @@ export function mirrorShape(
   const center = getShapeCenter(shape);
   const axisPos = axisPosition ?? (axis === "vertical" ? center.x : center.y);
 
+  // Generate unique ID using timestamp + random component
+  const uniqueId = `${shape.id}-mirror-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
   const newShape: Shape = {
     ...shape,
-    id: `${shape.id}-mirror-${Date.now()}`,
+    id: uniqueId,
   };
 
   if (shape.tool === "rectangle" && shape.width && shape.height) {
