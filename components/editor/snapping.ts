@@ -15,6 +15,13 @@ export interface SnapPoint {
 }
 
 /**
+ * Check if a shape is closed (forms a complete loop)
+ */
+function isClosedShape(shape: Shape): boolean {
+  return shape.tool === "rectangle" || shape.tool === "circle";
+}
+
+/**
  * Get all endpoints from a shape's points array
  */
 function getEndpoints(shape: Shape): SnapPoint[] {
@@ -46,7 +53,7 @@ function getMidpoints(shape: Shape): SnapPoint[] {
 
   const midpoints: SnapPoint[] = [];
   const numPoints = shape.points.length / 2;
-  const isClosed = shape.tool === "rectangle" || shape.tool === "circle";
+  const isClosed = isClosedShape(shape);
 
   // Calculate midpoints for each segment
   const segments = isClosed ? numPoints : numPoints - 1;
@@ -124,7 +131,7 @@ function getIntersections(shapes: Shape[]): SnapPoint[] {
     if (!shape.points || shape.points.length < 4) continue;
 
     const numPoints = shape.points.length / 2;
-    const isClosed = shape.tool === "rectangle" || shape.tool === "circle";
+    const isClosed = isClosedShape(shape);
     const numSegments = isClosed ? numPoints : numPoints - 1;
 
     for (let i = 0; i < numSegments; i++) {

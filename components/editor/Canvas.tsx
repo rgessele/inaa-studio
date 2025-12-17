@@ -76,6 +76,7 @@ export default function Canvas() {
   const [activeSnapPoint, setActiveSnapPoint] = useState<SnapPoint | null>(
     null
   );
+  const cachedSnapPoints = useRef<SnapPoint[] | null>(null);
   const isDrawing = useRef(false);
   const currentShape = useRef<Shape | null>(null);
   const currentShapeIndex = useRef<number>(-1);
@@ -682,6 +683,11 @@ export default function Canvas() {
     setShapes(updatedShapes);
   };
 
+  const handleNodeAnchorDragStart = (shapeId: string, nodeIndex: number) => {
+    // Cache snap points at the start of drag to avoid recalculating on every move
+    cachedSnapPoints.current = getAllSnapPoints(shapes, shapeId, nodeIndex);
+  };
+
   const handleNodeAnchorDragMove = (
     shapeId: string,
     nodeIndex: number,
@@ -698,8 +704,8 @@ export default function Canvas() {
     let absoluteX = anchor.x();
     let absoluteY = anchor.y();
 
-    // Get all snap points (excluding the current node being dragged)
-    const snapPoints = getAllSnapPoints(shapes, shapeId, nodeIndex);
+    // Use cached snap points if available, otherwise calculate
+    const snapPoints = cachedSnapPoints.current || [];
 
     // Check for nearby snap point
     const nearestSnap = findNearestSnapPoint(absoluteX, absoluteY, snapPoints);
@@ -748,8 +754,8 @@ export default function Canvas() {
     let absoluteX = anchor.x();
     let absoluteY = anchor.y();
 
-    // Get all snap points (excluding the current node being dragged)
-    const snapPoints = getAllSnapPoints(shapes, shapeId, nodeIndex);
+    // Use cached snap points if available, otherwise calculate
+    const snapPoints = cachedSnapPoints.current || [];
 
     // Check for nearby snap point and apply final snap
     const nearestSnap = findNearestSnapPoint(absoluteX, absoluteY, snapPoints);
@@ -761,8 +767,9 @@ export default function Canvas() {
       anchor.y(absoluteY);
     }
 
-    // Clear snap indicator
+    // Clear snap indicator and cache
     setActiveSnapPoint(null);
+    cachedSnapPoints.current = null;
 
     const updatedShapes = shapes.map((shape) => {
       if (shape.id === shapeId && shape.points) {
@@ -997,6 +1004,9 @@ export default function Canvas() {
                                 strokeWidth={2}
                                 draggable={true}
                                 onClick={() => setSelectedNodeIndex(nodeIndex)}
+                                onDragStart={() =>
+                                  handleNodeAnchorDragStart(shape.id, nodeIndex)
+                                }
                                 onDragMove={(e) =>
                                   handleNodeAnchorDragMove(
                                     shape.id,
@@ -1109,6 +1119,9 @@ export default function Canvas() {
                               strokeWidth={2}
                               draggable={true}
                               onClick={() => setSelectedNodeIndex(nodeIndex)}
+                              onDragStart={() =>
+                                handleNodeAnchorDragStart(shape.id, nodeIndex)
+                              }
                               onDragMove={(e) =>
                                 handleNodeAnchorDragMove(shape.id, nodeIndex, e)
                               }

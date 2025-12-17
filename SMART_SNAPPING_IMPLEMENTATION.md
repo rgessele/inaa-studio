@@ -31,6 +31,7 @@ The system detects three types of snap points:
 ### 4. Mathematical Precision
 
 When snapping occurs:
+
 - The node position is forced to be **exactly** equal to the snap point coordinates
 - This ensures mathematical precision (not approximate positioning)
 - Guarantees perfect closure of shapes when the last point snaps to the first
@@ -58,14 +59,14 @@ export function getAllSnapPoints(
   shapes: Shape[],
   currentShapeId?: string,
   currentNodeIndex?: number
-): SnapPoint[]
+): SnapPoint[];
 
 export function findNearestSnapPoint(
   x: number,
   y: number,
   snapPoints: SnapPoint[],
   threshold?: number
-): SnapPoint | null
+): SnapPoint | null;
 ```
 
 **Key Implementation Details:**
@@ -78,6 +79,7 @@ export function findNearestSnapPoint(
 ### Modified: `components/editor/Canvas.tsx`
 
 **Added State:**
+
 ```typescript
 const [activeSnapPoint, setActiveSnapPoint] = useState<SnapPoint | null>(null);
 ```
@@ -97,20 +99,23 @@ const [activeSnapPoint, setActiveSnapPoint] = useState<SnapPoint | null>(null);
    - Commits the snapped position to shape state
 
 **Visual Indicator Rendering:**
+
 ```tsx
-{activeSnapPoint && (
-  <KonvaRect
-    x={activeSnapPoint.x - 4}
-    y={activeSnapPoint.y - 4}
-    width={8}
-    height={8}
-    fill="#fbbf24"
-    stroke="#f59e0b"
-    strokeWidth={1}
-    listening={false}
-    opacity={0.8}
-  />
-)}
+{
+  activeSnapPoint && (
+    <KonvaRect
+      x={activeSnapPoint.x - 4}
+      y={activeSnapPoint.y - 4}
+      width={8}
+      height={8}
+      fill="#fbbf24"
+      stroke="#f59e0b"
+      strokeWidth={1}
+      listening={false}
+      opacity={0.8}
+    />
+  );
+}
 ```
 
 ## Acceptance Criteria ✓
@@ -142,6 +147,7 @@ const [activeSnapPoint, setActiveSnapPoint] = useState<SnapPoint | null>(null);
 ### ✅ Garment Outline Test Case
 
 **Test Scenario**: Drawing a blouse outline
+
 1. Draw multiple line segments to create the outline
 2. Use the node tool to drag the last endpoint
 3. When dragged near the first endpoint, yellow square appears
@@ -153,6 +159,7 @@ const [activeSnapPoint, setActiveSnapPoint] = useState<SnapPoint | null>(null);
 ### Coordinate System Handling
 
 All snapping works in absolute canvas coordinates:
+
 - Shape points are stored relative to shape origin (`shape.x`, `shape.y`)
 - Snap points are calculated in absolute coordinates for comparison
 - Node anchors receive absolute positions during drag
@@ -177,7 +184,7 @@ All snapping works in absolute canvas coordinates:
 1. **Select the Node Tool**: Click the node tool button in the toolbar (or press 'N')
 2. **Select a Shape**: Click on any shape to select it
 3. **Drag a Node**: Click and drag any vertex (node anchor)
-4. **Watch for Snap**: 
+4. **Watch for Snap**:
    - As you drag near other points, a yellow square appears
    - The node will automatically snap to that point
 5. **Release**: Release the mouse to commit the snapped position
