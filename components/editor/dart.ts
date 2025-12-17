@@ -6,6 +6,7 @@
  */
 
 import { Shape } from "./types";
+import { PX_PER_CM } from "./constants";
 
 /**
  * Calculate the perpendicular direction (normal) to a line segment
@@ -23,8 +24,9 @@ function getInwardNormal(
     return { x: 0, y: 0 };
   }
   
-  // Normal vector (perpendicular, pointing left/inward)
-  // Rotate 90 degrees clockwise for inward direction: (dx, dy) -> (dy, -dx)
+  // Normal vector (perpendicular, pointing right when walking forward)
+  // Rotate 90 degrees counter-clockwise: (dx, dy) -> (dy, -dx)
+  // For a horizontal line going right, this points downward (into the fabric)
   return {
     x: dy / length,
     y: -dx / length,
@@ -339,8 +341,8 @@ export function applyDartToShape(
     ...shape,
     points: newPoints,
     dartParams: {
-      depthCm: depthPx,
-      openingCm: openingPx,
+      depthCm: depthPx / PX_PER_CM,
+      openingCm: openingPx / PX_PER_CM,
       positionRatio,
       targetShapeId: shape.id,
       edgeIndex,
