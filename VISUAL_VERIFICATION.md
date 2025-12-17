@@ -5,6 +5,7 @@
 The export button is located in the left toolbar, right after the "Save" button.
 
 ### Visual Description:
+
 ```
 ┌─────────────────────────────────────────────────┐
 │  [Logo] Arquivo Editar Objeto...               │ ← Header
@@ -40,6 +41,7 @@ The export button is located in the left toolbar, right after the "Save" button.
 When clicking the export button, a modal appears with:
 
 ### Modal Structure:
+
 ```
 ┌─────────────────────────────────────────────┐
 │                                             │
@@ -112,19 +114,23 @@ When clicking the export button, a modal appears with:
 ## Testing Results
 
 ### ✅ Build Status
+
 - TypeScript compilation: PASSED
 - Production build: PASSED
 - No errors or warnings
 
 ### ✅ Code Quality
+
 - ESLint: N/A (eslint not configured)
 - Code review: PASSED (feedback addressed)
 
 ### ✅ Security
+
 - CodeQL scan: PASSED (0 vulnerabilities)
 - jspdf dependency: v3.0.4 (no known vulnerabilities)
 
 ### ✅ Calculations
+
 - 50cm line = 1889.76 pixels
 - Tiles needed = 3 pages
 - Scale ratio = 1:1 ✓
@@ -132,6 +138,7 @@ When clicking the export button, a modal appears with:
 ## Features Implemented
 
 ### PDF Export
+
 - ✅ Multi-page tiling
 - ✅ A4 format (21cm x 29.7cm)
 - ✅ Safe area (19cm x 27.7cm)
@@ -142,6 +149,7 @@ When clicking the export button, a modal appears with:
 - ✅ Grid temporarily hidden
 
 ### SVG Export
+
 - ✅ Vector format generation
 - ✅ All shape types supported
 - ✅ Properties preserved (stroke, fill, opacity)
@@ -149,6 +157,7 @@ When clicking the export button, a modal appears with:
 - ✅ Standard SVG format
 
 ### UI/UX
+
 - ✅ Export button in toolbar
 - ✅ Modal for format selection
 - ✅ User-friendly descriptions

@@ -27,9 +27,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [items, setItems] = useState<Project[]>(projects);
   const [isClient, setIsClient] = useState(false);
-  const [openMenuForProjectId, setOpenMenuForProjectId] = useState<string | null>(
-    null
-  );
+  const [openMenuForProjectId, setOpenMenuForProjectId] = useState<
+    string | null
+  >(null);
   const [printProjectId, setPrintProjectId] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -159,7 +159,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       }
 
       setItems((prev) =>
-        prev.map((p) => (p.id === project.id ? { ...p, name: newName.trim() } : p))
+        prev.map((p) =>
+          p.id === project.id ? { ...p, name: newName.trim() } : p
+        )
       );
       setOpenMenuForProjectId(null);
     } finally {
@@ -344,13 +346,15 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
 
     if (sort === "recent") {
       sorted.sort(
-        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        (a, b) =>
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       );
     }
 
     if (sort === "old") {
       sorted.sort(
-        (a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
+        (a, b) =>
+          new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
       );
     }
 
@@ -491,15 +495,15 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                     : "relative h-28 w-full sm:w-56 sm:h-auto bg-gray-200 dark:bg-gray-700 shrink-0"
                 }
               >
-                  <div className="absolute inset-0 overflow-hidden">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      alt={project.name}
-                      className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
-                      src={coverUrl}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60" />
-                  </div>
+                <div className="absolute inset-0 overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    alt={project.name}
+                    className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
+                    src={coverUrl}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60" />
+                </div>
 
                 {viewMode === "grid" ? (
                   <div
@@ -570,15 +574,15 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                     ) : null}
                   </div>
                 ) : null}
-                </div>
+              </div>
 
-                <div
-                  className={
-                    viewMode === "grid"
-                      ? "p-5 flex-grow flex flex-col"
-                      : "p-4 flex-grow flex flex-col"
-                  }
-                >
+              <div
+                className={
+                  viewMode === "grid"
+                    ? "p-5 flex-grow flex flex-col"
+                    : "p-4 flex-grow flex flex-col"
+                }
+              >
                 <div className="flex justify-between items-start gap-3 mb-2">
                   <h3 className="text-lg font-bold text-gray-900 dark:text-text-main-dark group-hover:text-primary transition-colors line-clamp-1">
                     {project.name}
@@ -674,54 +678,56 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                   ) : null}
                 </div>
 
-                  {project.description ? (
-                    <p
-                      className={
-                        viewMode === "grid"
-                          ? "text-sm text-gray-500 dark:text-text-muted-dark mb-4 line-clamp-2"
-                          : "text-sm text-gray-500 dark:text-text-muted-dark mb-3 line-clamp-1"
-                      }
-                    >
-                      {project.description}
-                    </p>
-                  ) : (
-                    <p
-                      className={
-                        viewMode === "grid"
-                          ? "text-sm text-gray-500 dark:text-text-muted-dark mb-4 line-clamp-2"
-                          : "text-sm text-gray-500 dark:text-text-muted-dark mb-3 line-clamp-1"
-                      }
-                    >
-                      {project.design_data?.meta?.notes ||
-                        "Gerencie e edite seu molde digital."}
-                    </p>
-                  )}
+                {project.description ? (
+                  <p
+                    className={
+                      viewMode === "grid"
+                        ? "text-sm text-gray-500 dark:text-text-muted-dark mb-4 line-clamp-2"
+                        : "text-sm text-gray-500 dark:text-text-muted-dark mb-3 line-clamp-1"
+                    }
+                  >
+                    {project.description}
+                  </p>
+                ) : (
+                  <p
+                    className={
+                      viewMode === "grid"
+                        ? "text-sm text-gray-500 dark:text-text-muted-dark mb-4 line-clamp-2"
+                        : "text-sm text-gray-500 dark:text-text-muted-dark mb-3 line-clamp-1"
+                    }
+                  >
+                    {project.design_data?.meta?.notes ||
+                      "Gerencie e edite seu molde digital."}
+                  </p>
+                )}
 
-                  <div className="mt-auto pt-3 border-t border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500">
-                      <div className="flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[16px]">
-                          calendar_today
-                        </span>
-                        <span>Criado: {formatDatePtBr(project.created_at)}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500 mt-1">
-                      <div className="flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[16px]">
-                          edit
-                        </span>
-                        <span>Modificado: {formatDatePtBr(project.updated_at)}</span>
-                      </div>
-                      <span className="material-symbols-outlined text-primary dark:text-accent-rose group-hover:translate-x-1 transition-transform">
-                        arrow_forward
+                <div className="mt-auto pt-3 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500">
+                    <div className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[16px]">
+                        calendar_today
                       </span>
+                      <span>Criado: {formatDatePtBr(project.created_at)}</span>
                     </div>
                   </div>
+
+                  <div className="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500 mt-1">
+                    <div className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[16px]">
+                        edit
+                      </span>
+                      <span>
+                        Modificado: {formatDatePtBr(project.updated_at)}
+                      </span>
+                    </div>
+                    <span className="material-symbols-outlined text-primary dark:text-accent-rose group-hover:translate-x-1 transition-transform">
+                      arrow_forward
+                    </span>
+                  </div>
                 </div>
-              </Link>
-            );
+              </div>
+            </Link>
+          );
         })}
       </div>
 

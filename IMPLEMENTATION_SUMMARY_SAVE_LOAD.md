@@ -17,6 +17,7 @@ This implementation adds complete cloud-based project persistence to the Inaá S
 - **Authentication**: All operations require authenticated user
 
 **User Flow**:
+
 1. User clicks "Salvar" button
 2. Modal appears with project name input
 3. User enters/confirms name and clicks "Salvar"
@@ -34,6 +35,7 @@ This implementation adds complete cloud-based project persistence to the Inaá S
 - **Empty State**: Helpful UI when no projects exist
 
 **Features**:
+
 - Server-side data fetching for better performance
 - Ordered by most recently updated first
 - Responsive grid layout (1-3 columns based on screen size)
@@ -49,6 +51,7 @@ This implementation adds complete cloud-based project persistence to the Inaá S
 - **Ownership Verification**: Ensures user owns the project before loading
 
 **User Flow**:
+
 1. User clicks project card in dashboard
 2. Route handler fetches project from database
 3. ProjectLoader hydrates EditorContext with shapes
@@ -60,6 +63,7 @@ This implementation adds complete cloud-based project persistence to the Inaá S
 **Location**: `components/editor/EditorContext.tsx`
 
 **New State**:
+
 - `projectId`: UUID of current project (null for new projects)
 - `projectName`: Display name of project
 - `setProjectId`: Update function
@@ -79,6 +83,7 @@ The `loadProject` function uses `saveHistory: false` to prevent the initial load
 4. **Server-Side Validation**: Routes verify ownership before rendering
 
 **Protected Operations**:
+
 - ✅ saveProject - Verifies user_id on update
 - ✅ loadProject - Filters by user_id on select
 - ✅ listProjects - Returns only user's projects
@@ -89,7 +94,7 @@ The `loadProject` function uses `saveHistory: false` to prevent the initial load
 **Location**: `components/editor/SaveProjectModal.tsx`
 
 - **Keyboard Navigation**: Escape key closes modal
-- **ARIA Attributes**: 
+- **ARIA Attributes**:
   - `role="dialog"`
   - `aria-modal="true"`
   - `aria-labelledby` pointing to title
@@ -100,6 +105,7 @@ The `loadProject` function uses `saveHistory: false` to prevent the initial load
 ### 7. UI/UX Enhancements
 
 **Toast Component** (`components/editor/Toast.tsx`):
+
 - Auto-dismiss after 3 seconds
 - Slide-up animation for smooth entry
 - Success (green) and error (red) variants
@@ -107,6 +113,7 @@ The `loadProject` function uses `saveHistory: false` to prevent the initial load
 - Material icons for visual reinforcement
 
 **Custom Animation** (`app/globals.css`):
+
 ```css
 @keyframes slide-up {
   from {
@@ -163,12 +170,14 @@ CREATE TABLE projects (
 **Decision**: Store shapes as JSONB in `design_data` column
 
 **Rationale**:
+
 - Flexibility: Easy to add new shape properties without migrations
 - Performance: Single query to load entire project
 - Simplicity: Matches client-side state structure exactly
 - Versioning: Future-proof for schema evolution
 
 **Trade-offs**:
+
 - ❌ Can't easily query individual shapes
 - ✅ Much simpler implementation
 - ✅ Better performance for typical use case (load/save entire project)
@@ -178,6 +187,7 @@ CREATE TABLE projects (
 **Decision**: Dedicated `loadProject()` function instead of direct state update
 
 **Rationale**:
+
 - Clean API: Encapsulates all loading logic
 - History Management: Prevents initial load from appearing in undo stack
 - Future-Proof: Easy to add loading hooks/side effects
@@ -188,6 +198,7 @@ CREATE TABLE projects (
 **Decision**: Use Server Components for data fetching, Client Components for UI
 
 **Rationale**:
+
 - SEO: Project metadata can be indexed
 - Performance: Reduce JavaScript bundle size
 - Security: Credentials stay on server
@@ -223,10 +234,10 @@ Always include user_id filter:
 
 ```typescript
 const { data } = await supabase
-  .from('projects')
-  .select('*')
-  .eq('user_id', user.id)  // ← Always include this
-  .eq('id', projectId);
+  .from("projects")
+  .select("*")
+  .eq("user_id", user.id) // ← Always include this
+  .eq("id", projectId);
 ```
 
 ### Pattern 2: Authentication Checks
@@ -234,7 +245,10 @@ const { data } = await supabase
 All public API functions should verify auth:
 
 ```typescript
-const { data: { user }, error: authError } = await supabase.auth.getUser();
+const {
+  data: { user },
+  error: authError,
+} = await supabase.auth.getUser();
 
 if (authError || !user) {
   return { success: false, error: "Usuário não autenticado" };
@@ -252,7 +266,7 @@ loadProject(project.design_data.shapes, project.id, project.name);
 
 // ❌ Avoid
 setShapes(project.design_data.shapes);
-setProjectId(project.id);  // Incomplete
+setProjectId(project.id); // Incomplete
 ```
 
 ## Future Enhancements
