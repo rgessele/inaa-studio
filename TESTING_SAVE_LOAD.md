@@ -37,7 +37,7 @@ Before testing, you need to:
 5. Click the "Salvar" (Save) button in the header
 6. Enter a project name (e.g., "Vestido Verão")
 7. Click "Salvar" in the modal
-8. **Expected**: 
+8. **Expected**:
    - Green success toast appears: "Projeto salvo com sucesso!"
    - The project name in the header updates (if visible in UI)
    - A new project is created in the database
@@ -121,12 +121,13 @@ To verify the data is correctly saved, check your Supabase database:
 ### Projects Table
 
 ```sql
-SELECT id, user_id, name, created_at, updated_at 
-FROM projects 
+SELECT id, user_id, name, created_at, updated_at
+FROM projects
 ORDER BY updated_at DESC;
 ```
 
 **Expected Columns**:
+
 - `id`: UUID of the project
 - `user_id`: UUID of the user who created it
 - `name`: Project name (e.g., "Vestido Verão")
@@ -137,8 +138,8 @@ ORDER BY updated_at DESC;
 ### Check Shape Data
 
 ```sql
-SELECT name, design_data->'shapes' as shapes 
-FROM projects 
+SELECT name, design_data->'shapes' as shapes
+FROM projects
 WHERE user_id = 'your-user-id';
 ```
 
@@ -150,7 +151,8 @@ WHERE user_id = 'your-user-id';
 
 ### Issue: Projects not appearing in dashboard
 
-**Solution**: 
+**Solution**:
+
 - Check that RLS policies are enabled
 - Verify `user_id` is correctly set when creating projects
 - Check browser console for errors
@@ -158,13 +160,15 @@ WHERE user_id = 'your-user-id';
 ### Issue: Can't load a project (redirected to dashboard)
 
 **Solution**:
+
 - Verify the project ID is correct
 - Ensure you're logged in as the user who created the project
 - Check that the project exists in the database
 
 ### Issue: Duplicate projects created on update
 
-**Solution**: 
+**Solution**:
+
 - This should not happen with the current implementation
 - If it does, check that `projectId` is correctly set in EditorContext
 - Verify the update logic in `lib/projects.ts`

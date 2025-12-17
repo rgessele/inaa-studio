@@ -8,7 +8,11 @@ interface FileMenuProps {
   disabled?: boolean;
 }
 
-export function FileMenu({ onSave, onSaveAs, disabled = false }: FileMenuProps) {
+export function FileMenu({
+  onSave,
+  onSaveAs,
+  disabled = false,
+}: FileMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const isMac =

@@ -27,6 +27,22 @@ const DEFAULT_FILL = "transparent";
 const WORKSPACE_BACKGROUND = "#121212"; // Dark background
 const GRID_COLOR = "rgba(255, 255, 255, 0.05)";
 const CONTROL_POINT_RADIUS = 6; // Radius for control point anchor
+const NODE_ANCHOR_RADIUS = 5; // Radius for node anchors
+
+// Helper function to create a circle as a closed path with points
+function createCirclePoints(radius: number, segments: number = 32): number[] {
+  const points: number[] = [];
+  for (let i = 0; i < segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    points.push(Math.cos(angle) * radius, Math.sin(angle) * radius);
+  }
+  return points;
+}
+
+// Helper function to create a rectangle as a closed path with points
+function createRectanglePoints(width: number, height: number): number[] {
+  return [0, 0, width, 0, width, height, 0, height];
+}
 
 export default function Canvas() {
   const {
@@ -52,6 +68,9 @@ export default function Canvas() {
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isKeyboardActive, setIsKeyboardActive] = useState(false);
   const [isPanDrag, setIsPanDrag] = useState(false);
+  const [selectedNodeIndex, setSelectedNodeIndex] = useState<number | null>(
+    null
+  );
   const isDrawing = useRef(false);
   const currentShape = useRef<Shape | null>(null);
   const currentShapeIndex = useRef<number>(-1);
@@ -296,7 +315,14 @@ export default function Canvas() {
       width: 0,
       height: 0,
       radius: 0,
-      points: drawTool === "line" || drawTool === "curve" ? [0, 0] : [],
+      points:
+        drawTool === "rectangle"
+          ? createRectanglePoints(0, 0)
+          : drawTool === "circle"
+            ? createCirclePoints(0)
+            : drawTool === "line" || drawTool === "curve"
+              ? [0, 0]
+              : [],
       controlPoint: drawTool === "curve" ? { x: 0, y: 0 } : undefined,
       stroke: DEFAULT_STROKE,
       strokeWidth: 2,
@@ -332,7 +358,11 @@ export default function Canvas() {
       const rect = normalizeRectangle({ x: lastShape.x, y: lastShape.y }, pos);
       updatedShapes[shapeIndex] = {
         ...lastShape,
-        ...rect,
+        width: rect.width,
+        height: rect.height,
+        x: rect.x,
+        y: rect.y,
+        points: createRectanglePoints(rect.width, rect.height),
       };
     } else if (lastShape.tool === "circle") {
       const dx = pos.x - lastShape.x;
@@ -341,6 +371,7 @@ export default function Canvas() {
       updatedShapes[shapeIndex] = {
         ...lastShape,
         radius,
+        points: createCirclePoints(radius),
       };
     } else if (lastShape.tool === "line") {
       updatedShapes[shapeIndex] = {
@@ -614,12 +645,78 @@ export default function Canvas() {
     setShapes(updatedShapes);
   };
 
+  const handleNodeAnchorDragMove = (
+    shapeId: string,
+    nodeIndex: number,
+    e: Konva.KonvaEventObject<DragEvent>
+  ) => {
+    e.cancelBubble = true;
+    const anchor = e.target as Konva.Circle;
+    const stage = e.target.getStage();
+    if (!stage) return;
+
+    const shape = shapes.find((s) => s.id === shapeId);
+    if (!shape || !shape.points) return;
+
+    const absoluteX = anchor.x();
+    const absoluteY = anchor.y();
+
+    // Convert to relative coordinates
+    const relativeX = absoluteX - shape.x;
+    const relativeY = absoluteY - shape.y;
+
+    // Update the points array
+    const updatedPoints = [...shape.points];
+    updatedPoints[nodeIndex * 2] = relativeX;
+    updatedPoints[nodeIndex * 2 + 1] = relativeY;
+
+    // Update the shape's visual representation immediately
+    const layer = anchor.getLayer();
+    if (layer) {
+      const shapeLine = layer.findOne(`#shape-${shapeId}`) as Konva.Line;
+      if (shapeLine) {
+        shapeLine.points(updatedPoints);
+      }
+    }
+  };
+
+  const handleNodeAnchorDragEnd = (
+    shapeId: string,
+    nodeIndex: number,
+    e: Konva.KonvaEventObject<DragEvent>
+  ) => {
+    e.cancelBubble = true;
+    const anchor = e.target as Konva.Circle;
+
+    const absoluteX = anchor.x();
+    const absoluteY = anchor.y();
+
+    const updatedShapes = shapes.map((shape) => {
+      if (shape.id === shapeId && shape.points) {
+        const relativeX = absoluteX - shape.x;
+        const relativeY = absoluteY - shape.y;
+
+        const updatedPoints = [...shape.points];
+        updatedPoints[nodeIndex * 2] = relativeX;
+        updatedPoints[nodeIndex * 2 + 1] = relativeY;
+
+        return {
+          ...shape,
+          points: updatedPoints,
+        };
+      }
+      return shape;
+    });
+
+    setShapes(updatedShapes);
+  };
+
   const cursor =
     tool === "pan" || isSpacePressed || isPanDrag
       ? isPanDrag
         ? "grabbing"
         : "grab"
-      : tool === "select"
+      : tool === "select" || tool === "node"
         ? "default"
         : "crosshair";
 
@@ -688,89 +785,10 @@ export default function Canvas() {
                   ? shape.strokeWidth + 1
                   : shape.strokeWidth;
                 const isDraggable = tool === "select" && isSelected;
+                const showNodeAnchors = tool === "node" && isSelected;
 
-                if (shape.tool === "rectangle") {
-                  return (
-                    <KonvaRect
-                      key={shape.id}
-                      ref={(node) => {
-                        if (node) {
-                          shapeRefs.current.set(shape.id, node);
-                        } else {
-                          shapeRefs.current.delete(shape.id);
-                        }
-                      }}
-                      x={shape.x}
-                      y={shape.y}
-                      width={shape.width}
-                      height={shape.height}
-                      fill={shape.fill}
-                      stroke={stroke}
-                      strokeWidth={strokeWidth}
-                      rotation={shape.rotation || 0}
-                      draggable={isDraggable}
-                      onClick={() => handleShapeClick(shape.id)}
-                      onTap={() => handleShapeClick(shape.id)}
-                      onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
-                      onTransformEnd={(e) =>
-                        handleShapeTransformEnd(shape.id, e)
-                      }
-                    />
-                  );
-                } else if (shape.tool === "circle") {
-                  return (
-                    <KonvaCircle
-                      key={shape.id}
-                      ref={(node) => {
-                        if (node) {
-                          shapeRefs.current.set(shape.id, node);
-                        } else {
-                          shapeRefs.current.delete(shape.id);
-                        }
-                      }}
-                      x={shape.x}
-                      y={shape.y}
-                      radius={shape.radius}
-                      fill={shape.fill}
-                      stroke={stroke}
-                      strokeWidth={strokeWidth}
-                      rotation={shape.rotation || 0}
-                      draggable={isDraggable}
-                      onClick={() => handleShapeClick(shape.id)}
-                      onTap={() => handleShapeClick(shape.id)}
-                      onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
-                      onTransformEnd={(e) =>
-                        handleShapeTransformEnd(shape.id, e)
-                      }
-                    />
-                  );
-                } else if (shape.tool === "line") {
-                  return (
-                    <Line
-                      key={shape.id}
-                      ref={(node) => {
-                        if (node) {
-                          shapeRefs.current.set(shape.id, node);
-                        } else {
-                          shapeRefs.current.delete(shape.id);
-                        }
-                      }}
-                      x={shape.x}
-                      y={shape.y}
-                      points={shape.points}
-                      stroke={stroke}
-                      strokeWidth={strokeWidth}
-                      rotation={shape.rotation || 0}
-                      draggable={isDraggable}
-                      onClick={() => handleShapeClick(shape.id)}
-                      onTap={() => handleShapeClick(shape.id)}
-                      onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
-                      onTransformEnd={(e) =>
-                        handleShapeTransformEnd(shape.id, e)
-                      }
-                    />
-                  );
-                } else if (shape.tool === "curve") {
+                // For curve shapes, handle differently
+                if (shape.tool === "curve") {
                   const points = shape.points || [];
                   const cp = shape.controlPoint;
 
@@ -810,6 +828,7 @@ export default function Canvas() {
                               shapeRefs.current.delete(shape.id);
                             }
                           }}
+                          id={`shape-${shape.id}`}
                           name={`curve-${shape.id}`}
                           x={shape.x}
                           y={shape.y}
@@ -828,8 +847,8 @@ export default function Canvas() {
                             handleShapeTransformEnd(shape.id, e)
                           }
                         />
-                        {/* Show control point anchor when selected */}
-                        {isSelected && (
+                        {/* Show control point anchor when selected with select tool */}
+                        {isSelected && tool === "select" && (
                           <>
                             {/* Line from start to control point */}
                             <Line
@@ -883,11 +902,150 @@ export default function Canvas() {
                             />
                           </>
                         )}
+                        {/* Show node anchors when node tool is active */}
+                        {showNodeAnchors &&
+                          shape.points &&
+                          shape.points.map((_, index) => {
+                            if (index % 2 !== 0) return null; // Skip y coordinates
+                            const nodeIndex = index / 2;
+                            const nodeX = shape.x + shape.points![index];
+                            const nodeY = shape.y + shape.points![index + 1];
+                            const isNodeSelected =
+                              selectedNodeIndex === nodeIndex;
+
+                            return (
+                              <KonvaCircle
+                                key={`${shape.id}-node-${nodeIndex}`}
+                                x={nodeX}
+                                y={nodeY}
+                                radius={NODE_ANCHOR_RADIUS}
+                                fill={isNodeSelected ? "#ff6b6b" : "#673b45"}
+                                stroke="#ffffff"
+                                strokeWidth={2}
+                                draggable={true}
+                                onClick={() => setSelectedNodeIndex(nodeIndex)}
+                                onDragMove={(e) =>
+                                  handleNodeAnchorDragMove(
+                                    shape.id,
+                                    nodeIndex,
+                                    e
+                                  )
+                                }
+                                onDragEnd={(e) =>
+                                  handleNodeAnchorDragEnd(
+                                    shape.id,
+                                    nodeIndex,
+                                    e
+                                  )
+                                }
+                              />
+                            );
+                          })}
                       </Fragment>
                     );
                   }
+                  return null;
                 }
-                return null;
+
+                // For all other shapes (rectangle, circle, line), render as Line with points
+                if (!shape.points || shape.points.length === 0) return null;
+
+                const isClosed =
+                  shape.tool === "rectangle" || shape.tool === "circle";
+
+                return (
+                  <Fragment key={shape.id}>
+                    <Line
+                      ref={(node) => {
+                        if (node) {
+                          shapeRefs.current.set(shape.id, node);
+                        } else {
+                          shapeRefs.current.delete(shape.id);
+                        }
+                      }}
+                      id={`shape-${shape.id}`}
+                      x={shape.x}
+                      y={shape.y}
+                      points={shape.points}
+                      stroke={stroke}
+                      strokeWidth={strokeWidth}
+                      fill={isClosed ? shape.fill : undefined}
+                      closed={isClosed}
+                      rotation={shape.rotation || 0}
+                      draggable={isDraggable}
+                      onClick={() => handleShapeClick(shape.id)}
+                      onTap={() => handleShapeClick(shape.id)}
+                      onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
+                      onTransformEnd={(e) =>
+                        handleShapeTransformEnd(shape.id, e)
+                      }
+                    />
+                    {/* Show node anchors when node tool is active and shape is selected */}
+                    {showNodeAnchors &&
+                      shape.points.map((_, index) => {
+                        if (index % 2 !== 0) return null; // Skip y coordinates
+                        const nodeIndex = index / 2;
+                        const nodeX = shape.x + shape.points![index];
+                        const nodeY = shape.y + shape.points![index + 1];
+                        const isNodeSelected = selectedNodeIndex === nodeIndex;
+
+                        // Highlight adjacent segments
+                        const numNodes = shape.points!.length / 2;
+                        const prevIndex = (nodeIndex - 1 + numNodes) % numNodes;
+                        const nextIndex = (nodeIndex + 1) % numNodes;
+
+                        return (
+                          <Fragment key={`${shape.id}-node-${nodeIndex}`}>
+                            {/* Highlight segment to previous node */}
+                            {isNodeSelected && isClosed && (
+                              <>
+                                <Line
+                                  points={[
+                                    shape.x + shape.points![prevIndex * 2],
+                                    shape.y + shape.points![prevIndex * 2 + 1],
+                                    nodeX,
+                                    nodeY,
+                                  ]}
+                                  stroke="#ff6b6b"
+                                  strokeWidth={strokeWidth + 2}
+                                  opacity={0.6}
+                                  listening={false}
+                                />
+                                <Line
+                                  points={[
+                                    nodeX,
+                                    nodeY,
+                                    shape.x + shape.points![nextIndex * 2],
+                                    shape.y + shape.points![nextIndex * 2 + 1],
+                                  ]}
+                                  stroke="#ff6b6b"
+                                  strokeWidth={strokeWidth + 2}
+                                  opacity={0.6}
+                                  listening={false}
+                                />
+                              </>
+                            )}
+                            <KonvaCircle
+                              x={nodeX}
+                              y={nodeY}
+                              radius={NODE_ANCHOR_RADIUS}
+                              fill={isNodeSelected ? "#ff6b6b" : "#673b45"}
+                              stroke="#ffffff"
+                              strokeWidth={2}
+                              draggable={true}
+                              onClick={() => setSelectedNodeIndex(nodeIndex)}
+                              onDragMove={(e) =>
+                                handleNodeAnchorDragMove(shape.id, nodeIndex, e)
+                              }
+                              onDragEnd={(e) =>
+                                handleNodeAnchorDragEnd(shape.id, nodeIndex, e)
+                              }
+                            />
+                          </Fragment>
+                        );
+                      })}
+                  </Fragment>
+                );
               })}
 
               {/* Transformer for selection and transformation */}

@@ -12,7 +12,10 @@ interface NewProjectButtonProps {
   children?: React.ReactNode;
 }
 
-export function NewProjectButton({ className, children }: NewProjectButtonProps) {
+export function NewProjectButton({
+  className,
+  children,
+}: NewProjectButtonProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
@@ -132,8 +135,7 @@ export function NewProjectButton({ className, children }: NewProjectButtonProps)
 
       let coverUrl: string | null = null;
       if (coverFile) {
-        const ext =
-          coverFile.name.split(".").pop()?.toLowerCase() || "png";
+        const ext = coverFile.name.split(".").pop()?.toLowerCase() || "png";
         const path = `${user.id}/${projectId}/cover.${ext}`;
 
         const { error: uploadError } = await supabase.storage
@@ -149,9 +151,8 @@ export function NewProjectButton({ className, children }: NewProjectButtonProps)
             `Projeto criado, mas falhou ao enviar a imagem de capa: ${uploadError.message}`
           );
         } else {
-          coverUrl = supabase.storage
-            .from("project-covers")
-            .getPublicUrl(path).data.publicUrl;
+          coverUrl = supabase.storage.from("project-covers").getPublicUrl(path)
+            .data.publicUrl;
         }
       }
 
@@ -225,7 +226,8 @@ export function NewProjectButton({ className, children }: NewProjectButtonProps)
                     <div className="space-y-8">
                       <div>
                         <label className="text-sm text-gray-600">
-                          Nome/Referência <span className="text-red-500">*</span>
+                          Nome/Referência{" "}
+                          <span className="text-red-500">*</span>
                         </label>
                         <input
                           value={name}
@@ -246,7 +248,9 @@ export function NewProjectButton({ className, children }: NewProjectButtonProps)
                       </div>
 
                       <div>
-                        <label className="text-sm text-gray-600">Observação</label>
+                        <label className="text-sm text-gray-600">
+                          Observação
+                        </label>
                         <input
                           value={notes}
                           onChange={(e) => setNotes(e.target.value)}
@@ -271,7 +275,9 @@ export function NewProjectButton({ className, children }: NewProjectButtonProps)
                               min={1}
                               className="w-full border-b border-gray-300 pb-2 text-2xl text-gray-900 focus:border-blue-600 focus:outline-none"
                             />
-                            <span className="pb-2 text-lg text-gray-600">cm</span>
+                            <span className="pb-2 text-lg text-gray-600">
+                              cm
+                            </span>
                           </div>
                         </div>
 
@@ -290,7 +296,9 @@ export function NewProjectButton({ className, children }: NewProjectButtonProps)
                               min={1}
                               className="w-full border-b border-gray-300 pb-2 text-2xl text-gray-900 focus:border-blue-600 focus:outline-none"
                             />
-                            <span className="pb-2 text-lg text-gray-600">cm</span>
+                            <span className="pb-2 text-lg text-gray-600">
+                              cm
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -347,7 +355,8 @@ export function NewProjectButton({ className, children }: NewProjectButtonProps)
                               Selecionar Imagem
                             </div>
                             <div className="mt-2 text-sm text-gray-500">
-                              Clique aqui ou arraste e solte a imagem de capa do projeto
+                              Clique aqui ou arraste e solte a imagem de capa do
+                              projeto
                             </div>
                           </>
                         )}

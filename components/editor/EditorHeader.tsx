@@ -148,7 +148,11 @@ export function EditorHeader() {
       const cmdOrCtrl = isMac ? event.metaKey : event.ctrlKey;
 
       // Salvar como...: Cmd/Ctrl+Shift+S
-      if (cmdOrCtrl && event.shiftKey && (event.key === "s" || event.key === "S")) {
+      if (
+        cmdOrCtrl &&
+        event.shiftKey &&
+        (event.key === "s" || event.key === "S")
+      ) {
         event.preventDefault();
         handleSaveAsShortcut();
         return;
@@ -315,7 +319,10 @@ export function EditorHeader() {
               </p>
             </div>
 
-            <div className="relative group cursor-pointer" title="Perfil do Usuário">
+            <div
+              className="relative group cursor-pointer"
+              title="Perfil do Usuário"
+            >
               <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary to-accent-gold flex items-center justify-center text-white font-semibold shadow-subtle border-2 border-white dark:border-gray-700 text-xs">
                 {userInfo?.initials ?? "U"}
               </div>

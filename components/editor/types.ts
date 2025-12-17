@@ -1,5 +1,5 @@
 export type DrawingTool = "rectangle" | "circle" | "line" | "curve";
-export type Tool = DrawingTool | "select" | "pan";
+export type Tool = DrawingTool | "select" | "pan" | "node";
 
 export interface Shape {
   id: string;
