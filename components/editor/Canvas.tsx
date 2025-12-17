@@ -16,6 +16,7 @@ import { GRID_SIZE_PX, PX_PER_CM } from "./constants";
 import { getPaperDimensionsCm } from "./exportSettings";
 
 import { Ruler } from "./Ruler";
+import { getAllSnapPoints, findNearestSnapPoint, SnapPoint } from "./snapping";
 
 // Large virtual area to keep the background visible while navigating the canvas.
 const WORKSPACE_SIZE = 8000; // Increased size
@@ -70,6 +71,9 @@ export default function Canvas() {
   const [isKeyboardActive, setIsKeyboardActive] = useState(false);
   const [isPanDrag, setIsPanDrag] = useState(false);
   const [selectedNodeIndex, setSelectedNodeIndex] = useState<number | null>(
+    null
+  );
+  const [activeSnapPoint, setActiveSnapPoint] = useState<SnapPoint | null>(
     null
   );
   const isDrawing = useRef(false);
@@ -691,8 +695,28 @@ export default function Canvas() {
     const shape = shapes.find((s) => s.id === shapeId);
     if (!shape || !shape.points) return;
 
-    const absoluteX = anchor.x();
-    const absoluteY = anchor.y();
+    let absoluteX = anchor.x();
+    let absoluteY = anchor.y();
+
+    // Get all snap points (excluding the current node being dragged)
+    const snapPoints = getAllSnapPoints(shapes, shapeId, nodeIndex);
+
+    // Check for nearby snap point
+    const nearestSnap = findNearestSnapPoint(absoluteX, absoluteY, snapPoints);
+
+    if (nearestSnap) {
+      // Snap to the nearest point
+      absoluteX = nearestSnap.x;
+      absoluteY = nearestSnap.y;
+      anchor.x(absoluteX);
+      anchor.y(absoluteY);
+
+      // Show snap indicator
+      setActiveSnapPoint(nearestSnap);
+    } else {
+      // Clear snap indicator
+      setActiveSnapPoint(null);
+    }
 
     // Convert to relative coordinates
     const relativeX = absoluteX - shape.x;
@@ -721,8 +745,24 @@ export default function Canvas() {
     e.cancelBubble = true;
     const anchor = e.target as Konva.Circle;
 
-    const absoluteX = anchor.x();
-    const absoluteY = anchor.y();
+    let absoluteX = anchor.x();
+    let absoluteY = anchor.y();
+
+    // Get all snap points (excluding the current node being dragged)
+    const snapPoints = getAllSnapPoints(shapes, shapeId, nodeIndex);
+
+    // Check for nearby snap point and apply final snap
+    const nearestSnap = findNearestSnapPoint(absoluteX, absoluteY, snapPoints);
+
+    if (nearestSnap) {
+      absoluteX = nearestSnap.x;
+      absoluteY = nearestSnap.y;
+      anchor.x(absoluteX);
+      anchor.y(absoluteY);
+    }
+
+    // Clear snap indicator
+    setActiveSnapPoint(null);
 
     const updatedShapes = shapes.map((shape) => {
       if (shape.id === shapeId && shape.points) {
@@ -1082,6 +1122,21 @@ export default function Canvas() {
                   </Fragment>
                 );
               })}
+
+              {/* Snap point indicator - yellow square */}
+              {activeSnapPoint && (
+                <KonvaRect
+                  x={activeSnapPoint.x - 4}
+                  y={activeSnapPoint.y - 4}
+                  width={8}
+                  height={8}
+                  fill="#fbbf24"
+                  stroke="#f59e0b"
+                  strokeWidth={1}
+                  listening={false}
+                  opacity={0.8}
+                />
+              )}
 
               {/* Transformer for selection and transformation */}
               <Transformer
