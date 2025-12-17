@@ -4,7 +4,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { useEditor } from "./EditorContext";
 
 export function ViewMenu() {
-  const { showPageGuides, setShowPageGuides } = useEditor();
+  const {
+    showPageGuides,
+    setShowPageGuides,
+    measureSnapStrengthPx,
+    setMeasureSnapStrengthPx,
+  } = useEditor();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -53,6 +58,31 @@ export function ViewMenu() {
           <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-2">
             Usa o tamanho/orientação/margens configurados na impressão.
           </p>
+
+          <div className="mt-4 h-px bg-gray-200 dark:bg-gray-700" />
+
+          <div className="mt-4">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-gray-600 dark:text-gray-300">
+                Força do magnetismo (Medir)
+              </label>
+              <span className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">
+                {Math.max(12, measureSnapStrengthPx)}px
+              </span>
+            </div>
+            <input
+              type="range"
+              min={12}
+              max={40}
+              step={1}
+              value={Math.max(12, measureSnapStrengthPx)}
+              onChange={(e) => setMeasureSnapStrengthPx(Number(e.target.value))}
+              className="mt-2 w-full"
+            />
+            <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-2">
+              Aumente para facilitar o snap; mínimo 12px.
+            </p>
+          </div>
         </div>
       )}
     </div>

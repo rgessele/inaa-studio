@@ -29,7 +29,7 @@ const WORKSPACE_BACKGROUND = "#121212"; // Dark background
 const GRID_COLOR = "rgba(255, 255, 255, 0.05)";
 const CONTROL_POINT_RADIUS = 6; // Radius for control point anchor
 const NODE_ANCHOR_RADIUS = 5; // Radius for node anchors
-const MEASURE_SNAP_THRESHOLD_PX = 12;
+const MEASURE_SNAP_MIN_THRESHOLD_PX = 12;
 
 function degreesToRadians(degrees: number): number {
   return (degrees * Math.PI) / 180;
@@ -160,6 +160,7 @@ export default function Canvas() {
     showGrid,
     showPageGuides,
     pageGuideSettings,
+    measureSnapStrengthPx,
   } = useEditor();
 
   const RULER_THICKNESS = 24;
@@ -397,7 +398,11 @@ export default function Canvas() {
   };
 
   const getMeasureMagneticResult = (pos: { x: number; y: number }) => {
-    const thresholdWorld = MEASURE_SNAP_THRESHOLD_PX / stageScale;
+    const thresholdPx = Math.max(
+      MEASURE_SNAP_MIN_THRESHOLD_PX,
+      measureSnapStrengthPx
+    );
+    const thresholdWorld = thresholdPx / stageScale;
 
     // Prefer snapping to explicit snap points (endpoints/midpoints/intersections)
     // but also support snapping to the closest point along any segment (edge).

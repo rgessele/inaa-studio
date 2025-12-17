@@ -58,6 +58,9 @@ interface EditorContextType {
   pageGuideSettings: PageGuideSettings;
   setPageGuideSettings: (settings: PageGuideSettings) => void;
 
+  measureSnapStrengthPx: number;
+  setMeasureSnapStrengthPx: (strengthPx: number) => void;
+
   // Project management
   projectId: string | null;
   setProjectId: (id: string | null) => void;
@@ -98,6 +101,36 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       orientation: defaultExportSettings.orientation,
       marginCm: defaultExportSettings.marginCm,
     }
+  );
+
+  const MEASURE_SNAP_MIN_PX = 12;
+  const [measureSnapStrengthPx, setMeasureSnapStrengthPxState] = useState(
+    MEASURE_SNAP_MIN_PX
+  );
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("inaa:measureSnapStrengthPx");
+      if (!raw) return;
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) return;
+      setMeasureSnapStrengthPxState(Math.max(MEASURE_SNAP_MIN_PX, parsed));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setMeasureSnapStrengthPx = useCallback(
+    (strengthPx: number) => {
+      const safe = Math.max(MEASURE_SNAP_MIN_PX, Math.round(strengthPx));
+      setMeasureSnapStrengthPxState(safe);
+      try {
+        localStorage.setItem("inaa:measureSnapStrengthPx", String(safe));
+      } catch {
+        // ignore
+      }
+    },
+    [MEASURE_SNAP_MIN_PX]
   );
 
   // Store stage reference without triggering re-renders
@@ -185,6 +218,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setShowPageGuides,
         pageGuideSettings,
         setPageGuideSettings,
+        measureSnapStrengthPx,
+        setMeasureSnapStrengthPx,
         projectId,
         setProjectId,
         projectName,
