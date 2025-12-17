@@ -95,8 +95,9 @@ Circles already use diagonal distance for radius calculation, so they are always
   const dx = pos.x - lastShape.x;
   const dy = pos.y - lastShape.y;
   
-  // Circles always use diagonal distance (already perfect)
-  let radius = Math.sqrt(dx * dx + dy * dy);
+  // Circles always use diagonal distance for radius (naturally perfect circles)
+  // SHIFT key has no effect on circle behavior
+  const radius = Math.sqrt(dx * dx + dy * dy);
   
   updatedShapes[shapeIndex] = {
     ...lastShape,

@@ -393,17 +393,9 @@ export default function Canvas() {
       const dx = pos.x - lastShape.x;
       const dy = pos.y - lastShape.y;
 
-      // If SHIFT is pressed, use the maximum distance to maintain perfect circle
-      // Otherwise, calculate radius based on both dx and dy
-      let radius;
-      if (isShiftPressed) {
-        // For perfect circle with SHIFT: use the diagonal distance
-        radius = Math.sqrt(dx * dx + dy * dy);
-      } else {
-        // Without SHIFT: allow ellipse-like behavior
-        // but since we're using circular points, still use diagonal distance
-        radius = Math.sqrt(dx * dx + dy * dy);
-      }
+      // Circles always use diagonal distance for radius (naturally perfect circles)
+      // SHIFT key has no effect on circle behavior
+      const radius = Math.sqrt(dx * dx + dy * dy);
 
       updatedShapes[shapeIndex] = {
         ...lastShape,
