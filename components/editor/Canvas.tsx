@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Stage,
   Layer,
@@ -872,6 +872,19 @@ export default function Canvas() {
         ? "default"
         : "crosshair";
 
+  // Calculate measure tooltip data
+  const measureTooltipData = useMemo(() => {
+    if (!isMeasuring || !measureStart || !measureEnd) {
+      return null;
+    }
+    return calculateMeasureTooltip(
+      measureStart,
+      measureEnd,
+      stageScale,
+      stagePosition
+    );
+  }, [isMeasuring, measureStart, measureEnd, stageScale, stagePosition]);
+
   return (
     <div
       ref={containerRef}
@@ -1280,27 +1293,18 @@ export default function Canvas() {
           </div>
 
           {/* Measure tool tooltip */}
-          {isMeasuring && measureStart && measureEnd && (() => {
-            const { distanceCm, screenX, screenY } = calculateMeasureTooltip(
-              measureStart,
-              measureEnd,
-              stageScale,
-              stagePosition
-            );
-
-            return (
-              <div
-                className="absolute bg-blue-500 text-white px-3 py-2 rounded-md text-sm font-medium shadow-lg pointer-events-none"
-                style={{
-                  left: `${screenX + 15}px`,
-                  top: `${screenY - 10}px`,
-                  transform: 'translateY(-50%)',
-                }}
-              >
-                {distanceCm.toFixed(1)} cm
-              </div>
-            );
-          })()}
+          {measureTooltipData && (
+            <div
+              className="absolute bg-blue-500 text-white px-3 py-2 rounded-md text-sm font-medium shadow-lg pointer-events-none"
+              style={{
+                left: `${measureTooltipData.screenX + 15}px`,
+                top: `${measureTooltipData.screenY - 10}px`,
+                transform: 'translateY(-50%)',
+              }}
+            >
+              {measureTooltipData.distanceCm.toFixed(1)} cm
+            </div>
+          )}
         </div>
       </div>
     </div>
