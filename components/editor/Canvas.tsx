@@ -704,8 +704,9 @@ export default function Canvas() {
     let absoluteX = anchor.x();
     let absoluteY = anchor.y();
 
-    // Use cached snap points if available, otherwise calculate
-    const snapPoints = cachedSnapPoints.current || [];
+    // Use cached snap points if available, otherwise calculate on-the-fly
+    const snapPoints =
+      cachedSnapPoints.current || getAllSnapPoints(shapes, shapeId, nodeIndex);
 
     // Check for nearby snap point
     const nearestSnap = findNearestSnapPoint(absoluteX, absoluteY, snapPoints);
@@ -754,8 +755,9 @@ export default function Canvas() {
     let absoluteX = anchor.x();
     let absoluteY = anchor.y();
 
-    // Use cached snap points if available, otherwise calculate
-    const snapPoints = cachedSnapPoints.current || [];
+    // Use cached snap points if available, otherwise calculate on-the-fly
+    const snapPoints =
+      cachedSnapPoints.current || getAllSnapPoints(shapes, shapeId, nodeIndex);
 
     // Check for nearby snap point and apply final snap
     const nearestSnap = findNearestSnapPoint(absoluteX, absoluteY, snapPoints);
