@@ -359,14 +359,12 @@ export function EditorToolbar() {
               text_fields
             </span>
           </button>
-          <button
-            className="group relative flex items-center justify-center p-2 rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
-            title="Medir (M)"
-          >
-            <span className="material-symbols-outlined text-[20px]">
-              straighten
-            </span>
-          </button>
+          <ToolButton
+            active={tool === "measure"}
+            onClick={() => handleToolChange("measure")}
+            icon="straighten"
+            label="Medir (M)"
+          />
 
           <div className="flex-1"></div>
 

@@ -76,6 +76,14 @@ export default function Canvas() {
   const [activeSnapPoint, setActiveSnapPoint] = useState<SnapPoint | null>(
     null
   );
+  const [measureStart, setMeasureStart] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const [measureEnd, setMeasureEnd] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const [isMeasuring, setIsMeasuring] = useState(false);
   const cachedSnapPoints = useRef<SnapPoint[] | null>(null);
   const isDrawing = useRef(false);
   const currentShape = useRef<Shape | null>(null);
@@ -323,6 +331,17 @@ export default function Canvas() {
       return;
     }
 
+    if (tool === "measure") {
+      const pos = getRelativePointer(stage);
+      if (!pos) return;
+
+      // Start measuring
+      setMeasureStart(pos);
+      setMeasureEnd(pos);
+      setIsMeasuring(true);
+      return;
+    }
+
     const pos = getRelativePointer(stage);
     if (!pos) return;
 
@@ -360,6 +379,18 @@ export default function Canvas() {
   };
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    // Handle measure tool
+    if (isMeasuring && tool === "measure") {
+      const stage = e.target.getStage();
+      if (!stage) return;
+
+      const pos = getRelativePointer(stage);
+      if (!pos) return;
+
+      setMeasureEnd(pos);
+      return;
+    }
+
     if (!isDrawing.current) return;
 
     const stage = e.target.getStage();
@@ -438,6 +469,14 @@ export default function Canvas() {
   };
 
   const handleMouseUp = () => {
+    // Clear measure tool state
+    if (isMeasuring && tool === "measure") {
+      setIsMeasuring(false);
+      setMeasureStart(null);
+      setMeasureEnd(null);
+      return;
+    }
+
     // If we were drawing, save the final state to history
     if (isDrawing.current && currentShape.current) {
       // Use identity function to capture and save current state to history
@@ -1153,6 +1192,25 @@ export default function Canvas() {
                 />
               )}
 
+              {/* Measure tool line and distance display */}
+              {isMeasuring && measureStart && measureEnd && (
+                <>
+                  <Line
+                    points={[
+                      measureStart.x,
+                      measureStart.y,
+                      measureEnd.x,
+                      measureEnd.y,
+                    ]}
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    dash={[10, 5]}
+                    listening={false}
+                    opacity={0.8}
+                  />
+                </>
+              )}
+
               {/* Transformer for selection and transformation */}
               <Transformer
                 ref={transformerRef}
@@ -1189,6 +1247,34 @@ export default function Canvas() {
           <div className="absolute bottom-4 left-4 bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 rounded px-2 py-1 text-xs text-text-muted dark:text-text-muted-dark shadow-sm pointer-events-none">
             {Math.round(stageScale * 100)}%
           </div>
+
+          {/* Measure tool tooltip */}
+          {isMeasuring && measureStart && measureEnd && (() => {
+            // Calculate distance in pixels
+            const dx = measureEnd.x - measureStart.x;
+            const dy = measureEnd.y - measureStart.y;
+            const distancePx = Math.sqrt(dx * dx + dy * dy);
+            
+            // Convert to centimeters
+            const distanceCm = distancePx / PX_PER_CM;
+
+            // Calculate screen position (follows the end point)
+            const screenX = measureEnd.x * stageScale + stagePosition.x;
+            const screenY = measureEnd.y * stageScale + stagePosition.y;
+
+            return (
+              <div
+                className="absolute bg-blue-500 text-white px-3 py-2 rounded-md text-sm font-medium shadow-lg pointer-events-none"
+                style={{
+                  left: `${screenX + 15}px`,
+                  top: `${screenY - 10}px`,
+                  transform: 'translateY(-50%)',
+                }}
+              >
+                {distanceCm.toFixed(1)} cm
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>
