@@ -17,4 +17,10 @@ export interface Shape {
   rotation?: number;
   opacity?: number;
   dash?: number[];
+
+  // Seam allowance (margem de costura) linkage
+  kind?: "seam";
+  parentId?: string;
+  offsetCm?: number;
+  seamPart?: number;
 }

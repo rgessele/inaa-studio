@@ -64,6 +64,8 @@ interface EditorContextType {
   // Offset tool
   offsetValueCm: number;
   setOffsetValueCm: (value: number) => void;
+  offsetTargetId: string | null;
+  setOffsetTargetId: (id: string | null) => void;
 
   // Project management
   projectId: string | null;
@@ -114,6 +116,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
   // Offset tool state (default 1cm for seam allowance)
   const [offsetValueCm, setOffsetValueCm] = useState(1);
+  const [offsetTargetId, setOffsetTargetId] = useState<string | null>(null);
 
   React.useEffect(() => {
     try {
@@ -229,6 +232,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setMeasureSnapStrengthPx,
         offsetValueCm,
         setOffsetValueCm,
+        offsetTargetId,
+        setOffsetTargetId,
         projectId,
         setProjectId,
         projectName,

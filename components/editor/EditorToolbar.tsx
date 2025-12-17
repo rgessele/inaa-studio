@@ -1,6 +1,13 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEditor } from "./EditorContext";
 import { DrawingTool, Tool } from "./types";
@@ -100,9 +107,13 @@ export function EditorToolbar() {
         marginCm: customMargins ? exportSettings.marginCm : 1,
       };
 
+      const exportShapes = includeSeamAllowance
+        ? shapes
+        : shapes.filter((shape) => shape.kind !== "seam");
+
       await generateTiledPDF(
         stage,
-        shapes,
+        exportShapes,
         () => setShowGrid(false),
         () => setShowGrid(true),
         resolvedSettings
@@ -118,6 +129,7 @@ export function EditorToolbar() {
     customMargins,
     exportSettings,
     getStage,
+    includeSeamAllowance,
     searchParams,
     setShowGrid,
     shapes,
@@ -127,11 +139,13 @@ export function EditorToolbar() {
     setTool(newTool);
   };
 
-  const [isMac, setIsMac] = useState(false);
-
-  useEffect(() => {
-    setIsMac(/Mac|iPhone|iPod|iPad/.test(navigator.userAgent));
-  }, []);
+  const isMac = useSyncExternalStore(
+    () => () => {
+      // no-op: OS does not change during a session
+    },
+    () => /Mac|iPhone|iPod|iPad/.test(navigator.userAgent),
+    () => false
+  );
 
   const saveTooltip = useDelayedTooltip(true);
   const exportTooltip = useDelayedTooltip(true);
@@ -158,9 +172,13 @@ export function EditorToolbar() {
       marginCm: customMargins ? exportSettings.marginCm : 1,
     };
 
+    const exportShapes = includeSeamAllowance
+      ? shapes
+      : shapes.filter((shape) => shape.kind !== "seam");
+
     await generateTiledPDF(
       stage,
-      shapes,
+      exportShapes,
       () => setShowGrid(false),
       () => setShowGrid(true),
       resolvedSettings
@@ -175,7 +193,11 @@ export function EditorToolbar() {
       marginCm: customMargins ? exportSettings.marginCm : 1,
     };
 
-    generateSVG(shapes, resolvedSettings);
+    const exportShapes = includeSeamAllowance
+      ? shapes
+      : shapes.filter((shape) => shape.kind !== "seam");
+
+    generateSVG(exportShapes, resolvedSettings);
   };
 
   const toggleToolFilter = (drawingTool: DrawingTool) => {

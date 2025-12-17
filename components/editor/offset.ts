@@ -5,6 +5,8 @@
 
 import { Shape } from "./types";
 
+const SEAM_DASH: number[] = [5, 5];
+
 /**
  * Calculate offset for a rectangle shape
  * Returns a new shape with expanded dimensions
@@ -41,10 +43,10 @@ export function calculateRectangleOffset(
     points: newPoints,
     stroke: shape.stroke,
     strokeWidth: shape.strokeWidth,
-    fill: shape.fill,
+    fill: undefined,
     rotation: shape.rotation,
     opacity: shape.opacity,
-    dash: undefined, // Solid line for cutting line
+    dash: SEAM_DASH,
   };
 }
 
@@ -82,10 +84,10 @@ export function calculateCircleOffset(
     points: newPoints,
     stroke: shape.stroke,
     strokeWidth: shape.strokeWidth,
-    fill: shape.fill,
+    fill: undefined,
     rotation: shape.rotation,
     opacity: shape.opacity,
-    dash: undefined, // Solid line for cutting line
+    dash: SEAM_DASH,
   };
 }
 
@@ -138,7 +140,7 @@ export function calculateLineOffset(
     strokeWidth: shape.strokeWidth,
     rotation: shape.rotation,
     opacity: shape.opacity,
-    dash: undefined, // Solid line
+    dash: SEAM_DASH,
   };
 
   const offsetLine2: Shape = {
@@ -156,37 +158,48 @@ export function calculateLineOffset(
     strokeWidth: shape.strokeWidth,
     rotation: shape.rotation,
     opacity: shape.opacity,
-    dash: undefined, // Solid line
+    dash: SEAM_DASH,
   };
 
   return [offsetLine1, offsetLine2];
 }
 
+function computeSeamParts(base: Shape, offsetCm: number, pixelsPerCm: number) {
+  if (base.tool === "rectangle") {
+    return [{ seamPart: 0, shape: calculateRectangleOffset(base, offsetCm, pixelsPerCm) }];
+  }
+  if (base.tool === "circle") {
+    return [{ seamPart: 0, shape: calculateCircleOffset(base, offsetCm, pixelsPerCm) }];
+  }
+  if (base.tool === "line" || base.tool === "curve") {
+    const lines = calculateLineOffset(base, offsetCm, pixelsPerCm);
+    return lines.map((shape, index) => ({ seamPart: index, shape }));
+  }
+  return [] as Array<{ seamPart: number; shape: Shape }>;
+}
+
 /**
- * Apply offset to a shape and return new offset shape(s)
- * Also marks the original shape with dashed line style
+ * Create/update seam allowance shapes for a base shape.
+ * Preserves stable IDs by matching `seamPart`.
  */
-export function applyOffset(
-  shape: Shape,
+export function upsertSeamAllowance(
+  base: Shape,
+  existingSeams: Shape[],
   offsetCm: number,
   pixelsPerCm: number
-): { offsetShapes: Shape[]; dashedOriginal: Shape } {
-  let offsetShapes: Shape[] = [];
+): Shape[] {
+  const parts = computeSeamParts(base, offsetCm, pixelsPerCm);
 
-  // Calculate offset based on shape type
-  if (shape.tool === "rectangle") {
-    offsetShapes = [calculateRectangleOffset(shape, offsetCm, pixelsPerCm)];
-  } else if (shape.tool === "circle") {
-    offsetShapes = [calculateCircleOffset(shape, offsetCm, pixelsPerCm)];
-  } else if (shape.tool === "line" || shape.tool === "curve") {
-    offsetShapes = calculateLineOffset(shape, offsetCm, pixelsPerCm);
-  }
-
-  // Mark original with dashed line (seam line)
-  const dashedOriginal: Shape = {
-    ...shape,
-    dash: [5, 5], // Dashed pattern
-  };
-
-  return { offsetShapes, dashedOriginal };
+  return parts.map(({ seamPart, shape }) => {
+    const existing = existingSeams.find((s) => s.seamPart === seamPart);
+    return {
+      ...shape,
+      id: existing?.id ?? crypto.randomUUID(),
+      kind: "seam",
+      parentId: base.id,
+      offsetCm,
+      seamPart,
+      dash: SEAM_DASH,
+    };
+  });
 }

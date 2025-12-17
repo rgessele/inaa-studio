@@ -17,7 +17,7 @@ import { getPaperDimensionsCm } from "./exportSettings";
 
 import { Ruler } from "./Ruler";
 import { getAllSnapPoints, findNearestSnapPoint, SnapPoint } from "./snapping";
-import { applyOffset } from "./offset";
+import { upsertSeamAllowance } from "./offset";
 
 // Large virtual area to keep the background visible while navigating the canvas.
 const WORKSPACE_SIZE = 8000; // Increased size
@@ -164,6 +164,8 @@ export default function Canvas() {
     measureSnapStrengthPx,
     offsetValueCm,
     setOffsetValueCm,
+    offsetTargetId,
+    setOffsetTargetId,
   } = useEditor();
 
   const RULER_THICKNESS = 24;
@@ -179,6 +181,49 @@ export default function Canvas() {
   const [activeSnapPoint, setActiveSnapPoint] = useState<SnapPoint | null>(
     null
   );
+
+  const getParentIdForShape = (shapeId: string) => {
+    const shape = shapes.find((s) => s.id === shapeId);
+    if (!shape) return shapeId;
+    if (shape.kind === "seam" && shape.parentId) return shape.parentId;
+    return shapeId;
+  };
+
+  const getSeamsForParent = (allShapes: Shape[], parentId: string) => {
+    return allShapes.filter((s) => s.kind === "seam" && s.parentId === parentId);
+  };
+
+  const removeSeamsForParent = (allShapes: Shape[], parentId: string) => {
+    return allShapes.filter((s) => !(s.kind === "seam" && s.parentId === parentId));
+  };
+
+  const recomputeSeamsForParent = (
+    allShapes: Shape[],
+    parentId: string,
+    offsetOverrideCm?: number
+  ) => {
+    const base = allShapes.find((s) => s.id === parentId);
+    if (!base) {
+      return removeSeamsForParent(allShapes, parentId);
+    }
+
+    const existingSeams = getSeamsForParent(allShapes, parentId);
+    const offsetCm =
+      offsetOverrideCm ?? existingSeams[0]?.offsetCm ?? undefined;
+
+    if (offsetCm === undefined) {
+      return allShapes;
+    }
+
+    const nextSeams = upsertSeamAllowance(
+      base,
+      existingSeams,
+      offsetCm,
+      PX_PER_CM
+    );
+
+    return [...removeSeamsForParent(allShapes, parentId), ...nextSeams];
+  };
   const [measureStart, setMeasureStart] = useState<{
     x: number;
     y: number;
@@ -199,6 +244,60 @@ export default function Canvas() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const shapeRefs = useRef<Map<string, Konva.Node>>(new Map());
+  const seamDragRef = useRef<
+    | {
+        parentId: string;
+        startX: number;
+        startY: number;
+        seamStarts: Map<string, { x: number; y: number }>;
+      }
+    | null
+  >(null);
+
+  const handleShapeDragStart = (
+    id: string,
+    e: Konva.KonvaEventObject<DragEvent>
+  ) => {
+    const seams = shapes.filter((s) => s.kind === "seam" && s.parentId === id);
+    if (seams.length === 0) return;
+
+    const node = e.target;
+    const seamStarts = new Map<string, { x: number; y: number }>();
+
+    for (const seam of seams) {
+      const seamNode = shapeRefs.current.get(seam.id);
+      if (!seamNode) continue;
+      seamStarts.set(seam.id, { x: seamNode.x(), y: seamNode.y() });
+    }
+
+    seamDragRef.current = {
+      parentId: id,
+      startX: node.x(),
+      startY: node.y(),
+      seamStarts,
+    };
+  };
+
+  const handleShapeDragMove = (
+    id: string,
+    e: Konva.KonvaEventObject<DragEvent>
+  ) => {
+    const ref = seamDragRef.current;
+    if (!ref || ref.parentId !== id) return;
+
+    const node = e.target;
+    const dx = node.x() - ref.startX;
+    const dy = node.y() - ref.startY;
+
+    for (const [seamId, start] of ref.seamStarts.entries()) {
+      const seamNode = shapeRefs.current.get(seamId);
+      if (!seamNode) continue;
+      seamNode.x(start.x + dx);
+      seamNode.y(start.y + dy);
+    }
+
+    node.getLayer()?.batchDraw();
+  };
 
   // Generate grid lines - 1cm x 1cm squares
   const gridLines = [];
@@ -366,6 +465,22 @@ export default function Canvas() {
       setMeasureSnapPreview(null);
     }
   }, [tool]);
+
+  // Clear offset target when switching away from offset tool
+  useEffect(() => {
+    if (tool !== "offset" && offsetTargetId) {
+      setOffsetTargetId(null);
+    }
+  }, [offsetTargetId, setOffsetTargetId, tool]);
+
+  // If the target shape is deleted, clear selection
+  useEffect(() => {
+    if (!offsetTargetId) return;
+    const exists = shapes.some((s) => s.id === offsetTargetId);
+    if (!exists) {
+      setOffsetTargetId(null);
+    }
+  }, [offsetTargetId, setOffsetTargetId, shapes]);
 
   // Invalidate cached snap points whenever shapes change
   useEffect(() => {
@@ -769,32 +884,49 @@ export default function Canvas() {
   };
 
   const handleShapeClick = (id: string) => {
-    // If offset tool is active, apply offset to the clicked shape
+    const parentId = getParentIdForShape(id);
+
+    // If offset tool is active, apply or edit seam allowance for the clicked shape
     if (tool === "offset") {
-      const shape = shapes.find((s) => s.id === id);
-      if (!shape) return;
+      const base = shapes.find((s) => s.id === parentId);
+      if (!base) return;
 
-      // Apply offset and get new shapes
-      // Use PX_PER_CM constant for consistent centimeter-based calculations
-      const { offsetShapes, dashedOriginal } = applyOffset(
-        shape,
-        offsetValueCm,
-        PX_PER_CM
+      setSelectedShapeId(parentId);
+      setOffsetTargetId(parentId);
+
+      const existingSeams = shapes.filter(
+        (s) => s.kind === "seam" && s.parentId === parentId
       );
 
-      // Replace original with dashed version and add offset shapes
-      const updatedShapes = shapes.map((s) =>
-        s.id === id ? dashedOriginal : s
-      );
-      setShapes([...updatedShapes, ...offsetShapes]);
-      
-      // Keep the offset tool active for multiple applications
+      // If already has seam allowance, just open editor (do not create another)
+      if (existingSeams.length > 0) {
+        return;
+      }
+
+      // Apply seam allowance with default value
+      setShapes((prev) => {
+        const alreadyHasSeams = prev.some(
+          (s) => s.kind === "seam" && s.parentId === parentId
+        );
+        if (alreadyHasSeams) return prev;
+
+        const latestBase = prev.find((s) => s.id === parentId);
+        if (!latestBase) return prev;
+        const nextSeams = upsertSeamAllowance(
+          latestBase,
+          [],
+          offsetValueCm,
+          PX_PER_CM
+        );
+        return [...prev, ...nextSeams];
+      });
+
       return;
     }
 
-    // Normal selection behavior
-    if (tool === "select") {
-      setSelectedShapeId(id);
+    // Normal selection behavior (clicking seam selects its parent)
+    if (tool === "select" || tool === "node") {
+      setSelectedShapeId(parentId);
     }
   };
 
@@ -803,18 +935,21 @@ export default function Canvas() {
     e: Konva.KonvaEventObject<DragEvent>
   ) => {
     const node = e.target;
-    const updatedShapes = shapes.map((shape) => {
-      if (shape.id === id) {
-        const updated = {
-          ...shape,
-          x: node.x(),
-          y: node.y(),
-        };
-        return updated;
-      }
-      return shape;
+    seamDragRef.current = null;
+    setShapes((prev) => {
+      const updatedShapes = prev.map((shape) => {
+        if (shape.id === id) {
+          return {
+            ...shape,
+            x: node.x(),
+            y: node.y(),
+          };
+        }
+        return shape;
+      });
+
+      return recomputeSeamsForParent(updatedShapes, id);
     });
-    setShapes(updatedShapes);
   };
 
   const handleShapeTransformEnd = (
@@ -829,60 +964,55 @@ export default function Canvas() {
     node.scaleX(1);
     node.scaleY(1);
 
-    const updatedShapes = shapes.map((shape) => {
-      if (shape.id === id) {
-        const updated = {
-          ...shape,
-          x: node.x(),
-          y: node.y(),
-          rotation: node.rotation(),
-        };
-
-        if (shape.tool === "rectangle") {
-          updated.width = Math.max(5, (shape.width || 0) * scaleX);
-          updated.height = Math.max(5, (shape.height || 0) * scaleY);
-          // Update points array to match new dimensions
-          updated.points = createRectanglePoints(updated.width, updated.height);
-        } else if (shape.tool === "circle") {
-          updated.radius = Math.max(2.5, (shape.radius || 0) * scaleX);
-          // Update points array to match new radius
-          updated.points = createCirclePoints(updated.radius);
-        } else if (shape.tool === "line" && shape.points) {
-          // Scale line points
-          const scaledPoints = shape.points.map((point, index) => {
-            if (index % 2 === 0) {
-              return point * scaleX;
-            } else {
-              return point * scaleY;
-            }
-          });
-          updated.points = scaledPoints;
-        } else if (
-          shape.tool === "curve" &&
-          shape.points &&
-          shape.controlPoint
-        ) {
-          // Scale curve points and control point
-          const scaledPoints = shape.points.map((point, index) => {
-            if (index % 2 === 0) {
-              return point * scaleX;
-            } else {
-              return point * scaleY;
-            }
-          });
-          updated.points = scaledPoints;
-          updated.controlPoint = {
-            x: shape.controlPoint.x * scaleX,
-            y: shape.controlPoint.y * scaleY,
+    setShapes((prev) => {
+      const updatedShapes = prev.map((shape) => {
+        if (shape.id === id) {
+          const updated: Shape = {
+            ...shape,
+            x: node.x(),
+            y: node.y(),
+            rotation: node.rotation(),
           };
+
+          if (shape.tool === "rectangle") {
+            updated.width = Math.max(5, (shape.width || 0) * scaleX);
+            updated.height = Math.max(5, (shape.height || 0) * scaleY);
+            updated.points = createRectanglePoints(
+              updated.width,
+              updated.height
+            );
+          } else if (shape.tool === "circle") {
+            updated.radius = Math.max(2.5, (shape.radius || 0) * scaleX);
+            updated.points = createCirclePoints(updated.radius);
+          } else if (shape.tool === "line" && shape.points) {
+            const scaledPoints = shape.points.map((point, index) => {
+              if (index % 2 === 0) {
+                return point * scaleX;
+              }
+              return point * scaleY;
+            });
+            updated.points = scaledPoints;
+          } else if (shape.tool === "curve" && shape.points && shape.controlPoint) {
+            const scaledPoints = shape.points.map((point, index) => {
+              if (index % 2 === 0) {
+                return point * scaleX;
+              }
+              return point * scaleY;
+            });
+            updated.points = scaledPoints;
+            updated.controlPoint = {
+              x: shape.controlPoint.x * scaleX,
+              y: shape.controlPoint.y * scaleY,
+            };
+          }
+
+          return updated;
         }
+        return shape;
+      });
 
-        return updated;
-      }
-      return shape;
+      return recomputeSeamsForParent(updatedShapes, id);
     });
-
-    setShapes(updatedShapes);
   };
 
   const handleControlPointDragStart = (
@@ -961,21 +1091,22 @@ export default function Canvas() {
     const absoluteX = circle.x();
     const absoluteY = circle.y();
 
-    const updatedShapes = shapes.map((shape) => {
-      if (shape.id === shapeId && shape.tool === "curve") {
-        // Convert to relative coordinates
-        return {
-          ...shape,
-          controlPoint: {
-            x: absoluteX - shape.x,
-            y: absoluteY - shape.y,
-          },
-        };
-      }
-      return shape;
-    });
+    setShapes((prev) => {
+      const updatedShapes = prev.map((shape) => {
+        if (shape.id === shapeId && shape.tool === "curve") {
+          return {
+            ...shape,
+            controlPoint: {
+              x: absoluteX - shape.x,
+              y: absoluteY - shape.y,
+            },
+          };
+        }
+        return shape;
+      });
 
-    setShapes(updatedShapes);
+      return recomputeSeamsForParent(updatedShapes, shapeId);
+    });
   };
 
   const handleNodeAnchorDragStart = (shapeId: string, nodeIndex: number) => {
@@ -1068,24 +1199,26 @@ export default function Canvas() {
     setActiveSnapPoint(null);
     cachedSnapPoints.current = null;
 
-    const updatedShapes = shapes.map((shape) => {
-      if (shape.id === shapeId && shape.points) {
-        const relativeX = absoluteX - shape.x;
-        const relativeY = absoluteY - shape.y;
+    setShapes((prev) => {
+      const updatedShapes = prev.map((shape) => {
+        if (shape.id === shapeId && shape.points) {
+          const relativeX = absoluteX - shape.x;
+          const relativeY = absoluteY - shape.y;
 
-        const updatedPoints = [...shape.points];
-        updatedPoints[nodeIndex * 2] = relativeX;
-        updatedPoints[nodeIndex * 2 + 1] = relativeY;
+          const updatedPoints = [...shape.points];
+          updatedPoints[nodeIndex * 2] = relativeX;
+          updatedPoints[nodeIndex * 2 + 1] = relativeY;
 
-        return {
-          ...shape,
-          points: updatedPoints,
-        };
-      }
-      return shape;
+          return {
+            ...shape,
+            points: updatedPoints,
+          };
+        }
+        return shape;
+      });
+
+      return recomputeSeamsForParent(updatedShapes, shapeId);
     });
-
-    setShapes(updatedShapes);
   };
 
   const cursor =
@@ -1111,6 +1244,18 @@ export default function Canvas() {
       stagePosition
     );
   }, [isMeasuring, measureStart, measureEnd, stageScale, stagePosition]);
+
+  const offsetTargetSeams = useMemo(() => {
+    if (!offsetTargetId) return [];
+    return shapes.filter(
+      (s) => s.kind === "seam" && s.parentId === offsetTargetId
+    );
+  }, [offsetTargetId, shapes]);
+
+  const offsetInputValueCm =
+    offsetTargetSeams[0]?.offsetCm ?? offsetValueCm;
+
+  const hasOffsetTarget = Boolean(offsetTargetId);
 
   return (
     <div
@@ -1176,8 +1321,10 @@ export default function Canvas() {
                 const strokeWidth = isSelected
                   ? shape.strokeWidth + 1
                   : shape.strokeWidth;
-                const isDraggable = tool === "select" && isSelected;
-                const showNodeAnchors = tool === "node" && isSelected;
+                const isSeam = shape.kind === "seam";
+                const isDraggable = tool === "select" && isSelected && !isSeam;
+                const showNodeAnchors = tool === "node" && isSelected && !isSeam;
+                const isListening = !isSeam || tool === "offset";
 
                 // For curve shapes, handle differently
                 if (shape.tool === "curve") {
@@ -1227,13 +1374,19 @@ export default function Canvas() {
                           points={curvePoints}
                           stroke={stroke}
                           strokeWidth={strokeWidth}
+                          dash={shape.dash}
                           rotation={shape.rotation || 0}
                           tension={0}
                           lineCap="round"
                           lineJoin="round"
                           draggable={isDraggable}
+                          listening={isListening}
                           onClick={() => handleShapeClick(shape.id)}
                           onTap={() => handleShapeClick(shape.id)}
+                          onDragStart={(e) =>
+                            handleShapeDragStart(shape.id, e)
+                          }
+                          onDragMove={(e) => handleShapeDragMove(shape.id, e)}
                           onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
                           onTransformEnd={(e) =>
                             handleShapeTransformEnd(shape.id, e)
@@ -1364,12 +1517,16 @@ export default function Canvas() {
                       points={shape.points}
                       stroke={stroke}
                       strokeWidth={strokeWidth}
+                      dash={shape.dash}
                       fill={isClosed ? shape.fill : undefined}
                       closed={isClosed}
                       rotation={shape.rotation || 0}
                       draggable={isDraggable}
+                      listening={isListening}
                       onClick={() => handleShapeClick(shape.id)}
                       onTap={() => handleShapeClick(shape.id)}
+                      onDragStart={(e) => handleShapeDragStart(shape.id, e)}
+                      onDragMove={(e) => handleShapeDragMove(shape.id, e)}
                       onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
                       onTransformEnd={(e) =>
                         handleShapeTransformEnd(shape.id, e)
@@ -1560,7 +1717,7 @@ export default function Canvas() {
               min="0.1"
               max="10"
               step="0.1"
-              value={offsetValueCm}
+              value={offsetInputValueCm}
               onChange={(e) => {
                 const value = parseFloat(e.target.value);
                 // Allow empty or intermediate states during typing
@@ -1570,7 +1727,16 @@ export default function Canvas() {
                 // Clamp value to valid range
                 if (!isNaN(value)) {
                   const clampedValue = Math.max(0.1, Math.min(10, value));
+
+                  // Keep default in sync with last used value
                   setOffsetValueCm(clampedValue);
+
+                  // If editing an existing seam allowance, update it too
+                  if (offsetTargetId) {
+                    setShapes((prev) =>
+                      recomputeSeamsForParent(prev, offsetTargetId, clampedValue)
+                    );
+                  }
                 }
               }}
               onBlur={(e) => {
@@ -1578,13 +1744,35 @@ export default function Canvas() {
                 const value = parseFloat(e.target.value);
                 if (isNaN(value) || value < 0.1) {
                   setOffsetValueCm(1); // Reset to default
+                  if (offsetTargetId) {
+                    setShapes((prev) =>
+                      recomputeSeamsForParent(prev, offsetTargetId, 1)
+                    );
+                  }
                 }
               }}
               className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
             />
             <span className="text-sm text-gray-500 dark:text-gray-400">cm</span>
+
+            {hasOffsetTarget && offsetTargetSeams.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!offsetTargetId) return;
+                  setShapes((prev) => removeSeamsForParent(prev, offsetTargetId));
+                  setOffsetTargetId(null);
+                }}
+                className="ml-3 inline-flex items-center rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                Remover margem
+              </button>
+            ) : null}
+
             <span className="text-xs text-gray-400 dark:text-gray-500 ml-2">
-              Clique em uma forma para adicionar margem
+              {hasOffsetTarget
+                ? "Clique em outra forma para editar"
+                : "Clique em uma forma para adicionar/editar margem"}
             </span>
           </div>
         </div>
