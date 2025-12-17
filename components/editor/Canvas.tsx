@@ -1597,8 +1597,21 @@ export default function Canvas() {
               value={offsetValueCm}
               onChange={(e) => {
                 const value = parseFloat(e.target.value);
-                if (!isNaN(value) && value >= 0.1 && value <= 10) {
-                  setOffsetValueCm(value);
+                // Allow empty or intermediate states during typing
+                if (e.target.value === "" || e.target.value === ".") {
+                  return;
+                }
+                // Clamp value to valid range
+                if (!isNaN(value)) {
+                  const clampedValue = Math.max(0.1, Math.min(10, value));
+                  setOffsetValueCm(clampedValue);
+                }
+              }}
+              onBlur={(e) => {
+                // On blur, ensure we have a valid value
+                const value = parseFloat(e.target.value);
+                if (isNaN(value) || value < 0.1) {
+                  setOffsetValueCm(1); // Reset to default
                 }
               }}
               className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white"

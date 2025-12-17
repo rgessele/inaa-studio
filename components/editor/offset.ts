@@ -27,6 +27,8 @@ export function calculateRectangleOffset(
   const newY = shape.y - offsetPx;
 
   // Create rectangle points for the new size
+  // Note: In Konva, shape points are always relative to the shape's (x, y) position,
+  // not absolute coordinates. The shape position is stored in newX, newY above.
   const newPoints = [0, 0, newWidth, 0, newWidth, newHeight, 0, newHeight];
 
   return {
