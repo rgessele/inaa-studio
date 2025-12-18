@@ -35,6 +35,8 @@ export function EditorToolbar() {
     getStage,
     setShowGrid,
     setPageGuideSettings,
+    measureDisplayMode,
+    setMeasureDisplayMode,
     selectedFigureId,
     deleteSelected,
   } = useEditor();
@@ -141,6 +143,74 @@ export function EditorToolbar() {
   const handleToolChange = (newTool: Tool) => {
     setTool(newTool);
   };
+
+  const measuresModeIcon = useMemo(() => {
+    const base = "w-5 h-5 stroke-current";
+
+    if (measureDisplayMode === "never") {
+      // Ruler with a slash (off)
+      return (
+        <svg
+          className={base}
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.5"
+          viewBox="0 0 24 24"
+        >
+          <path d="M4 17 L17 4" />
+          <path d="M7 20 L20 7" />
+          <rect x="6" y="6" width="12" height="12" rx="2" />
+          <path d="M9 10 h0" />
+          <path d="M11 12 h0" />
+          <path d="M13 14 h0" />
+          <path d="M15 16 h0" />
+        </svg>
+      );
+    }
+
+    if (measureDisplayMode === "always") {
+      // Ruler (always)
+      return (
+        <svg
+          className={base}
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.5"
+          viewBox="0 0 24 24"
+        >
+          <rect x="5" y="5" width="14" height="14" rx="2" />
+          <path d="M8 9 v2" />
+          <path d="M11 9 v4" />
+          <path d="M14 9 v2" />
+          <path d="M17 9 v4" />
+        </svg>
+      );
+    }
+
+    // Hover: ruler + small pointer
+    return (
+      <svg
+        className={base}
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+        viewBox="0 0 24 24"
+      >
+        <rect x="5" y="5" width="14" height="14" rx="2" />
+        <path d="M8 9 v2" />
+        <path d="M11 9 v4" />
+        <path d="M14 9 v2" />
+        <path d="M17 9 v4" />
+        <path d="M20 20 l-3 -1 1 3 1 -2 1 0 z" />
+      </svg>
+    );
+  }, [measureDisplayMode]);
 
   const isMac = useSyncExternalStore(
     () => () => {
@@ -498,6 +568,29 @@ export function EditorToolbar() {
               "Clique e arraste para medir distância.",
               "Aproximar do contorno ativa magnetismo.",
             ]}
+          />
+
+          <ToolButton
+            active={measureDisplayMode !== "never"}
+            onClick={() => {
+              const next =
+                measureDisplayMode === "never"
+                  ? "always"
+                  : measureDisplayMode === "always"
+                    ? "hover"
+                    : "never";
+              setMeasureDisplayMode(next);
+            }}
+            icon="rule"
+            isMac={isMac}
+            title={`Medidas (${measureDisplayMode === "never" ? "Nunca" : measureDisplayMode === "always" ? "Sempre" : "Hover"})`}
+            details={[
+              "Exibe medidas no canvas (discreto).",
+              "Clique para alternar: Nunca → Sempre → Hover.",
+              "No modo Hover: mostra a figura em hover e a selecionada.",
+            ]}
+            customIcon={measuresModeIcon}
+            dataTestId="measures-mode-button"
           />
 
           <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
@@ -952,6 +1045,7 @@ interface ToolButtonProps {
   customIcon?: React.ReactNode;
   shortcuts?: ToolbarShortcut[];
   details?: string[];
+  dataTestId?: string;
 }
 
 function ToolButton({
@@ -964,6 +1058,7 @@ function ToolButton({
   customIcon,
   shortcuts,
   details,
+  dataTestId,
 }: ToolButtonProps) {
   const tooltip = useDelayedTooltip(Boolean(details && details.length > 0));
   return (
@@ -971,6 +1066,7 @@ function ToolButton({
       onClick={onClick}
       onMouseEnter={tooltip.onMouseEnter}
       onMouseLeave={tooltip.onMouseLeave}
+      data-testid={dataTestId}
       className={`group relative flex items-center justify-center p-2 rounded transition-all ${
         active
           ? "bg-primary/10 text-primary border border-primary/20 dark:bg-primary/20 dark:text-primary-light dark:border-primary/40 shadow-sm"

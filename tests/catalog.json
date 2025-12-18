@@ -35,6 +35,13 @@
       "notes": "show/hide global; settings por projeto."
     },
     {
+      "id": "editor.measuresOverlay",
+      "title": "Medidas (overlay): modos never/always/hover",
+      "risk": "medium",
+      "e2e": ["tests/measures.overlay.spec.ts"],
+      "notes": "Render Konva (Text) com tamanho estável no zoom e exclusão de seam por padrão."
+    },
+    {
       "id": "tool.rectangle",
       "title": "Ferramenta Retângulo",
       "risk": "high",

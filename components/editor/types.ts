@@ -9,6 +9,8 @@ export type Tool =
   | "mirror"
   | "unfold";
 
+export type MeasureDisplayMode = "never" | "always" | "hover";
+
 import type { PaperOrientation, PaperSize } from "./exportSettings";
 
 // =====================
@@ -62,6 +64,28 @@ export interface Figure {
   nodes: FigureNode[];
   edges: FigureEdge[];
   closed: boolean;
+
+  // Optional persisted measures cache (computed from nodes/edges)
+  measures?: {
+    version: 1;
+    figureLengthPx: number;
+    perEdge: Array<{
+      edgeId: string;
+      kind: EdgeKind;
+      lengthPx: number;
+      angleDeg?: number;
+    }>;
+    circle?: {
+      radiusPx: number;
+      diameterPx: number;
+      circumferencePx: number;
+    };
+    curve?: {
+      lengthPx: number;
+      tangentAngleDegAtMid?: number;
+      curvatureRadiusPxAtMid?: number;
+    };
+  };
 }
 
 export interface PageGuideSettings {

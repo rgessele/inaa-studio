@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 import { useEditor } from "./EditorContext";
+import { figureWorldBoundingBox } from "./figurePath";
+import { pxToCm } from "./measureUnits";
 
 export function PropertiesPanel() {
   const {
@@ -16,6 +18,9 @@ export function PropertiesPanel() {
     setUnfoldAxis,
   } = useEditor();
   const selectedFigure = figures.find((f) => f.id === selectedFigureId);
+  const selectedBounds = selectedFigure
+    ? figureWorldBoundingBox(selectedFigure)
+    : null;
 
   const [collapsed, setCollapsed] = useState(false);
 
@@ -89,7 +94,11 @@ export function PropertiesPanel() {
                     <input
                       className="w-full pl-7 pr-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
                       type="number"
-                      value={Math.round(selectedFigure.x)}
+                      value={
+                        selectedBounds
+                          ? Number(pxToCm(selectedBounds.x).toFixed(2))
+                          : 0
+                      }
                       readOnly
                     />
                   </div>
@@ -100,7 +109,11 @@ export function PropertiesPanel() {
                     <input
                       className="w-full pl-7 pr-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
                       type="number"
-                      value={Math.round(selectedFigure.y)}
+                      value={
+                        selectedBounds
+                          ? Number(pxToCm(selectedBounds.y).toFixed(2))
+                          : 0
+                      }
                       readOnly
                     />
                   </div>
@@ -111,7 +124,11 @@ export function PropertiesPanel() {
                     <input
                       className="w-full pl-7 pr-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
                       type="number"
-                      value={"-"}
+                      value={
+                        selectedBounds
+                          ? Number(pxToCm(selectedBounds.width).toFixed(2))
+                          : 0
+                      }
                       readOnly
                     />
                   </div>
@@ -122,7 +139,11 @@ export function PropertiesPanel() {
                     <input
                       className="w-full pl-7 pr-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
                       type="number"
-                      value={"-"}
+                      value={
+                        selectedBounds
+                          ? Number(pxToCm(selectedBounds.height).toFixed(2))
+                          : 0
+                      }
                       readOnly
                     />
                   </div>

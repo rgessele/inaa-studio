@@ -13,6 +13,9 @@ export async function initE2EState(page: Page) {
       if (localStorage.getItem("inaa:showPageGuides") === null) {
         localStorage.setItem("inaa:showPageGuides", "0");
       }
+      if (localStorage.getItem("inaa:measureDisplayMode") === null) {
+        localStorage.setItem("inaa:measureDisplayMode", "never");
+      }
       // If the app uses theme persistence elsewhere, we keep default.
     } catch {
       // ignore
@@ -41,9 +44,11 @@ declare global {
         };
         gridContrast: number;
         measureSnapStrengthPx: number;
+        measureDisplayMode: "never" | "always" | "hover";
         projectId: string | null;
         projectName: string;
       };
+      countStageNodesByName?: (name: string) => number;
       addTestRectangle?: () => void;
       loadTestProject?: (opts?: {
         figures?: unknown[];

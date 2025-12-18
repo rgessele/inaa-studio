@@ -9,10 +9,11 @@ import React, {
   useRef,
 } from "react";
 import Konva from "konva";
-import { Tool, type PageGuideSettings } from "./types";
+import { Tool, type MeasureDisplayMode, type PageGuideSettings } from "./types";
 import { DEFAULT_UNIT, DEFAULT_PIXELS_PER_UNIT } from "./constants";
 import { useHistory } from "./useHistory";
 import { createDefaultExportSettings } from "./exportSettings";
+import { withComputedFigureMeasures } from "./figureMeasures";
 
 import type { Figure } from "./types";
 
@@ -53,6 +54,9 @@ interface EditorContextType {
   setShowPageGuides: (show: boolean) => void;
   pageGuideSettings: PageGuideSettings;
   setPageGuideSettings: (settings: PageGuideSettings) => void;
+
+  measureDisplayMode: MeasureDisplayMode;
+  setMeasureDisplayMode: (mode: MeasureDisplayMode) => void;
 
   measureSnapStrengthPx: number;
   setMeasureSnapStrengthPx: (strengthPx: number) => void;
@@ -116,6 +120,32 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       marginCm: defaultExportSettings.marginCm,
     }
   );
+
+  const [measureDisplayMode, setMeasureDisplayModeState] = useState<MeasureDisplayMode>(
+    "never"
+  );
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("inaa:measureDisplayMode");
+      if (!raw) return;
+      const normalized = raw.trim().toLowerCase();
+      if (normalized === "never" || normalized === "always" || normalized === "hover") {
+        setMeasureDisplayModeState(normalized);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setMeasureDisplayMode = useCallback((mode: MeasureDisplayMode) => {
+    setMeasureDisplayModeState(mode);
+    try {
+      localStorage.setItem("inaa:measureDisplayMode", mode);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   React.useEffect(() => {
     try {
@@ -238,10 +268,15 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       next: Figure[] | ((prev: Figure[]) => Figure[]),
       saveHistory = true
     ) => {
+      const computeAll = (figs: Figure[]) => figs.map(withComputedFigureMeasures);
+
       if (typeof next === "function") {
-        setFiguresState((prev) => next(prev || []) as Figure[], saveHistory);
+        setFiguresState(
+          (prev) => computeAll((next(prev || []) as Figure[]) || []),
+          saveHistory
+        );
       } else {
-        setFiguresState(next, saveHistory);
+        setFiguresState(computeAll(next), saveHistory);
       }
     },
     [setFiguresState]
@@ -255,7 +290,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       projectName: string,
       nextPageGuideSettings?: PageGuideSettings
     ) => {
-      setFiguresState(figures, false); // Load without saving to history
+      setFigures(figures, false); // Load without saving to history
       setProjectId(projectId);
       setProjectName(projectName);
       if (nextPageGuideSettings) {
@@ -269,7 +304,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       );
       setSelectedFigureId(null);
     },
-    [pageGuideSettings, setFiguresState]
+    [pageGuideSettings, setFigures]
   );
 
   const markProjectSaved = useCallback(() => {
@@ -344,15 +379,26 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         pageGuideSettings,
         gridContrast,
         measureSnapStrengthPx,
+        measureDisplayMode,
         projectId,
         projectName,
       }),
+      countStageNodesByName: (name: string) => {
+        const stage = stageRef.current;
+        if (!stage) return 0;
+        try {
+          return stage.find(`.${name}`).length;
+        } catch {
+          return 0;
+        }
+      },
       addTestRectangle,
       loadTestProject,
     };
   }, [
     figures,
     gridContrast,
+    measureDisplayMode,
     measureSnapStrengthPx,
     pageGuideSettings,
     projectId,
@@ -424,6 +470,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setShowPageGuides,
         pageGuideSettings,
         setPageGuideSettings,
+
+        measureDisplayMode,
+        setMeasureDisplayMode,
+
         measureSnapStrengthPx,
         setMeasureSnapStrengthPx,
         offsetValueCm,

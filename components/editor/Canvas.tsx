@@ -8,6 +8,8 @@ import type { Figure, FigureEdge, FigureNode } from "./types";
 import { PX_PER_CM } from "./constants";
 import { getPaperDimensionsCm } from "./exportSettings";
 import { circleAsCubics, len, sampleCubic, sub } from "./figureGeometry";
+import { withComputedFigureMeasures } from "./figureMeasures";
+import { formatCm, pxToCm } from "./measureUnits";
 import {
   figureLocalPolyline,
   figureLocalToWorld,
@@ -84,6 +86,55 @@ function dist(a: Vec2, b: Vec2): number {
 
 function lerp(a: Vec2, b: Vec2, t: number): Vec2 {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+function norm(v: Vec2): Vec2 {
+  const l = Math.hypot(v.x, v.y);
+  if (l <= 1e-9) return { x: 0, y: 0 };
+  return { x: v.x / l, y: v.y / l };
+}
+
+function perp(v: Vec2): Vec2 {
+  return { x: -v.y, y: v.x };
+}
+
+function midAndTangent(points: Vec2[]): { mid: Vec2; tangent: Vec2 } | null {
+  if (points.length < 2) return null;
+  const midIndex = Math.floor((points.length - 1) / 2);
+  const prev = points[Math.max(0, midIndex - 1)];
+  const curr = points[midIndex];
+  const next = points[Math.min(points.length - 1, midIndex + 1)];
+  return { mid: curr, tangent: sub(next, prev) };
+}
+
+function figureCentroidLocal(figure: Figure): Vec2 {
+  if (!figure.nodes.length) return { x: 0, y: 0 };
+  const sum = figure.nodes.reduce(
+    (acc, n) => ({ x: acc.x + n.x, y: acc.y + n.y }),
+    { x: 0, y: 0 }
+  );
+  return { x: sum.x / figure.nodes.length, y: sum.y / figure.nodes.length };
+}
+
+function findHoveredFigureId(
+  figures: Figure[],
+  pWorld: Vec2,
+  thresholdWorld: number
+): string | null {
+  let bestD = Number.POSITIVE_INFINITY;
+  let bestId: string | null = null;
+
+  for (const fig of figures) {
+    const poly = figureWorldPolyline(fig, 60);
+    const hit = nearestOnPolylineWorld(pWorld, poly);
+    if (!hit) continue;
+    if (hit.d < bestD) {
+      bestD = hit.d;
+      bestId = fig.kind === "seam" && fig.parentId ? fig.parentId : fig.id;
+    }
+  }
+
+  return bestD <= thresholdWorld ? bestId : null;
 }
 
 function useIsDarkMode(): boolean {
@@ -854,6 +905,7 @@ export default function Canvas() {
     mirrorAxis,
     unfoldAxis,
     measureSnapStrengthPx,
+    measureDisplayMode,
     showRulers,
     pixelsPerUnit,
     scale,
@@ -903,10 +955,12 @@ export default function Canvas() {
   const [curveDraft, setCurveDraft] = useState<CurveDraft>(null);
   const [nodeSelection, setNodeSelection] = useState<NodeSelection>(null);
   const [hoveredEdge, setHoveredEdge] = useState<EdgeHover>(null);
+  const [hoveredFigureId, setHoveredFigureId] = useState<string | null>(null);
   const [dartDraft, setDartDraft] = useState<DartDraft>(null);
   const [measureDraft, setMeasureDraft] = useState<MeasureDraft>(null);
   const [isPanning, setIsPanning] = useState(false);
   const lastPointerRef = useRef<Vec2 | null>(null);
+  const lastPointerDownAtRef = useRef<number>(0);
 
   const dragNodeRef = useRef<
     | {
@@ -1055,6 +1109,22 @@ export default function Canvas() {
 
   const handlePointerDown = useCallback(
     (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
+      // Konva/React can fire both Pointer and Mouse events for the same click.
+      // When that happens, our handlers run twice and tools like Curve can degrade to straight/duplicated segments.
+      const evt = e.evt;
+      const isPointer = typeof (window as unknown as { PointerEvent?: unknown }).PointerEvent !== "undefined" &&
+        evt instanceof PointerEvent;
+      const isMouse = evt instanceof MouseEvent && !isPointer;
+      const now = Date.now();
+      if (isPointer) {
+        lastPointerDownAtRef.current = now;
+      } else if (isMouse) {
+        // If a pointer event just happened, ignore the synthetic mouse event.
+        if (now - lastPointerDownAtRef.current < 60) {
+          return;
+        }
+      }
+
       const stage = stageRef.current;
       if (!stage) return;
       const pos = stage.getPointerPosition();
@@ -1076,6 +1146,20 @@ export default function Canvas() {
         x: (pos.x - position.x) / scale,
         y: (pos.y - position.y) / scale,
       };
+
+      // Curve tool: right click undoes the last placed point.
+      if (tool === "curve" && e.evt.button === 2) {
+        e.evt.preventDefault();
+        if (!curveDraft) return;
+
+        setCurveDraft((prev) => {
+          if (!prev) return prev;
+          const nextPoints = prev.pointsWorld.slice(0, -1);
+          if (nextPoints.length === 0) return null;
+          return { pointsWorld: nextPoints, currentWorld: world };
+        });
+        return;
+      }
 
       if (tool === "measure") {
         setMeasureDraft({
@@ -1137,21 +1221,19 @@ export default function Canvas() {
         selectedFigureId &&
         hoveredEdge.figureId === selectedFigureId
       ) {
+        // Avoid calling setState (Canvas) inside the figures state updater (EditorProvider).
+        const res = splitFigureEdge(selectedFigure, hoveredEdge.edgeId, hoveredEdge.t);
         setFigures((prev) =>
-          prev.map((f) => {
-            if (f.id !== selectedFigureId) return f;
-            const res = splitFigureEdge(f, hoveredEdge.edgeId, hoveredEdge.t);
-            if (res.newNodeId) {
-              setNodeSelection({
-                figureId: selectedFigureId,
-                nodeId: res.newNodeId,
-                handle: null,
-              });
-              setHoveredEdge(null);
-            }
-            return res.figure;
-          })
+          prev.map((f) => (f.id === selectedFigureId ? res.figure : f))
         );
+        if (res.newNodeId) {
+          setNodeSelection({
+            figureId: selectedFigureId,
+            nodeId: res.newNodeId,
+            handle: null,
+          });
+          setHoveredEdge(null);
+        }
         return;
       }
 
@@ -1224,11 +1306,19 @@ export default function Canvas() {
         return;
       }
 
+      const world = {
+        x: (pos.x - position.x) / scale,
+        y: (pos.y - position.y) / scale,
+      };
+
+      if (measureDisplayMode === "hover") {
+        const thresholdWorld = 10 / scale;
+        setHoveredFigureId(findHoveredFigureId(figures, world, thresholdWorld));
+      } else if (hoveredFigureId) {
+        setHoveredFigureId(null);
+      }
+
       if ((tool === "node" || tool === "dart") && selectedFigure) {
-        const world = {
-          x: (pos.x - position.x) / scale,
-          y: (pos.y - position.y) / scale,
-        };
         const local = worldToFigureLocal(selectedFigure, world);
 
         if (tool === "dart") {
@@ -1241,11 +1331,6 @@ export default function Canvas() {
       }
 
       if (tool === "measure" && measureDraft) {
-        const world = {
-          x: (pos.x - position.x) / scale,
-          y: (pos.y - position.y) / scale,
-        };
-
         // Snap to closest point on any figure polyline.
         let bestD = Number.POSITIVE_INFINITY;
         let bestPoint = world;
@@ -1276,18 +1361,15 @@ export default function Canvas() {
 
       if (!draft) return;
 
-      const world = {
-        x: (pos.x - position.x) / scale,
-        y: (pos.y - position.y) / scale,
-      };
-
       setDraft({ ...draft, currentWorld: world });
     },
     [
       draft,
       figures,
+      hoveredFigureId,
       isPanning,
       measureDraft,
+      measureDisplayMode,
       measureSnapStrengthPx,
       position.x,
       position.y,
@@ -1594,6 +1676,226 @@ export default function Canvas() {
       />
     );
   }, [curveDraft, previewDash, previewStroke, scale]);
+
+  const measuresLabelsOverlay = useMemo(() => {
+    if (measureDisplayMode === "never") return null;
+
+    const visibleIds = new Set<string>();
+    if (measureDisplayMode === "always") {
+      for (const fig of figures) {
+        if (fig.kind === "seam") continue;
+        visibleIds.add(fig.id);
+      }
+    } else {
+      if (selectedFigureId) visibleIds.add(selectedFigureId);
+      if (hoveredFigureId) visibleIds.add(hoveredFigureId);
+    }
+
+    const fontSize = 11 / scale;
+    const offset = 10 / scale;
+    const textWidth = 120 / scale;
+    const fill = resolveAci7(isDark);
+    const opacity = 0.75;
+
+    const renderEdgeLabel = (fig: Figure, edge: FigureEdge) => {
+      const hit = fig.measures?.perEdge?.find((m) => m.edgeId === edge.id);
+      if (!hit) return null;
+
+      const pts = edgeLocalPoints(fig, edge, edge.kind === "line" ? 1 : 50);
+      const mt = midAndTangent(pts);
+      if (!mt) return null;
+
+      const centroid = figureCentroidLocal(fig);
+      const n = norm(perp(mt.tangent));
+
+      const p1 = add(mt.mid, mul(n, offset));
+      const p2 = add(mt.mid, mul(n, -offset));
+      const p = dist(p1, centroid) >= dist(p2, centroid) ? p1 : p2;
+
+      const label = formatCm(pxToCm(hit.lengthPx), 2);
+      return (
+        <Text
+          key={`m:${fig.id}:${edge.id}`}
+          x={p.x - textWidth / 2}
+          y={p.y - fontSize / 2}
+          width={textWidth}
+          align="center"
+          text={label}
+          fontSize={fontSize}
+          fill={fill}
+          opacity={opacity}
+          listening={false}
+          name="inaa-measure-label"
+        />
+      );
+    };
+
+    const renderFigureLabels = (fig: Figure) => {
+      if (fig.kind === "seam") return null;
+      if (!fig.measures) return null;
+
+      if (fig.tool === "circle" && fig.measures.circle) {
+        const center = figureCentroidLocal(fig);
+        const rPx = fig.measures.circle.radiusPx;
+        const rLabel = `R ${formatCm(pxToCm(rPx), 2)}`;
+        const dLabel = `⌀ ${formatCm(pxToCm(fig.measures.circle.diameterPx), 2)}`;
+
+        const pR = add(center, { x: rPx + offset, y: 0 });
+        const pD = add(center, { x: 0, y: rPx + offset });
+
+        return (
+          <>
+            <Text
+              key={`m:${fig.id}:circle:r`}
+              x={pR.x - textWidth / 2}
+              y={pR.y - fontSize / 2}
+              width={textWidth}
+              align="center"
+              text={rLabel}
+              fontSize={fontSize}
+              fill={fill}
+              opacity={opacity}
+              listening={false}
+              name="inaa-measure-label"
+            />
+            <Text
+              key={`m:${fig.id}:circle:d`}
+              x={pD.x - textWidth / 2}
+              y={pD.y - fontSize / 2}
+              width={textWidth}
+              align="center"
+              text={dLabel}
+              fontSize={fontSize}
+              fill={fill}
+              opacity={opacity}
+              listening={false}
+              name="inaa-measure-label"
+            />
+          </>
+        );
+      }
+
+      if (fig.tool === "curve" && fig.measures.curve) {
+        const poly = figureLocalPolyline(fig, 80);
+        if (poly.length < 4) return null;
+        const pts: Vec2[] = [];
+        for (let i = 0; i < poly.length; i += 2) {
+          pts.push({ x: poly[i], y: poly[i + 1] });
+        }
+        const mt = midAndTangent(pts);
+        if (!mt) return null;
+
+        const centroid = figureCentroidLocal(fig);
+        const n = norm(perp(mt.tangent));
+        const p1 = add(mt.mid, mul(n, offset));
+        const p2 = add(mt.mid, mul(n, -offset));
+        const p = dist(p1, centroid) >= dist(p2, centroid) ? p1 : p2;
+
+        const parts: string[] = [];
+        parts.push(formatCm(pxToCm(fig.measures.curve.lengthPx), 2));
+        if (Number.isFinite(fig.measures.curve.tangentAngleDegAtMid ?? NaN)) {
+          parts.push(`∠ ${Math.round(fig.measures.curve.tangentAngleDegAtMid!)}°`);
+        }
+        if (Number.isFinite(fig.measures.curve.curvatureRadiusPxAtMid ?? NaN)) {
+          parts.push(
+            `R≈ ${formatCm(pxToCm(fig.measures.curve.curvatureRadiusPxAtMid!), 2)}`
+          );
+        }
+
+        return (
+          <Text
+            key={`m:${fig.id}:curve`}
+            x={p.x - textWidth / 2}
+            y={p.y - fontSize}
+            width={textWidth}
+            align="center"
+            text={parts.join("\n")}
+            fontSize={fontSize}
+            fill={fill}
+            opacity={opacity}
+            listening={false}
+            name="inaa-measure-label"
+          />
+        );
+      }
+
+      // Default: per-edge labels
+      return <>{fig.edges.map((edge) => renderEdgeLabel(fig, edge))}</>;
+    };
+
+    const nodes: React.ReactNode[] = [];
+
+    for (const fig of figures) {
+      if (!visibleIds.has(fig.id)) continue;
+      nodes.push(
+        <Group
+          key={`mgrp:${fig.id}`}
+          x={fig.x}
+          y={fig.y}
+          rotation={fig.rotation || 0}
+          listening={false}
+        >
+          {renderFigureLabels(fig)}
+        </Group>
+      );
+    }
+
+    // Live draft measures
+    if (draft) {
+      const a = draft.startWorld;
+      const b = draft.currentWorld;
+
+      let temp: Figure | null = null;
+      if (draft.tool === "rectangle") temp = makeRectFigure(a, b, "aci7");
+      if (draft.tool === "circle") temp = makeCircleFigure(a, len(sub(b, a)), "aci7");
+      if (draft.tool === "line") temp = makeLineFigure(a, b, "line", "aci7");
+
+      if (temp) {
+        const fig = withComputedFigureMeasures(temp);
+        nodes.push(
+          <Group
+            key="mgrp:draft"
+            x={fig.x}
+            y={fig.y}
+            rotation={fig.rotation || 0}
+            listening={false}
+          >
+            {renderFigureLabels(fig)}
+          </Group>
+        );
+      }
+    }
+
+    if (curveDraft) {
+      const pts = [...curveDraft.pointsWorld, curveDraft.currentWorld];
+      const temp = makeCurveFromPoints(pts, false, "aci7");
+      if (temp) {
+        const fig = withComputedFigureMeasures(temp);
+        nodes.push(
+          <Group
+            key="mgrp:curve-draft"
+            x={fig.x}
+            y={fig.y}
+            rotation={fig.rotation || 0}
+            listening={false}
+          >
+            {renderFigureLabels(fig)}
+          </Group>
+        );
+      }
+    }
+
+    return nodes.length ? <>{nodes}</> : null;
+  }, [
+    curveDraft,
+    draft,
+    figures,
+    hoveredFigureId,
+    isDark,
+    measureDisplayMode,
+    scale,
+    selectedFigureId,
+  ]);
 
   const nodeOverlay = useMemo(() => {
     if (tool !== "node" || !selectedFigure) return null;
@@ -1961,6 +2263,11 @@ export default function Canvas() {
             handleCurvePointerMove(e);
           }}
           onMouseUp={handlePointerUp}
+          onContextMenu={(e) => {
+            if (tool === "curve") {
+              e.evt.preventDefault();
+            }
+          }}
         >
           <Layer>
           {/* Background hit target */}
@@ -1970,6 +2277,7 @@ export default function Canvas() {
             width={200000}
             height={200000}
             fill="transparent"
+            listening={false}
           />
 
           {gridLines.map((l, idx) => (
@@ -2105,6 +2413,8 @@ export default function Canvas() {
           {draftPreview}
 
           {curveDraftPreview}
+
+          {measuresLabelsOverlay}
 
           {edgeHoverOverlay}
 
