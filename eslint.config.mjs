@@ -12,6 +12,17 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+
+    // Legacy v1 editor files kept temporarily in the repo.
+    "components/editor/*.test.ts",
+    "components/editor/*.legacy.*",
+    "components/editor/*.bak",
+    "components/editor/mirror.ts",
+    "components/editor/unfold.ts",
+    "components/editor/offset.ts",
+    "components/editor/dart.ts",
+    "components/editor/snapping.ts",
+    "components/editor/shapeBounds.ts",
   ]),
 ]);
 

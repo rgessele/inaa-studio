@@ -1,32 +1,19 @@
 import { createClient } from "@/lib/supabase/client";
-import { Shape } from "@/components/editor/types";
+import type { DesignDataV2, Figure } from "@/components/editor/types";
 
 export interface Project {
   id: string;
   user_id: string;
   name: string;
   description: string | null;
-  design_data: {
-    shapes: Shape[];
-    meta?: {
-      fabric?: string | null;
-      notes?: string | null;
-      print?: {
-        widthCm: number;
-        heightCm: number;
-        unit: "cm";
-      };
-      grade?: string;
-      coverUrl?: string | null;
-    };
-  };
+  design_data: DesignDataV2;
   created_at: string;
   updated_at: string;
 }
 
 export async function saveProject(
   projectName: string,
-  shapes: Shape[],
+  figures: Figure[],
   projectId: string | null = null
 ): Promise<{ success: boolean; projectId?: string; error?: string }> {
   try {
@@ -61,9 +48,10 @@ export async function saveProject(
         return { success: false, error: loadError.message };
       }
 
-      const mergedDesignData = {
-        ...(existing?.design_data ?? {}),
-        shapes,
+      const mergedDesignData: DesignDataV2 = {
+        version: 2,
+        figures,
+        meta: (existing?.design_data as DesignDataV2 | undefined)?.meta,
       };
 
       const { error } = await supabase
@@ -82,7 +70,7 @@ export async function saveProject(
       // Insert new project
       const projectData = {
         ...baseProjectData,
-        design_data: { shapes },
+        design_data: { version: 2, figures },
       };
 
       const { data, error } = await supabase
@@ -110,7 +98,7 @@ export async function saveProject(
 export async function saveProjectAsCopy(
   sourceProjectId: string,
   newProjectName: string,
-  shapes: Shape[]
+  figures: Figure[]
 ): Promise<{ success: boolean; projectId?: string; error?: string }> {
   try {
     const supabase = createClient();
@@ -136,9 +124,10 @@ export async function saveProjectAsCopy(
       return { success: false, error: sourceError.message };
     }
 
-    const designData = {
-      ...(source?.design_data ?? {}),
-      shapes,
+    const designData: DesignDataV2 = {
+      version: 2,
+      figures,
+      meta: (source?.design_data as DesignDataV2 | undefined)?.meta,
     };
 
     const { data, error } = await supabase

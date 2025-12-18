@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Enable class-driven dark mode (Tailwind v4). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-primary: #673b45;
   --color-primary-hover: #542e37;
@@ -16,8 +19,8 @@
   --color-text-muted: #6b7280;
   --color-text-muted-dark: #9ca3af;
 
-  --font-display: "Inter", sans-serif;
-  --font-body: "Inter", sans-serif;
+  --font-display: var(--font-inter), sans-serif;
+  --font-body: var(--font-inter), sans-serif;
 
   --shadow-subtle: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-floating:
@@ -27,6 +30,7 @@
 /* Custom Utilities */
 @layer utilities {
   .material-symbols-outlined {
+    font-family: "Material Symbols Outlined", sans-serif;
     font-variation-settings:
       "FILL" 0,
       "wght" 300,
@@ -34,6 +38,7 @@
       "opsz" 24;
   }
   .icon-filled {
+    font-family: "Material Symbols Outlined", sans-serif;
     font-variation-settings:
       "FILL" 1,
       "wght" 300,
@@ -69,7 +74,7 @@
 
 /* Base Styles */
 body {
-  font-family: "Inter", sans-serif;
+  font-family: var(--font-inter), sans-serif;
 }
 
 /* Scrollbar */

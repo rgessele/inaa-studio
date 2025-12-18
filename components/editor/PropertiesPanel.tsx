@@ -6,20 +6,22 @@ import { useEditor } from "./EditorContext";
 export function PropertiesPanel() {
   const {
     tool,
-    selectedShapeId,
-    shapes,
+    selectedFigureId,
+    figures,
+    offsetValueCm,
+    setOffsetValueCm,
     mirrorAxis,
     setMirrorAxis,
     unfoldAxis,
     setUnfoldAxis,
   } = useEditor();
-  const selectedShape = shapes.find((s) => s.id === selectedShapeId);
+  const selectedFigure = figures.find((f) => f.id === selectedFigureId);
 
   const [collapsed, setCollapsed] = useState(false);
 
   // Show tool properties when no shape is selected but a tool is active
   const showToolProperties =
-    !selectedShape && (tool === "mirror" || tool === "unfold");
+    !selectedFigure && (tool === "mirror" || tool === "unfold" || tool === "offset");
 
   return (
     <aside
@@ -54,7 +56,7 @@ export function PropertiesPanel() {
             : "translate-x-0 opacity-100")
         }
       >
-        {selectedShape ? (
+        {selectedFigure ? (
           <>
             <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/30">
               <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
@@ -87,7 +89,7 @@ export function PropertiesPanel() {
                     <input
                       className="w-full pl-7 pr-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
                       type="number"
-                      value={Math.round(selectedShape.x)}
+                      value={Math.round(selectedFigure.x)}
                       readOnly
                     />
                   </div>
@@ -98,7 +100,7 @@ export function PropertiesPanel() {
                     <input
                       className="w-full pl-7 pr-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
                       type="number"
-                      value={Math.round(selectedShape.y)}
+                      value={Math.round(selectedFigure.y)}
                       readOnly
                     />
                   </div>
@@ -109,11 +111,7 @@ export function PropertiesPanel() {
                     <input
                       className="w-full pl-7 pr-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
                       type="number"
-                      value={
-                        selectedShape.width
-                          ? Math.round(selectedShape.width)
-                          : "-"
-                      }
+                      value={"-"}
                       readOnly
                     />
                   </div>
@@ -124,11 +122,7 @@ export function PropertiesPanel() {
                     <input
                       className="w-full pl-7 pr-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
                       type="number"
-                      value={
-                        selectedShape.height
-                          ? Math.round(selectedShape.height)
-                          : "-"
-                      }
+                      value={"-"}
                       readOnly
                     />
                   </div>
@@ -142,7 +136,11 @@ export function PropertiesPanel() {
           <>
             <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/30">
               <h3 className="text-[11px] font-bold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
-                {tool === "mirror" ? "Espelhar" : "Desdobrar"}
+                {tool === "mirror"
+                  ? "Espelhar"
+                  : tool === "unfold"
+                    ? "Desdobrar"
+                    : "Margem de costura"}
               </h3>
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
@@ -213,6 +211,34 @@ export function PropertiesPanel() {
                   <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
                     Clique em uma forma desenhada pela metade. O sistema irá
                     duplicar, espelhar e unir as metades numa peça única.
+                  </p>
+                </div>
+              )}
+
+              {tool === "offset" && (
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
+                    Distância
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      className="w-24 px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
+                      type="number"
+                      min={0.1}
+                      step={0.1}
+                      value={offsetValueCm}
+                      onChange={(e) => {
+                        const next = Number(e.target.value);
+                        if (!Number.isFinite(next)) return;
+                        setOffsetValueCm(Math.max(0.1, next));
+                      }}
+                    />
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      cm
+                    </span>
+                  </div>
+                  <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+                    Clique em uma forma fechada para gerar a margem tracejada.
                   </p>
                 </div>
               )}

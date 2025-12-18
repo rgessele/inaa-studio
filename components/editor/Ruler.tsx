@@ -11,7 +11,6 @@ export function Ruler({ orientation }: RulerProps) {
   const { scale, position, unit, pixelsPerUnit } = useEditor();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = React.useState({ width: 0, height: 0 });
-  const RULER_SIZE = 24;
   const TICK_SIZE = 10;
   const LABEL_OFFSET = 4;
 

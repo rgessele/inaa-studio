@@ -25,16 +25,16 @@ export function EditorToolbar() {
   const {
     tool,
     setTool,
-    setShapes,
+    setFigures,
     undo,
     redo,
     canUndo,
     canRedo,
-    shapes,
+    figures,
     getStage,
     setShowGrid,
     setPageGuideSettings,
-    selectedShapeId,
+    selectedFigureId,
     deleteSelected,
   } = useEditor();
   const [showExportModal, setShowExportModal] = useState(false);
@@ -110,8 +110,8 @@ export function EditorToolbar() {
       };
 
       const exportShapes = includeSeamAllowance
-        ? shapes
-        : shapes.filter((shape) => shape.kind !== "seam");
+        ? figures
+        : figures.filter((figure) => figure.kind !== "seam");
 
       await generateTiledPDF(
         stage,
@@ -134,7 +134,7 @@ export function EditorToolbar() {
     includeSeamAllowance,
     searchParams,
     setShowGrid,
-    shapes,
+    figures,
   ]);
 
   const handleToolChange = (newTool: Tool) => {
@@ -158,7 +158,7 @@ export function EditorToolbar() {
 
   const handleClear = () => {
     if (confirm("Tem certeza que deseja limpar tudo?")) {
-      setShapes([]);
+      setFigures([]);
     }
   };
 
@@ -177,8 +177,8 @@ export function EditorToolbar() {
     };
 
     const exportShapes = includeSeamAllowance
-      ? shapes
-      : shapes.filter((shape) => shape.kind !== "seam");
+      ? figures
+      : figures.filter((figure) => figure.kind !== "seam");
 
     await generateTiledPDF(
       stage,
@@ -198,8 +198,8 @@ export function EditorToolbar() {
     };
 
     const exportShapes = includeSeamAllowance
-      ? shapes
-      : shapes.filter((shape) => shape.kind !== "seam");
+      ? figures
+      : figures.filter((figure) => figure.kind !== "seam");
 
     generateSVG(exportShapes, resolvedSettings);
   };
@@ -310,11 +310,11 @@ export function EditorToolbar() {
           <button
             type="button"
             onClick={deleteSelected}
-            disabled={!selectedShapeId}
+            disabled={!selectedFigureId}
             onMouseEnter={eraseTooltip.onMouseEnter}
             onMouseLeave={eraseTooltip.onMouseLeave}
             className={`group relative flex items-center justify-center p-2 rounded transition-all ${
-              !selectedShapeId
+              !selectedFigureId
                 ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
                 : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
             }`}
@@ -451,8 +451,8 @@ export function EditorToolbar() {
             title="Curva"
             shortcuts={[{ key: "U" }]}
             details={[
-              "Clique e arraste para criar uma curva.",
-              "Use Editar nós (N) para ajustar a curvatura.",
+              "Clique para adicionar pontos (policlick).",
+              "Enter ou duplo-clique para finalizar.",
             ]}
             customIcon={
               <svg
@@ -495,7 +495,7 @@ export function EditorToolbar() {
             shortcuts={[{ key: "M" }]}
             details={[
               "Clique e arraste para medir distância.",
-              "Aproximar do edge ativa magnetismo.",
+              "Aproximar do contorno ativa magnetismo.",
             ]}
           />
 
@@ -536,8 +536,9 @@ export function EditorToolbar() {
             title="Pence"
             shortcuts={[{ key: "D" }]}
             details={[
-              "Clique em uma linha para inserir uma pence.",
-              "Configure a profundidade e abertura nas propriedades.",
+              "1º clique: ponto A na borda.",
+              "2º clique: ponto B na borda.",
+              "3º clique: ápice (vértice) da pence.",
             ]}
             customIcon={
               <svg

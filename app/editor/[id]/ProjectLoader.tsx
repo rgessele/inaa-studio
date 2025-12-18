@@ -2,14 +2,15 @@
 
 import { useEffect } from "react";
 import { useEditor } from "@/components/editor/EditorContext";
-import { Shape } from "@/components/editor/types";
+import type { Figure } from "@/components/editor/types";
 
 interface ProjectLoaderProps {
   project: {
     id: string;
     name: string;
     design_data: {
-      shapes: Shape[];
+      figures?: Figure[];
+      version?: number;
     };
   };
 }
@@ -19,8 +20,8 @@ export default function ProjectLoader({ project }: ProjectLoaderProps) {
 
   useEffect(() => {
     // Load the project when the component mounts
-    if (project.design_data?.shapes) {
-      loadProject(project.design_data.shapes, project.id, project.name);
+    if (project.design_data?.figures) {
+      loadProject(project.design_data.figures, project.id, project.name);
     } else {
       loadProject([], project.id, project.name);
     }

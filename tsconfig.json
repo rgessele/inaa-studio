@@ -30,5 +30,14 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "components/editor/mirror.ts",
+    "components/editor/unfold.ts",
+    "components/editor/offset.ts",
+    "components/editor/dart.ts",
+    "components/editor/snapping.ts",
+    "components/editor/shapeBounds.ts",
+    "components/editor/*.test.ts"
+  ]
 }

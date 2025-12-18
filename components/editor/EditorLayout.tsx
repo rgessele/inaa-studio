@@ -10,7 +10,7 @@ import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { useToolShortcuts } from "./useToolShortcuts";
 
 function EditorLayoutContent({ children }: { children: React.ReactNode }) {
-  const { undo, redo, setTool, deleteSelected, selectedShapeId } = useEditor();
+  const { undo, redo, setTool, deleteSelected, selectedFigureId } = useEditor();
   const searchParams = useSearchParams();
   const embedded =
     searchParams.get("embedded") === "1" || searchParams.get("embed") === "1";
@@ -20,7 +20,7 @@ function EditorLayoutContent({ children }: { children: React.ReactNode }) {
     onUndo: undo,
     onRedo: redo,
     onDeleteSelected: deleteSelected,
-    canDeleteSelected: Boolean(selectedShapeId),
+    canDeleteSelected: Boolean(selectedFigureId),
     enabled: !embedded,
   });
 

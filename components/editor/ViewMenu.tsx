@@ -9,6 +9,8 @@ export function ViewMenu() {
     setShowPageGuides,
     measureSnapStrengthPx,
     setMeasureSnapStrengthPx,
+    gridContrast,
+    setGridContrast,
   } = useEditor();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -60,6 +62,30 @@ export function ViewMenu() {
           </p>
 
           <div className="mt-4 h-px bg-gray-200 dark:bg-gray-700" />
+
+          <div className="mt-4">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-gray-600 dark:text-gray-300">
+                Contraste do quadriculado
+              </label>
+              <span className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">
+                {Math.round(Math.max(0, Math.min(1, gridContrast)) * 100)}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round(Math.max(0, Math.min(1, gridContrast)) * 100)}
+              onChange={(e) => setGridContrast(Number(e.target.value) / 100)}
+              className="mt-2 w-full"
+            />
+            <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-2">
+              Ajuste a intensidade das linhas do quadriculado (modo claro e
+              escuro).
+            </p>
+          </div>
 
           <div className="mt-4">
             <div className="flex items-center justify-between">

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { UnitSettings } from "./UnitSettings";
 import { ViewMenu } from "./ViewMenu";
 import { useEditor } from "./EditorContext";
@@ -11,10 +12,11 @@ import { useRouter } from "next/navigation";
 import { FileMenu } from "./FileMenu";
 import { EditMenu } from "./EditMenu";
 import { createClient } from "@/lib/supabase/client";
+import { ThemeToggleButton } from "@/components/theme/ThemeToggleButton";
 
 export function EditorHeader() {
   const {
-    shapes,
+    figures,
     projectId,
     setProjectId,
     projectName,
@@ -50,9 +52,6 @@ export function EditorHeader() {
   const profileTooltip = useDelayedTooltip(true);
   const signOutTooltip = useDelayedTooltip(true);
 
-  const toggleTheme = () => {
-    document.documentElement.classList.toggle("dark");
-  };
 
   useEffect(() => {
     let isMounted = true;
@@ -106,7 +105,7 @@ export function EditorHeader() {
     }
 
     setIsSaving(true);
-    const result = await saveProject(projectName, shapes, projectId);
+    const result = await saveProject(projectName, figures, projectId);
 
     if (result.success) {
       markProjectSaved();
@@ -124,7 +123,7 @@ export function EditorHeader() {
     }
 
     setIsSaving(false);
-  }, [isSaving, markProjectSaved, projectId, projectName, shapes]);
+  }, [isSaving, markProjectSaved, projectId, projectName, figures]);
 
   const handleSaveAsShortcut = useCallback(() => {
     if (isSaving) return;
@@ -178,7 +177,7 @@ export function EditorHeader() {
 
   const handleSave = async (name: string) => {
     setIsSaving(true);
-    const result = await saveProject(name, shapes, projectId);
+    const result = await saveProject(name, figures, projectId);
 
     if (result.success && result.projectId) {
       setProjectName(name);
@@ -208,7 +207,7 @@ export function EditorHeader() {
     }
 
     setIsSaving(true);
-    const result = await saveProjectAsCopy(projectId, name, shapes);
+    const result = await saveProjectAsCopy(projectId, name, figures);
 
     if (result.success && result.projectId) {
       setProjectName(name);
@@ -242,10 +241,13 @@ export function EditorHeader() {
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex items-center shrink-0">
             {/* Logo */}
-            <img
+            <Image
               src="/logo.png"
               alt="Inaá Studio"
+              width={140}
+              height={36}
               className="h-9 w-auto object-contain"
+              priority
             />
           </div>
           <div className="hidden md:flex ml-6 text-xs text-text-muted dark:text-text-muted-dark gap-1">
@@ -300,21 +302,18 @@ export function EditorHeader() {
           </button>
           <UnitSettings />
           <div className="flex items-center mr-2">
-            <button
+            <ThemeToggleButton
               onMouseEnter={themeTooltip.onMouseEnter}
               onMouseLeave={themeTooltip.onMouseLeave}
-              className="group relative p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
-              onClick={toggleTheme}
+              className="group relative"
+              iconClassName="text-[18px]"
             >
-              <span className="material-symbols-outlined text-[18px]">
-                brightness_4
-              </span>
               <HeaderTooltip
                 title="Alternar Tema"
                 expanded={themeTooltip.expanded}
                 details={["Alterna entre modo claro e escuro."]}
               />
-            </button>
+            </ThemeToggleButton>
           </div>
           <button
             onClick={handleBackToDashboard}

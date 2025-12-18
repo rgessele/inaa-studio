@@ -9,7 +9,7 @@ import React, {
   useRef,
 } from "react";
 import Konva from "konva";
-import { Tool, Shape } from "./types";
+import { Tool } from "./types";
 import { DEFAULT_UNIT, DEFAULT_PIXELS_PER_UNIT } from "./constants";
 import { useHistory } from "./useHistory";
 import {
@@ -17,6 +17,8 @@ import {
   type PaperOrientation,
   type PaperSize,
 } from "./exportSettings";
+
+import type { Figure } from "./types";
 
 export interface PageGuideSettings {
   paperSize: PaperSize;
@@ -27,13 +29,13 @@ export interface PageGuideSettings {
 interface EditorContextType {
   tool: Tool;
   setTool: (tool: Tool) => void;
-  shapes: Shape[];
-  setShapes: (
-    shapes: Shape[] | ((prev: Shape[]) => Shape[]),
+  figures: Figure[];
+  setFigures: (
+    figures: Figure[] | ((prev: Figure[]) => Figure[]),
     saveHistory?: boolean
   ) => void;
-  selectedShapeId: string | null;
-  setSelectedShapeId: (id: string | null) => void;
+  selectedFigureId: string | null;
+  setSelectedFigureId: (id: string | null) => void;
   deleteSelected: () => void;
   scale: number;
   setScale: (scale: number) => void;
@@ -54,6 +56,9 @@ interface EditorContextType {
   showGrid: boolean;
   setShowGrid: (show: boolean) => void;
 
+  gridContrast: number;
+  setGridContrast: (contrast01: number) => void;
+
   showPageGuides: boolean;
   setShowPageGuides: (show: boolean) => void;
   pageGuideSettings: PageGuideSettings;
@@ -67,14 +72,6 @@ interface EditorContextType {
   setOffsetValueCm: (value: number) => void;
   offsetTargetId: string | null;
   setOffsetTargetId: (id: string | null) => void;
-
-  // Dart tool
-  dartDepthCm: number;
-  setDartDepthCm: (value: number) => void;
-  dartOpeningCm: number;
-  setDartOpeningCm: (value: number) => void;
-  dartTargetId: string | null;
-  setDartTargetId: (id: string | null) => void;
 
   // Mirror tool
   mirrorAxis: "vertical" | "horizontal";
@@ -92,7 +89,7 @@ interface EditorContextType {
   hasUnsavedChanges: boolean;
   markProjectSaved: () => void;
   loadProject: (
-    shapes: Shape[],
+    figures: Figure[],
     projectId: string,
     projectName: string
   ) => void;
@@ -102,13 +99,16 @@ const EditorContext = createContext<EditorContextType | undefined>(undefined);
 
 export function EditorProvider({ children }: { children: ReactNode }) {
   const [tool, setTool] = useState<Tool>("select");
-  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  const [selectedFigureId, setSelectedFigureId] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [unit, setUnit] = useState(DEFAULT_UNIT);
   const [pixelsPerUnit, setPixelsPerUnit] = useState(DEFAULT_PIXELS_PER_UNIT);
   const [showRulers, setShowRulers] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
+
+  const GRID_CONTRAST_DEFAULT = 0.5;
+  const [gridContrast, setGridContrastState] = useState(GRID_CONTRAST_DEFAULT);
 
   // Project state
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -135,11 +135,6 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [offsetValueCm, setOffsetValueCm] = useState(1);
   const [offsetTargetId, setOffsetTargetId] = useState<string | null>(null);
 
-  // Dart tool state (default values for dart depth and opening)
-  const [dartDepthCm, setDartDepthCm] = useState(3); // 3cm depth
-  const [dartOpeningCm, setDartOpeningCm] = useState(2); // 2cm opening
-  const [dartTargetId, setDartTargetId] = useState<string | null>(null);
-
   // Mirror tool state
   const [mirrorAxis, setMirrorAxis] = useState<"vertical" | "horizontal">(
     "vertical"
@@ -161,6 +156,31 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       // ignore
     }
   }, []);
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("inaa:gridContrast");
+      if (!raw) return;
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) return;
+      setGridContrastState(Math.max(0, Math.min(1, parsed)));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setGridContrast = useCallback(
+    (contrast01: number) => {
+      const safe = Math.max(0, Math.min(1, contrast01));
+      setGridContrastState(safe);
+      try {
+        localStorage.setItem("inaa:gridContrast", String(safe));
+      } catch {
+        // ignore
+      }
+    },
+    []
+  );
 
   const setMeasureSnapStrengthPx = useCallback(
     (strengthPx: number) => {
@@ -186,79 +206,83 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     return stageRef.current;
   }, []);
 
-  // Use the history hook for shapes
+  // Use the history hook for figures
   const {
-    state: shapes,
-    setState: setShapesState,
+    state: figures,
+    setState: setFiguresState,
     undo,
     redo,
     canUndo,
     canRedo,
-  } = useHistory<Shape[]>([]);
+  } = useHistory<Figure[]>([]);
 
   React.useEffect(() => {
-    const current = JSON.stringify(shapes || []);
+    const current = JSON.stringify(figures || []);
     setHasUnsavedChanges(current !== lastSavedSnapshot);
-  }, [shapes, lastSavedSnapshot]);
+  }, [figures, lastSavedSnapshot]);
 
-  const setShapes = useCallback(
-    (newShapes: Shape[] | ((prev: Shape[]) => Shape[]), saveHistory = true) => {
-      // Cast to match useHistory signature (it accepts null but we always have Shape[])
-      if (typeof newShapes === "function") {
-        setShapesState((prev) => newShapes(prev || []) as Shape[], saveHistory);
+  const setFigures = useCallback(
+    (
+      next: Figure[] | ((prev: Figure[]) => Figure[]),
+      saveHistory = true
+    ) => {
+      if (typeof next === "function") {
+        setFiguresState((prev) => next(prev || []) as Figure[], saveHistory);
       } else {
-        setShapesState(newShapes, saveHistory);
+        setFiguresState(next, saveHistory);
       }
     },
-    [setShapesState]
+    [setFiguresState]
   );
 
   // Load a project into the editor
   const loadProject = useCallback(
-    (shapes: Shape[], projectId: string, projectName: string) => {
-      setShapesState(shapes, false); // Load without saving to history
+    (figures: Figure[], projectId: string, projectName: string) => {
+      setFiguresState(figures, false); // Load without saving to history
       setProjectId(projectId);
       setProjectName(projectName);
-      setLastSavedSnapshot(JSON.stringify(shapes));
-      setSelectedShapeId(null);
+      setLastSavedSnapshot(JSON.stringify(figures));
+      setSelectedFigureId(null);
     },
-    [setShapesState]
+    [setFiguresState]
   );
 
   const markProjectSaved = useCallback(() => {
-    setLastSavedSnapshot(JSON.stringify(shapes || []));
-  }, [shapes]);
+    setLastSavedSnapshot(JSON.stringify(figures || []));
+  }, [figures]);
 
   const deleteSelected = useCallback(() => {
-    if (!selectedShapeId) return;
+    if (!selectedFigureId) return;
 
-    const selected = (shapes || []).find((s) => s.id === selectedShapeId);
-    const baseId =
-      selected?.kind === "seam" && selected.parentId
-        ? selected.parentId
-        : selectedShapeId;
+    setFigures((prev) => {
+      const selected = prev.find((f) => f.id === selectedFigureId);
+      if (!selected) return prev;
 
-    setShapes((prev) => {
-      return prev.filter((shape) => {
-        if (shape.id === baseId) return false;
-        if (shape.kind === "seam" && shape.parentId === baseId) return false;
-        return true;
-      });
+      // If a derived seam is somehow selected, delete only that seam.
+      if (selected.kind === "seam") {
+        return prev.filter((f) => f.id !== selectedFigureId);
+      }
+
+      // Deleting a base figure also deletes its derived seams.
+      return prev.filter(
+        (f) => f.id !== selectedFigureId && !(f.kind === "seam" && f.parentId === selectedFigureId)
+      );
     });
+    setSelectedFigureId(null);
 
-    setSelectedShapeId(null);
-    setOffsetTargetId((prev) => (prev === baseId ? null : prev));
-  }, [selectedShapeId, setShapes, setOffsetTargetId, shapes]);
+    // Tool state cleanup
+    setOffsetTargetId((prev) => (prev === selectedFigureId ? null : prev));
+  }, [selectedFigureId, setFigures, setOffsetTargetId]);
 
   return (
     <EditorContext.Provider
       value={{
         tool,
         setTool,
-        shapes: shapes || [],
-        setShapes,
-        selectedShapeId,
-        setSelectedShapeId,
+        figures: figures || [],
+        setFigures,
+        selectedFigureId,
+        setSelectedFigureId,
         deleteSelected,
         scale,
         setScale,
@@ -278,6 +302,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         registerStage,
         showGrid,
         setShowGrid,
+
+        gridContrast,
+        setGridContrast,
         showPageGuides,
         setShowPageGuides,
         pageGuideSettings,
@@ -288,12 +315,6 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setOffsetValueCm,
         offsetTargetId,
         setOffsetTargetId,
-        dartDepthCm,
-        setDartDepthCm,
-        dartOpeningCm,
-        setDartOpeningCm,
-        dartTargetId,
-        setDartTargetId,
         mirrorAxis,
         setMirrorAxis,
         unfoldAxis,

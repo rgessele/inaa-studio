@@ -101,7 +101,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       const result = await saveProjectAsCopy(
         project.id,
         newName.trim(),
-        project.design_data?.shapes ?? []
+        project.design_data?.figures ?? []
       );
 
       if (!result.success || !result.projectId) {

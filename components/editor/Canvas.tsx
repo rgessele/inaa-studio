@@ -1,2426 +1,2055 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Stage,
-  Layer,
-  Line,
-  Rect as KonvaRect,
-  Circle as KonvaCircle,
-  Transformer,
-} from "react-konva";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Circle, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
 import Konva from "konva";
 import { useEditor } from "./EditorContext";
-import { DrawingTool, Shape } from "./types";
-import { GRID_SIZE_PX, PX_PER_CM } from "./constants";
+import type { Figure, FigureEdge, FigureNode } from "./types";
+import { PX_PER_CM } from "./constants";
 import { getPaperDimensionsCm } from "./exportSettings";
-
+import { circleAsCubics, len, sampleCubic, sub } from "./figureGeometry";
+import {
+  figureLocalPolyline,
+  figureLocalToWorld,
+  figureWorldBoundingBox,
+  figureWorldPolyline,
+  worldToFigureLocal,
+} from "./figurePath";
 import { Ruler } from "./Ruler";
-import { getAllSnapPoints, findNearestSnapPoint, SnapPoint } from "./snapping";
-import { upsertSeamAllowance } from "./offset";
-import {
-  getDartSnapOnShape,
-  isDartEligibleShape,
-} from "./dart";
-import { mirrorShape, getAxisPositionForShape } from "./mirror";
-import {
-  unfoldShape,
-  canUnfoldShape,
-  getSuggestedUnfoldAxis,
-} from "./unfold";
 
-// Large virtual area to keep the background visible while navigating the canvas.
-const WORKSPACE_SIZE = 8000; // Increased size
 const MIN_ZOOM_SCALE = 0.1;
 const MAX_ZOOM_SCALE = 10;
 const ZOOM_FACTOR = 1.08;
-const DEFAULT_STROKE = "#e5e7eb"; // Light stroke for dark mode
-const DEFAULT_FILL = "transparent";
-const WORKSPACE_BACKGROUND = "#121212"; // Dark background
-const GRID_COLOR = "rgba(255, 255, 255, 0.05)";
-const CONTROL_POINT_RADIUS = 6; // Radius for control point anchor
-const NODE_ANCHOR_RADIUS = 5; // Radius for node anchors
-const MEASURE_SNAP_MIN_THRESHOLD_PX = 12;
-const MIN_DART_OPENING_CM = 0.1;
-const MIN_DART_DEPTH_CM = 0.2;
 
-type Point = { x: number; y: number };
+type Vec2 = { x: number; y: number };
 
-function toLocalPoints(points: number[]): Point[] {
-  const result: Point[] = [];
-  for (let i = 0; i < points.length; i += 2) {
-    result.push({ x: points[i], y: points[i + 1] });
-  }
-  return result;
-}
-
-function pointInPolygon(point: Point, poly: Point[]): boolean {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i].x;
-    const yi = poly[i].y;
-    const xj = poly[j].x;
-    const yj = poly[j].y;
-
-    const intersect =
-      yi > point.y !== yj > point.y &&
-      point.x < ((xj - xi) * (point.y - yi)) / (yj - yi + 1e-12) + xi;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
-function getPolygonInwardNormal(poly: Point[], segmentIndex: number): Point {
-  const a = poly[segmentIndex];
-  const b = poly[(segmentIndex + 1) % poly.length];
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len = Math.sqrt(dx * dx + dy * dy);
-  if (len < 1e-9) return { x: 0, y: 0 };
-
-  // left normal
-  let nx = dy / len;
-  let ny = -dx / len;
-
-  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  const eps = 2;
-  const test = { x: mid.x + nx * eps, y: mid.y + ny * eps };
-  if (!pointInPolygon(test, poly)) {
-    nx = -nx;
-    ny = -ny;
-  }
-  return { x: nx, y: ny };
-}
-
-function getBasePolygonPointsLocal(shape: Shape): Point[] {
-  if (shape.tool === "rectangle" && shape.width && shape.height) {
-    return toLocalPoints([0, 0, shape.width, 0, shape.width, shape.height, 0, shape.height]);
-  }
-
-  if (shape.tool === "circle" && Array.isArray(shape.points) && shape.points.length >= 6) {
-    return toLocalPoints(shape.points);
-  }
-  if (shape.tool === "circle" && shape.radius) {
-    // match Canvas circle segmentation
-    const segments = 32;
-    const pts: number[] = [];
-    for (let i = 0; i < segments; i++) {
-      const angle = (i / segments) * Math.PI * 2;
-      pts.push(Math.cos(angle) * shape.radius, Math.sin(angle) * shape.radius);
+type NodeSelection =
+  | {
+      figureId: string;
+      nodeId: string;
+      handle: "in" | "out" | null;
     }
-    return toLocalPoints(pts);
-  }
+  | null;
 
-  if (Array.isArray(shape.points) && shape.points.length >= 6) {
-    return toLocalPoints(shape.points);
-  }
+type EdgeHover =
+  | {
+      figureId: string;
+      edgeId: string;
+      t: number;
+      pointLocal: Vec2;
+    }
+  | null;
 
-  return [];
+type DartDraft =
+  | {
+      figureId: string;
+      step: "pickA" | "pickB" | "pickApex";
+      a: EdgeHover;
+      b: EdgeHover;
+      currentWorld: Vec2;
+    }
+  | null;
+
+type MeasureDraft =
+  | {
+      startWorld: Vec2;
+      endWorld: Vec2;
+      snappedEndWorld: Vec2;
+      isSnapped: boolean;
+    }
+  | null;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
-function degreesToRadians(degrees: number): number {
-  return (degrees * Math.PI) / 180;
+function id(prefix: string): string {
+  // crypto.randomUUID() is available in modern browsers; fallback for safety.
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? `${prefix}_${crypto.randomUUID()}`
+    : `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 }
 
-function localToWorldPoint(
-  shape: Pick<Shape, "x" | "y" | "rotation">,
-  localX: number,
-  localY: number
-): { x: number; y: number } {
-  const rotation = shape.rotation || 0;
-  if (!rotation) {
-    return { x: shape.x + localX, y: shape.y + localY };
+function add(a: Vec2, b: Vec2): Vec2 {
+  return { x: a.x + b.x, y: a.y + b.y };
+}
+
+function mul(a: Vec2, k: number): Vec2 {
+  return { x: a.x * k, y: a.y * k };
+}
+
+function dist(a: Vec2, b: Vec2): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function lerp(a: Vec2, b: Vec2, t: number): Vec2 {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+function useIsDarkMode(): boolean {
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const update = () => setIsDark(root.classList.contains("dark"));
+    update();
+
+    const observer = new MutationObserver(() => update());
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  return isDark;
+}
+
+function resolveAci7(isDark: boolean): string {
+  // AutoCAD ACI 7: "intelligent" black/white depending on background.
+  return isDark ? "#ffffff" : "#000000";
+}
+
+function resolveStrokeColor(stroke: string | undefined, isDark: boolean): string {
+  if (!stroke) return resolveAci7(isDark);
+  const s = stroke.toLowerCase();
+  if (s === "aci7") return resolveAci7(isDark);
+  // Back-compat: older projects defaulted to black; treat that as "auto".
+  if (s === "#000" || s === "#000000") return resolveAci7(isDark);
+  return stroke;
+}
+
+function pointToSegmentDistance(p: Vec2, a: Vec2, b: Vec2): { d: number; t: number } {
+  const ab = sub(b, a);
+  const ap = sub(p, a);
+  const abLen2 = ab.x * ab.x + ab.y * ab.y;
+  if (abLen2 <= 1e-9) return { d: dist(p, a), t: 0 };
+  const t = clamp((ap.x * ab.x + ap.y * ab.y) / abLen2, 0, 1);
+  const proj = add(a, mul(ab, t));
+  return { d: dist(p, proj), t };
+}
+
+function nearestOnPolylineWorld(pWorld: Vec2, poly: number[]): { d: number; point: Vec2 } | null {
+  if (poly.length < 4) return null;
+  let bestD = Number.POSITIVE_INFINITY;
+  let bestPoint: Vec2 = { x: poly[0], y: poly[1] };
+  for (let i = 0; i < poly.length - 2; i += 2) {
+    const a: Vec2 = { x: poly[i], y: poly[i + 1] };
+    const b: Vec2 = { x: poly[i + 2], y: poly[i + 3] };
+    const hit = pointToSegmentDistance(pWorld, a, b);
+    if (hit.d < bestD) {
+      bestD = hit.d;
+      bestPoint = lerp(a, b, hit.t);
+    }
+  }
+  return { d: bestD, point: bestPoint };
+}
+
+function getNodeById(nodes: FigureNode[], id: string): FigureNode | undefined {
+  return nodes.find((n) => n.id === id);
+}
+
+function edgeLocalPoints(figure: Figure, edge: FigureEdge, steps: number): Vec2[] {
+  const a = getNodeById(figure.nodes, edge.from);
+  const b = getNodeById(figure.nodes, edge.to);
+  if (!a || !b) return [];
+
+  const p0: Vec2 = { x: a.x, y: a.y };
+  const p3: Vec2 = { x: b.x, y: b.y };
+
+  if (edge.kind === "line") return [p0, p3];
+
+  const p1: Vec2 = a.outHandle ? { x: a.outHandle.x, y: a.outHandle.y } : p0;
+  const p2: Vec2 = b.inHandle ? { x: b.inHandle.x, y: b.inHandle.y } : p3;
+  return sampleCubic(p0, p1, p2, p3, steps);
+}
+
+function nearestOnEdgeLocal(
+  figure: Figure,
+  edge: FigureEdge,
+  pLocal: Vec2
+): { d: number; t: number; pointLocal: Vec2 } | null {
+  const pts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 1 : 40);
+  if (pts.length < 2) return null;
+
+  let bestD = Number.POSITIVE_INFINITY;
+  let bestT = 0;
+  let bestPoint = pts[0];
+
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const hit = pointToSegmentDistance(pLocal, a, b);
+    if (hit.d < bestD) {
+      bestD = hit.d;
+      const segT = hit.t;
+      const t = (i + segT) / (pts.length - 1);
+      bestT = t;
+      bestPoint = lerp(a, b, segT);
+    }
   }
 
-  const rad = degreesToRadians(rotation);
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  const rotatedX = localX * cos - localY * sin;
-  const rotatedY = localX * sin + localY * cos;
-  return { x: shape.x + rotatedX, y: shape.y + rotatedY };
+  return { d: bestD, t: bestT, pointLocal: bestPoint };
 }
 
-function worldToLocalPoint(
-  shape: Pick<Shape, "x" | "y" | "rotation">,
-  worldX: number,
-  worldY: number
-): { x: number; y: number } {
-  const rotation = shape.rotation || 0;
-  const dx = worldX - shape.x;
-  const dy = worldY - shape.y;
-  if (!rotation) {
-    return { x: dx, y: dy };
+function findNearestEdge(figure: Figure, pLocal: Vec2): { best: EdgeHover; bestDist: number } {
+  let best: EdgeHover = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const edge of figure.edges) {
+    const hit = nearestOnEdgeLocal(figure, edge, pLocal);
+    if (!hit) continue;
+    if (hit.d < bestDist) {
+      bestDist = hit.d;
+      best = {
+        figureId: figure.id,
+        edgeId: edge.id,
+        t: hit.t,
+        pointLocal: hit.pointLocal,
+      };
+    }
   }
-
-  const rad = degreesToRadians(-rotation);
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  return {
-    x: dx * cos - dy * sin,
-    y: dx * sin + dy * cos,
-  };
+  return { best, bestDist };
 }
 
-function closestPointOnSegment(
-  point: { x: number; y: number },
-  segment: { x1: number; y1: number; x2: number; y2: number }
-): { x: number; y: number; distance: number } {
-  const vx = segment.x2 - segment.x1;
-  const vy = segment.y2 - segment.y1;
-  const wx = point.x - segment.x1;
-  const wy = point.y - segment.y1;
+function splitFigureEdge(figure: Figure, edgeId: string, t: number): { figure: Figure; newNodeId?: string } {
+  const edgeIndex = figure.edges.findIndex((e) => e.id === edgeId);
+  if (edgeIndex === -1) return { figure };
+  const edge = figure.edges[edgeIndex];
 
-  const vv = vx * vx + vy * vy;
-  if (vv < 0.0000001) {
-    const dx = point.x - segment.x1;
-    const dy = point.y - segment.y1;
+  const eps = 0.02;
+  const safeT = clamp(t, eps, 1 - eps);
+
+  const fromNode = getNodeById(figure.nodes, edge.from);
+  const toNode = getNodeById(figure.nodes, edge.to);
+  if (!fromNode || !toNode) return { figure };
+
+  const p0: Vec2 = { x: fromNode.x, y: fromNode.y };
+  const p3: Vec2 = { x: toNode.x, y: toNode.y };
+
+  if (edge.kind === "line") {
+    const mid = lerp(p0, p3, safeT);
+    const newNodeId = id("n");
+    const newNode: FigureNode = { id: newNodeId, x: mid.x, y: mid.y, mode: "corner" };
+
+    const e1: FigureEdge = { id: id("e"), from: fromNode.id, to: newNodeId, kind: "line" };
+    const e2: FigureEdge = { id: id("e"), from: newNodeId, to: toNode.id, kind: "line" };
+
+    const nextEdges = [...figure.edges];
+    nextEdges.splice(edgeIndex, 1, e1, e2);
+
     return {
-      x: segment.x1,
-      y: segment.y1,
-      distance: Math.sqrt(dx * dx + dy * dy),
+      figure: {
+        ...figure,
+        nodes: [...figure.nodes, newNode],
+        edges: nextEdges,
+      },
+      newNodeId,
     };
   }
 
-  let t = (wx * vx + wy * vy) / vv;
-  t = Math.max(0, Math.min(1, t));
-  const x = segment.x1 + t * vx;
-  const y = segment.y1 + t * vy;
-  const dx = point.x - x;
-  const dy = point.y - y;
-  return { x, y, distance: Math.sqrt(dx * dx + dy * dy) };
+  const p1: Vec2 = fromNode.outHandle
+    ? { x: fromNode.outHandle.x, y: fromNode.outHandle.y }
+    : p0;
+  const p2: Vec2 = toNode.inHandle ? { x: toNode.inHandle.x, y: toNode.inHandle.y } : p3;
+
+  // De Casteljau split
+  const p01 = lerp(p0, p1, safeT);
+  const p12 = lerp(p1, p2, safeT);
+  const p23 = lerp(p2, p3, safeT);
+  const p012 = lerp(p01, p12, safeT);
+  const p123 = lerp(p12, p23, safeT);
+  const p0123 = lerp(p012, p123, safeT);
+
+  const newNodeId = id("n");
+  const newNode: FigureNode = {
+    id: newNodeId,
+    x: p0123.x,
+    y: p0123.y,
+    mode: "smooth",
+    inHandle: { x: p012.x, y: p012.y },
+    outHandle: { x: p123.x, y: p123.y },
+  };
+
+  const nextNodes = figure.nodes.map((n) => {
+    if (n.id === fromNode.id) {
+      return {
+        ...n,
+        outHandle: { x: p01.x, y: p01.y },
+      };
+    }
+    if (n.id === toNode.id) {
+      return {
+        ...n,
+        inHandle: { x: p23.x, y: p23.y },
+      };
+    }
+    return n;
+  });
+
+  const e1: FigureEdge = { id: id("e"), from: fromNode.id, to: newNodeId, kind: "cubic" };
+  const e2: FigureEdge = { id: id("e"), from: newNodeId, to: toNode.id, kind: "cubic" };
+  const nextEdges = [...figure.edges];
+  nextEdges.splice(edgeIndex, 1, e1, e2);
+
+  return {
+    figure: {
+      ...figure,
+      nodes: [...nextNodes, newNode],
+      edges: nextEdges,
+    },
+    newNodeId,
+  };
 }
 
-function getCurvePolylineLocal(
-  points: number[],
-  controlPoint: { x: number; y: number },
-  steps: number = 50
-): number[] {
-  const x1 = points[0];
-  const y1 = points[1];
-  const x2 = points[2];
-  const y2 = points[3];
-  const cx = controlPoint.x;
-  const cy = controlPoint.y;
-
-  const curvePoints: number[] = [];
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const mt = 1 - t;
-    const mt2 = mt * mt;
-    const t2 = t * t;
-    const x = mt2 * x1 + 2 * mt * t * cx + t2 * x2;
-    const y = mt2 * y1 + 2 * mt * t * cy + t2 * y2;
-    curvePoints.push(x, y);
+function walkLoopEdges(
+  figure: Figure,
+  fromNodeId: string,
+  toNodeId: string
+): { edgeIds: string[]; ok: boolean } {
+  const outMap = new Map<string, FigureEdge[]>();
+  for (const e of figure.edges) {
+    const list = outMap.get(e.from) ?? [];
+    list.push(e);
+    outMap.set(e.from, list);
   }
-  return curvePoints;
-}
 
-// Helper function to create a circle as a closed path with points
-function createCirclePoints(radius: number, segments: number = 32): number[] {
-  const points: number[] = [];
-  for (let i = 0; i < segments; i++) {
-    const angle = (i / segments) * Math.PI * 2;
-    points.push(Math.cos(angle) * radius, Math.sin(angle) * radius);
+  const edgeIds: string[] = [];
+  let current = fromNodeId;
+  const visited = new Set<string>();
+
+  for (let safety = 0; safety < figure.edges.length + 2; safety++) {
+    if (current === toNodeId) return { edgeIds, ok: true };
+    if (visited.has(current)) break;
+    visited.add(current);
+
+    const outs = outMap.get(current) ?? [];
+    if (outs.length === 0) break;
+    const edge = outs[0];
+    edgeIds.push(edge.id);
+    current = edge.to;
   }
-  return points;
+
+  return { edgeIds, ok: false };
 }
 
-// Helper function to create a rectangle as a closed path with points
-function createRectanglePoints(width: number, height: number): number[] {
-  return [0, 0, width, 0, width, height, 0, height];
+function insertDartIntoFigure(
+  figure: Figure,
+  aLocal: Vec2,
+  bLocal: Vec2,
+  apexLocal: Vec2
+): Figure | null {
+  if (!figure.closed) return null;
+
+  // Split at A
+  const hitA = findNearestEdge(figure, aLocal);
+  if (!hitA.best) return null;
+  const splitA = splitFigureEdge(figure, hitA.best.edgeId, hitA.best.t);
+  if (!splitA.newNodeId) return null;
+  let nextFigure = splitA.figure;
+  const aNodeId = splitA.newNodeId;
+
+  // Split at B (re-find after A split)
+  const hitB = findNearestEdge(nextFigure, bLocal);
+  if (!hitB.best) return null;
+  const splitB = splitFigureEdge(nextFigure, hitB.best.edgeId, hitB.best.t);
+  if (!splitB.newNodeId) return null;
+  nextFigure = splitB.figure;
+  const bNodeId = splitB.newNodeId;
+
+  // Decide which direction along loop to replace (pick the shorter chain)
+  const pathAB = walkLoopEdges(nextFigure, aNodeId, bNodeId);
+  const pathBA = walkLoopEdges(nextFigure, bNodeId, aNodeId);
+  if (!pathAB.ok && !pathBA.ok) return null;
+
+  const replaceFrom =
+    !pathBA.ok || (pathAB.ok && pathAB.edgeIds.length <= pathBA.edgeIds.length)
+      ? { from: aNodeId, to: bNodeId, edgeIds: pathAB.edgeIds }
+      : { from: bNodeId, to: aNodeId, edgeIds: pathBA.edgeIds };
+
+  const apexNodeId = id("n");
+  const apexNode: FigureNode = {
+    id: apexNodeId,
+    x: apexLocal.x,
+    y: apexLocal.y,
+    mode: "corner",
+  };
+
+  const remainingEdges = nextFigure.edges.filter(
+    (e) => !replaceFrom.edgeIds.includes(e.id)
+  );
+
+  const e1: FigureEdge = {
+    id: id("e"),
+    from: replaceFrom.from,
+    to: apexNodeId,
+    kind: "line",
+  };
+  const e2: FigureEdge = {
+    id: id("e"),
+    from: apexNodeId,
+    to: replaceFrom.to,
+    kind: "line",
+  };
+
+  return {
+    ...nextFigure,
+    nodes: [...nextFigure.nodes, apexNode],
+    edges: [...remainingEdges, e1, e2],
+  };
 }
 
-// Helper function to calculate measure tooltip data
-function calculateMeasureTooltip(
-  start: { x: number; y: number },
-  end: { x: number; y: number },
-  scale: number,
-  position: { x: number; y: number }
-) {
-  // Calculate distance in pixels
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const distancePx = Math.sqrt(dx * dx + dy * dy);
+function mirrorValue(value: number, axisPos: number): number {
+  const d = value - axisPos;
+  return axisPos - d;
+}
 
-  // Convert to centimeters
-  const distanceCm = distancePx / PX_PER_CM;
+function mirrorVec2(p: Vec2, axis: "vertical" | "horizontal", axisPos: number): Vec2 {
+  if (axis === "vertical") return { x: mirrorValue(p.x, axisPos), y: p.y };
+  return { x: p.x, y: mirrorValue(p.y, axisPos) };
+}
 
-  // Calculate screen position (follows the end point)
-  const screenX = end.x * scale + position.x;
-  const screenY = end.y * scale + position.y;
+function mirrorFigure(
+  figure: Figure,
+  axis: "vertical" | "horizontal",
+  axisPos: number
+): Figure {
+  const mirroredNodes: FigureNode[] = figure.nodes.map((n) => {
+    const pWorld = figureLocalToWorld(figure, { x: n.x, y: n.y });
+    const p = mirrorVec2(pWorld, axis, axisPos);
+    const inH = n.inHandle
+      ? mirrorVec2(figureLocalToWorld(figure, n.inHandle), axis, axisPos)
+      : undefined;
+    const outH = n.outHandle
+      ? mirrorVec2(figureLocalToWorld(figure, n.outHandle), axis, axisPos)
+      : undefined;
+    return {
+      ...n,
+      x: p.x,
+      y: p.y,
+      inHandle: inH,
+      outHandle: outH,
+    };
+  });
 
-  return { distanceCm, screenX, screenY };
+  return {
+    ...figure,
+    id: id("fig"),
+    x: 0,
+    y: 0,
+    rotation: 0,
+    nodes: mirroredNodes,
+  };
+}
+
+function unfoldFigure(
+  figure: Figure,
+  axis: "vertical" | "horizontal",
+  axisPos: number
+): Figure | null {
+  const pts = figureWorldPolyline(figure, 60);
+  if (pts.length < 4) return null;
+
+  // world polyline points
+  const original: Vec2[] = [];
+  for (let i = 0; i < pts.length; i += 2) {
+    original.push({ x: pts[i], y: pts[i + 1] });
+  }
+  if (original.length < 2) return null;
+
+  const mirrored = original.map((p) => mirrorVec2(p, axis, axisPos));
+  const reversed = [...mirrored].reverse();
+
+  // Merge: original + reversed mirrored, then close
+  const merged = [...original, ...reversed];
+  if (merged.length < 3) return null;
+
+  const nodes: FigureNode[] = merged.map((p) => ({
+    id: id("n"),
+    x: p.x,
+    y: p.y,
+    mode: "corner",
+  }));
+  const edges: FigureEdge[] = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const a = nodes[i];
+    const b = nodes[(i + 1) % nodes.length];
+    edges.push({ id: id("e"), from: a.id, to: b.id, kind: "line" });
+  }
+
+  return {
+    ...figure,
+    tool: "line",
+    x: 0,
+    y: 0,
+    rotation: 0,
+    closed: true,
+    nodes,
+    edges,
+  };
+}
+
+function signedArea(points: Vec2[]): number {
+  let a = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const q = points[(i + 1) % points.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return a / 2;
+}
+
+function normalize(v: Vec2): Vec2 {
+  const l = Math.hypot(v.x, v.y);
+  if (l < 1e-9) return { x: 0, y: 0 };
+  return { x: v.x / l, y: v.y / l };
+}
+
+function lineIntersection(
+  p1: Vec2,
+  p2: Vec2,
+  p3: Vec2,
+  p4: Vec2
+): Vec2 | null {
+  const x1 = p1.x;
+  const y1 = p1.y;
+  const x2 = p2.x;
+  const y2 = p2.y;
+  const x3 = p3.x;
+  const y3 = p3.y;
+  const x4 = p4.x;
+  const y4 = p4.y;
+
+  const den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (Math.abs(den) < 1e-9) return null;
+
+  const px =
+    ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) /
+    den;
+  const py =
+    ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) /
+    den;
+  return { x: px, y: py };
+}
+
+function offsetClosedPolyline(points: Vec2[], offsetPx: number): Vec2[] | null {
+  if (points.length < 3) return null;
+
+  // remove duplicate last point if present
+  const pts = [...points];
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  if (dist(first, last) < 1e-6) pts.pop();
+  if (pts.length < 3) return null;
+
+  const area = signedArea(pts);
+  const outwardSign = area > 0 ? -1 : 1;
+
+  // edge outward normals
+  const normals: Vec2[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    const d = normalize(sub(b, a));
+    const left = { x: d.y, y: -d.x };
+    normals.push(mul(left, outwardSign));
+  }
+
+  const out: Vec2[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const pPrev = pts[(i - 1 + pts.length) % pts.length];
+    const p = pts[i];
+    const pNext = pts[(i + 1) % pts.length];
+
+    const nPrev = normals[(i - 1 + normals.length) % normals.length];
+    const n = normals[i];
+
+    // offset lines for prev and current edges
+    const a1 = add(pPrev, mul(nPrev, offsetPx));
+    const a2 = add(p, mul(nPrev, offsetPx));
+    const b1 = add(p, mul(n, offsetPx));
+    const b2 = add(pNext, mul(n, offsetPx));
+
+    const hit = lineIntersection(a1, a2, b1, b2);
+    out.push(hit ?? add(p, mul(n, offsetPx)));
+  }
+
+  return out;
+}
+
+function makeSeamFigure(base: Figure, offsetValueCm: number): Figure | null {
+  if (!base.closed) return null;
+  const pts = figureLocalPolyline(base, 60);
+  if (pts.length < 6) return null;
+  const poly: Vec2[] = [];
+  for (let i = 0; i < pts.length; i += 2) {
+    poly.push({ x: pts[i], y: pts[i + 1] });
+  }
+  const offsetPx = offsetValueCm * PX_PER_CM;
+  const out = offsetClosedPolyline(poly, offsetPx);
+  if (!out) return null;
+
+  const nodes: FigureNode[] = out.map((p) => ({
+    id: id("n"),
+    x: p.x,
+    y: p.y,
+    mode: "corner",
+  }));
+  const edges: FigureEdge[] = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const a = nodes[i];
+    const b = nodes[(i + 1) % nodes.length];
+    edges.push({ id: id("e"), from: a.id, to: b.id, kind: "line" });
+  }
+
+  return {
+    ...base,
+    id: id("fig"),
+    kind: "seam",
+    parentId: base.id,
+    offsetCm: offsetValueCm,
+    dash: [5, 5],
+    fill: "transparent",
+    nodes,
+    edges,
+  };
+}
+
+function recomputeSeamFigure(
+  base: Figure,
+  seam: Figure,
+  offsetValueCm: number
+): Figure | null {
+  const next = makeSeamFigure(base, offsetValueCm);
+  if (!next) return null;
+  return {
+    ...next,
+    id: seam.id,
+  };
+}
+
+function clampHandle(anchor: Vec2, handle: Vec2, maxLen: number): Vec2 {
+  if (!Number.isFinite(maxLen) || maxLen <= 0) return handle;
+  const v = sub(handle, anchor);
+  const l = len(v);
+  if (l <= maxLen) return handle;
+  const s = maxLen / l;
+  return add(anchor, mul(v, s));
+}
+
+function makeLineFigure(
+  a: Vec2,
+  b: Vec2,
+  tool: Figure["tool"],
+  stroke: string
+): Figure {
+  const n1: FigureNode = { id: id("n"), x: a.x, y: a.y, mode: "corner" };
+  const n2: FigureNode = { id: id("n"), x: b.x, y: b.y, mode: "corner" };
+  const e: FigureEdge = { id: id("e"), from: n1.id, to: n2.id, kind: "line" };
+  return {
+    id: id("fig"),
+    tool,
+    x: 0,
+    y: 0,
+    rotation: 0,
+    closed: false,
+    nodes: [n1, n2],
+    edges: [e],
+    stroke,
+    strokeWidth: 2,
+    fill: "transparent",
+    opacity: 1,
+  };
+}
+
+function makeRectFigure(a: Vec2, b: Vec2, stroke: string): Figure {
+  const minX = Math.min(a.x, b.x);
+  const minY = Math.min(a.y, b.y);
+  const maxX = Math.max(a.x, b.x);
+  const maxY = Math.max(a.y, b.y);
+
+  const n1: FigureNode = { id: id("n"), x: minX, y: minY, mode: "corner" };
+  const n2: FigureNode = { id: id("n"), x: maxX, y: minY, mode: "corner" };
+  const n3: FigureNode = { id: id("n"), x: maxX, y: maxY, mode: "corner" };
+  const n4: FigureNode = { id: id("n"), x: minX, y: maxY, mode: "corner" };
+
+  const edges: FigureEdge[] = [
+    { id: id("e"), from: n1.id, to: n2.id, kind: "line" },
+    { id: id("e"), from: n2.id, to: n3.id, kind: "line" },
+    { id: id("e"), from: n3.id, to: n4.id, kind: "line" },
+    { id: id("e"), from: n4.id, to: n1.id, kind: "line" },
+  ];
+
+  return {
+    id: id("fig"),
+    tool: "rectangle",
+    x: 0,
+    y: 0,
+    rotation: 0,
+    closed: true,
+    nodes: [n1, n2, n3, n4],
+    edges,
+    stroke,
+    strokeWidth: 2,
+    fill: "transparent",
+    opacity: 1,
+  };
+}
+
+function makeCircleFigure(center: Vec2, radius: number, stroke: string): Figure {
+  const { nodes } = circleAsCubics(radius);
+  const figureNodes: FigureNode[] = nodes.map((n) => ({
+    id: id("n"),
+    x: n.x,
+    y: n.y,
+    mode: n.mode,
+    inHandle: { x: n.inHandle.x, y: n.inHandle.y },
+    outHandle: { x: n.outHandle.x, y: n.outHandle.y },
+  }));
+
+  const edges: FigureEdge[] = [];
+  for (let i = 0; i < figureNodes.length; i++) {
+    const from = figureNodes[i];
+    const to = figureNodes[(i + 1) % figureNodes.length];
+    edges.push({ id: id("e"), from: from.id, to: to.id, kind: "cubic" });
+  }
+
+  return {
+    id: id("fig"),
+    tool: "circle",
+    x: center.x,
+    y: center.y,
+    rotation: 0,
+    closed: true,
+    nodes: figureNodes,
+    edges,
+    stroke,
+    strokeWidth: 2,
+    fill: "transparent",
+    opacity: 1,
+  };
+}
+
+type Draft =
+  | {
+      tool: "line" | "rectangle" | "circle";
+      startWorld: Vec2;
+      currentWorld: Vec2;
+    }
+  | null;
+
+type CurveDraft =
+  | {
+      pointsWorld: Vec2[];
+      currentWorld: Vec2;
+    }
+  | null;
+
+function makeCurveFromPoints(
+  points: Vec2[],
+  closed: boolean,
+  stroke: string
+): Figure | null {
+  if (points.length < 2) return null;
+
+  // Catmull-Rom (centripetal-ish by clamping handles) -> cubic Bézier.
+  // Segment Pi -> P(i+1):
+  //   C1 = Pi + (P(i+1) - P(i-1)) / 6
+  //   C2 = P(i+1) - (P(i+2) - Pi) / 6
+  const tension = 1;
+
+  const nodes: FigureNode[] = points.map((p) => ({
+    id: id("n"),
+    x: p.x,
+    y: p.y,
+    mode: "smooth",
+  }));
+  const edges: FigureEdge[] = [];
+
+  const count = points.length;
+  const segmentCount = closed ? count : count - 1;
+
+  const getPoint = (index: number): Vec2 => {
+    if (closed) {
+      const i = ((index % count) + count) % count;
+      return points[i];
+    }
+    return points[clamp(index, 0, count - 1)];
+  };
+
+  for (let i = 0; i < segmentCount; i++) {
+    const i0 = i - 1;
+    const i1 = i;
+    const i2 = i + 1;
+    const i3 = i + 2;
+
+    const p0 = getPoint(i0);
+    const p1 = getPoint(i1);
+    const p2 = getPoint(i2);
+    const p3 = getPoint(i3);
+
+    const c1 = add(p1, mul(sub(p2, p0), (tension / 6)));
+    const c2 = add(p2, mul(sub(p1, p3), (tension / 6)));
+
+    // Clamp handles to avoid extreme overshoot (keeps it "CAD-ish" and stable)
+    const segLen = dist(p1, p2);
+    const maxHandle = Math.max(2, segLen * 0.75);
+    const c1Clamped = clampHandle(p1, c1, maxHandle);
+    const c2Clamped = clampHandle(p2, c2, maxHandle);
+
+    const fromIndex = i1;
+    const toIndex = closed ? (i2 % count) : i2;
+
+    // Open curve endpoints: no inHandle on first, no outHandle on last.
+    if (!closed && fromIndex === 0) {
+      // ok: only outHandle
+    } else {
+      // keep existing inHandle if any
+    }
+
+    nodes[fromIndex] = {
+      ...nodes[fromIndex],
+      outHandle: c1Clamped,
+    };
+    nodes[toIndex] = {
+      ...nodes[toIndex],
+      inHandle: c2Clamped,
+    };
+
+    edges.push({
+      id: id("e"),
+      from: nodes[fromIndex].id,
+      to: nodes[toIndex].id,
+      kind: "cubic",
+    });
+  }
+
+  if (!closed) {
+    // Remove unused handles for clean semantics.
+    nodes[0] = { ...nodes[0], inHandle: undefined };
+    nodes[nodes.length - 1] = { ...nodes[nodes.length - 1], outHandle: undefined };
+  }
+
+  return {
+    id: id("fig"),
+    tool: "curve",
+    x: 0,
+    y: 0,
+    rotation: 0,
+    closed,
+    nodes,
+    edges,
+    stroke,
+    strokeWidth: 2,
+    fill: "transparent",
+    opacity: 1,
+  };
 }
 
 export default function Canvas() {
   const {
     tool,
-    shapes,
-    setShapes,
-    scale: stageScale,
-    setScale: setStageScale,
-    position: stagePosition,
-    setPosition: setStagePosition,
-    selectedShapeId,
-    setSelectedShapeId,
-    showRulers,
-    registerStage,
-    showGrid,
-    showPageGuides,
-    pageGuideSettings,
-    measureSnapStrengthPx,
+    figures,
+    setFigures,
+    selectedFigureId,
+    setSelectedFigureId,
     offsetValueCm,
-    setOffsetValueCm,
-    offsetTargetId,
     setOffsetTargetId,
-    dartDepthCm,
-    setDartDepthCm,
-    dartOpeningCm,
-    setDartOpeningCm,
-    dartTargetId,
-    setDartTargetId,
     mirrorAxis,
     unfoldAxis,
+    measureSnapStrengthPx,
+    showRulers,
+    pixelsPerUnit,
+    scale,
+    setScale,
+    position,
+    setPosition,
+    registerStage,
+    showGrid,
+    gridContrast,
+    showPageGuides,
+    pageGuideSettings,
   } = useEditor();
 
-  const RULER_THICKNESS = 24;
+  const isDark = useIsDarkMode();
+  const aci7 = useMemo(() => resolveAci7(isDark), [isDark]);
+  const gridStroke = useMemo(
+    () => {
+      const t = clamp(gridContrast, 0, 1);
 
-  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
-  const [isSpacePressed, setIsSpacePressed] = useState(false);
-  const [isShiftPressed, setIsShiftPressed] = useState(false);
-  const [isKeyboardActive, setIsKeyboardActive] = useState(false);
-  const [isPanDrag, setIsPanDrag] = useState(false);
-  const [selectedNodeIndex, setSelectedNodeIndex] = useState<number | null>(
-    null
+      // Match previous defaults at t=0.5:
+      // dark: 0.07, light: 0.05.
+      const darkAlpha = 0.03 + t * (0.11 - 0.03);
+      const lightAlpha = 0.02 + t * (0.08 - 0.02);
+      const alpha = isDark ? darkAlpha : lightAlpha;
+      return isDark
+        ? `rgba(255,255,255,${alpha})`
+        : `rgba(0,0,0,${alpha})`;
+    },
+    [gridContrast, isDark]
   );
-  const [activeSnapPoint, setActiveSnapPoint] = useState<SnapPoint | null>(
-    null
+  const pageGuideStroke = useMemo(
+    () => (isDark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.25)"),
+    [isDark]
   );
-
-  const [dartHover, setDartHover] = useState<
-    | {
-        shapeId: string;
-        anchorS: number;
-        segmentIndex: number;
-        t: number;
-        snapWorld: { x: number; y: number };
-        snapLocal: { x: number; y: number };
-      }
-    | null
-  >(null);
-  const [dartDraft, setDartDraft] = useState<
-    | {
-        shapeId: string;
-        segmentIndex: number;
-        anchorS: number;
-        baseLeftLocal: { x: number; y: number };
-        baseRightLocal: { x: number; y: number };
-        centerLocal: { x: number; y: number };
-        apexLocal: { x: number; y: number };
-      }
-    | null
-  >(null);
-
-  const getParentIdForShape = (shapeId: string) => {
-    const shape = shapes.find((s) => s.id === shapeId);
-    if (!shape) return shapeId;
-    if (shape.kind === "seam" && shape.parentId) return shape.parentId;
-    return shapeId;
-  };
-
-  const getSeamsForParent = (allShapes: Shape[], parentId: string) => {
-    return allShapes.filter((s) => s.kind === "seam" && s.parentId === parentId);
-  };
-
-  const removeSeamsForParent = (allShapes: Shape[], parentId: string) => {
-    return allShapes.filter((s) => !(s.kind === "seam" && s.parentId === parentId));
-  };
-
-  const recomputeSeamsForParent = (
-    allShapes: Shape[],
-    parentId: string,
-    offsetOverrideCm?: number
-  ) => {
-    const base = allShapes.find((s) => s.id === parentId);
-    if (!base) {
-      return removeSeamsForParent(allShapes, parentId);
-    }
-
-    const existingSeams = getSeamsForParent(allShapes, parentId);
-    const offsetCm =
-      offsetOverrideCm ?? existingSeams[0]?.offsetCm ?? undefined;
-
-    if (offsetCm === undefined) {
-      return allShapes;
-    }
-
-    const nextSeams = upsertSeamAllowance(
-      base,
-      existingSeams,
-      offsetCm,
-      PX_PER_CM
-    );
-
-    return [...removeSeamsForParent(allShapes, parentId), ...nextSeams];
-  };
-  const [measureStart, setMeasureStart] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-  const [measureEnd, setMeasureEnd] = useState<{ x: number; y: number } | null>(
-    null
+  const pageGuideInnerStroke = useMemo(
+    () => (isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)"),
+    [isDark]
   );
-  const [isMeasuring, setIsMeasuring] = useState(false);
-  const [measureSnapPreview, setMeasureSnapPreview] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-  const cachedSnapPoints = useRef<SnapPoint[] | null>(null);
-  const isDrawing = useRef(false);
-  const currentShape = useRef<Shape | null>(null);
-  const currentShapeIndex = useRef<number>(-1);
-  const stageRef = useRef<Konva.Stage | null>(null);
+  const previewStroke = aci7;
+  const previewDash = useMemo(() => [8 / scale, 6 / scale], [scale]);
+
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const transformerRef = useRef<Konva.Transformer | null>(null);
-  const shapeRefs = useRef<Map<string, Konva.Node>>(new Map());
-  const seamDragRef = useRef<
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  const stageRef = useRef<Konva.Stage | null>(null);
+  const [draft, setDraft] = useState<Draft>(null);
+  const [curveDraft, setCurveDraft] = useState<CurveDraft>(null);
+  const [nodeSelection, setNodeSelection] = useState<NodeSelection>(null);
+  const [hoveredEdge, setHoveredEdge] = useState<EdgeHover>(null);
+  const [dartDraft, setDartDraft] = useState<DartDraft>(null);
+  const [measureDraft, setMeasureDraft] = useState<MeasureDraft>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const lastPointerRef = useRef<Vec2 | null>(null);
+
+  const dragNodeRef = useRef<
     | {
-        parentId: string;
-        startX: number;
-        startY: number;
-        seamStarts: Map<string, { x: number; y: number }>;
+        figureId: string;
+        nodeId: string;
+        startNode: Vec2;
+        startIn?: Vec2;
+        startOut?: Vec2;
       }
     | null
   >(null);
 
-  const dartDragRef = useRef<
+  const dragHandleRef = useRef<
     | {
-        startWorld: { x: number; y: number };
-        didDrag: boolean;
+        figureId: string;
+        nodeId: string;
+        which: "in" | "out";
       }
     | null
   >(null);
 
-  const handleShapeDragStart = (
-    id: string,
-    e: Konva.KonvaEventObject<DragEvent>
-  ) => {
-    const seams = shapes.filter((s) => s.kind === "seam" && s.parentId === id);
-    if (seams.length === 0) return;
-
-    const node = e.target;
-    const seamStarts = new Map<string, { x: number; y: number }>();
-
-    for (const seam of seams) {
-      const seamNode = shapeRefs.current.get(seam.id);
-      if (!seamNode) continue;
-      seamStarts.set(seam.id, { x: seamNode.x(), y: seamNode.y() });
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    // When leaving node tool, clear node selection.
+    if (tool !== "node") {
+      setNodeSelection(null);
+      setHoveredEdge(null);
     }
 
-    seamDragRef.current = {
-      parentId: id,
-      startX: node.x(),
-      startY: node.y(),
-      seamStarts,
-    };
-  };
-
-  const handleShapeDragMove = (
-    id: string,
-    e: Konva.KonvaEventObject<DragEvent>
-  ) => {
-    const ref = seamDragRef.current;
-    if (!ref || ref.parentId !== id) return;
-
-    const node = e.target;
-    const dx = node.x() - ref.startX;
-    const dy = node.y() - ref.startY;
-
-    for (const [seamId, start] of ref.seamStarts.entries()) {
-      const seamNode = shapeRefs.current.get(seamId);
-      if (!seamNode) continue;
-      seamNode.x(start.x + dx);
-      seamNode.y(start.y + dy);
+    // When leaving curve tool, clear unfinished multi-click curve.
+    if (tool !== "curve") {
+      setCurveDraft(null);
     }
 
-    node.getLayer()?.batchDraw();
-  };
-
-  // Generate grid lines - 1cm x 1cm squares
-  const gridLines = [];
-  const numLines = Math.ceil(WORKSPACE_SIZE / GRID_SIZE_PX);
-  const offset = WORKSPACE_SIZE / 2;
-
-  for (let i = 0; i <= numLines; i++) {
-    const pos = i * GRID_SIZE_PX - offset;
-    // Vertical lines
-    gridLines.push(
-      <Line
-        key={`v-${i}`}
-        points={[pos, -offset, pos, offset]}
-        stroke={GRID_COLOR}
-        strokeWidth={1}
-        listening={false}
-      />
-    );
-    // Horizontal lines
-    gridLines.push(
-      <Line
-        key={`h-${i}`}
-        points={[-offset, pos, offset, pos]}
-        stroke={GRID_COLOR}
-        strokeWidth={1}
-        listening={false}
-      />
-    );
-  }
-
-  // Page boundary guides (based on export/print tile size)
-  const viewportWidth = stageSize.width - (showRulers ? RULER_THICKNESS : 0);
-  const viewportHeight = stageSize.height - (showRulers ? RULER_THICKNESS : 0);
-
-  const pageGuideRects = [];
-  if (showPageGuides && viewportWidth > 0 && viewportHeight > 0) {
-    const { widthCm, heightCm } = getPaperDimensionsCm(
-      pageGuideSettings.paperSize,
-      pageGuideSettings.orientation
-    );
-    const marginCm = Math.max(0, Math.min(pageGuideSettings.marginCm, 10));
-    const safeWidthCm = widthCm - 2 * marginCm;
-    const safeHeightCm = heightCm - 2 * marginCm;
-
-    const tileWidthPx = Math.max(1, safeWidthCm * PX_PER_CM);
-    const tileHeightPx = Math.max(1, safeHeightCm * PX_PER_CM);
-
-    const startX = -stagePosition.x / stageScale;
-    const startY = -stagePosition.y / stageScale;
-    const endX = startX + viewportWidth / stageScale;
-    const endY = startY + viewportHeight / stageScale;
-
-    const iStart = Math.floor(startX / tileWidthPx) - 1;
-    const iEnd = Math.floor(endX / tileWidthPx) + 1;
-    const jStart = Math.floor(startY / tileHeightPx) - 1;
-    const jEnd = Math.floor(endY / tileHeightPx) + 1;
-
-    for (let j = jStart; j <= jEnd; j++) {
-      for (let i = iStart; i <= iEnd; i++) {
-        pageGuideRects.push(
-          <KonvaRect
-            key={`page-guide-${i}-${j}`}
-            x={i * tileWidthPx}
-            y={j * tileHeightPx}
-            width={tileWidthPx}
-            height={tileHeightPx}
-            stroke={DEFAULT_STROKE}
-            strokeWidth={1}
-            opacity={0.18}
-            listening={false}
-          />
-        );
-      }
-    }
-  }
-
-  // Space-bar panning needs preventDefault to avoid page scroll, so listeners are active only while the canvas is active.
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const observer = new ResizeObserver(() => {
-      setStageSize({
-        width: container.clientWidth,
-        height: container.clientHeight,
-      });
-    });
-
-    observer.observe(container);
-    setStageSize({
-      width: container.clientWidth,
-      height: container.clientHeight,
-    });
-
-    return () => observer.disconnect();
-  }, []);
-
-  // Register stage ref with context
-  useEffect(() => {
-    registerStage(stageRef.current);
-  }, [registerStage]);
-
-  useEffect(() => {
-    const isTypingElement = (target: EventTarget | null) => {
-      if (!(target instanceof HTMLElement)) return false;
-      return (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.tagName === "SELECT" ||
-        target.isContentEditable
-      );
-    };
-
-    if (!isKeyboardActive) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (isTypingElement(event.target)) return;
-
-      if (event.code === "Space") {
-        event.preventDefault();
-        setIsSpacePressed(true);
-      }
-      if (event.key === "Shift") {
-        setIsShiftPressed(true);
-      }
-    };
-
-    const handleKeyUp = (event: KeyboardEvent) => {
-      if (isTypingElement(event.target)) return;
-      if (event.code === "Space") {
-        event.preventDefault();
-        setIsSpacePressed(false);
-        setIsPanDrag(false);
-      }
-      if (event.key === "Shift") {
-        setIsShiftPressed(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown, { passive: false });
-    window.addEventListener("keyup", handleKeyUp, { passive: false });
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-    };
-  }, [isKeyboardActive]);
-
-  const isPanning = tool === "pan" || isSpacePressed || isPanDrag;
-
-  // Clear selected node when switching tools
-  useEffect(() => {
-    if (selectedNodeIndex !== null) {
-      setSelectedNodeIndex(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tool]);
-
-  // Clear measure tool state when switching away from measure tool
-  useEffect(() => {
-    if (tool !== "measure") {
-      setIsMeasuring(false);
-      setMeasureStart(null);
-      setMeasureEnd(null);
-      setMeasureSnapPreview(null);
-    }
-  }, [tool]);
-
-  // Clear offset target when switching away from offset tool
-  useEffect(() => {
-    if (tool !== "offset" && offsetTargetId) {
-      setOffsetTargetId(null);
-    }
-  }, [offsetTargetId, setOffsetTargetId, tool]);
-
-  // Clear dart target when switching away from dart tool
-  useEffect(() => {
-    if (tool !== "dart" && dartTargetId) {
-      setDartTargetId(null);
-    }
-  }, [dartTargetId, setDartTargetId, tool]);
-
-  useEffect(() => {
     if (tool !== "dart") {
-      setDartHover(null);
       setDartDraft(null);
     }
+
+    if (tool !== "measure") {
+      setMeasureDraft(null);
+    }
   }, [tool]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-  // If the target shape is deleted, clear selection
+  const selectedFigure = useMemo(() => {
+    return selectedFigureId ? figures.find((f) => f.id === selectedFigureId) : null;
+  }, [figures, selectedFigureId]);
+
   useEffect(() => {
-    if (!offsetTargetId) return;
-    const exists = shapes.some((s) => s.id === offsetTargetId);
-    if (!exists) {
-      setOffsetTargetId(null);
-    }
-  }, [offsetTargetId, setOffsetTargetId, shapes]);
-
-  // If the dart target shape is deleted, clear selection
-  useEffect(() => {
-    if (!dartTargetId) return;
-    const exists = shapes.some((s) => s.id === dartTargetId);
-    if (!exists) {
-      setDartTargetId(null);
-    }
-  }, [dartTargetId, setDartTargetId, shapes]);
-
-  // Invalidate cached snap points whenever shapes change
-  useEffect(() => {
-    cachedSnapPoints.current = null;
-  }, [shapes]);
-
-  // Attach transformer to selected shape
-  useEffect(() => {
-    if (!transformerRef.current) return;
-
-    if (selectedShapeId && tool === "select") {
-      const selectedNode = shapeRefs.current.get(selectedShapeId);
-      if (selectedNode) {
-        transformerRef.current.nodes([selectedNode]);
-        transformerRef.current.getLayer()?.batchDraw();
-      }
-    } else {
-      transformerRef.current.nodes([]);
-      transformerRef.current.getLayer()?.batchDraw();
-    }
-  }, [selectedShapeId, tool]);
-
-  const getRelativePointer = (stage: Konva.Stage) => {
-    const pointer = stage.getPointerPosition();
-    if (!pointer) return null;
-
-    const scale = stage.scaleX();
-    const position = stage.position();
-
-    return {
-      x: (pointer.x - position.x) / scale,
-      y: (pointer.y - position.y) / scale,
-    };
-  };
-
-  const getMeasureMagneticResult = (pos: { x: number; y: number }) => {
-    const thresholdPx = Math.max(
-      MEASURE_SNAP_MIN_THRESHOLD_PX,
-      measureSnapStrengthPx
-    );
-    const thresholdWorld = thresholdPx / stageScale;
-
-    // Prefer snapping to explicit snap points (endpoints/midpoints/intersections)
-    // but also support snapping to the closest point along any segment (edge).
-    let bestPoint: { x: number; y: number } | null = null;
-    let bestDistance = thresholdWorld;
-
-    // 1) Snap points (vertices/midpoints/intersections)
-    const snapPoints =
-      cachedSnapPoints.current || getAllSnapPoints(shapes, undefined, undefined);
-    cachedSnapPoints.current = snapPoints;
-    const nearestSnapPoint = findNearestSnapPoint(
-      pos.x,
-      pos.y,
-      snapPoints,
-      thresholdWorld
-    );
-    if (nearestSnapPoint) {
-      const dx = nearestSnapPoint.x - pos.x;
-      const dy = nearestSnapPoint.y - pos.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestPoint = { x: nearestSnapPoint.x, y: nearestSnapPoint.y };
-      }
-    }
-
-    // 2) Segment/edge snapping
-    for (const shape of shapes) {
-      // Build a list of local polyline points for the shape
-      let localPoints: number[] | null = null;
-      let isClosed = false;
-
-      if (shape.tool === "rectangle") {
-        const w = shape.width || 0;
-        const h = shape.height || 0;
-        localPoints = [0, 0, w, 0, w, h, 0, h];
-        isClosed = true;
-      } else if (shape.tool === "circle") {
-        localPoints = shape.points || null;
-        isClosed = true;
-      } else if (shape.tool === "polygon") {
-        localPoints = shape.points || null;
-        isClosed = true;
-      } else if (shape.tool === "line") {
-        localPoints = shape.points || null;
-        isClosed = false;
-      } else if (shape.tool === "curve") {
-        if (shape.points && shape.points.length >= 4 && shape.controlPoint) {
-          localPoints = getCurvePolylineLocal(shape.points, shape.controlPoint);
-          isClosed = false;
-        }
-      }
-
-      if (!localPoints || localPoints.length < 4) continue;
-
-      const numPoints = Math.floor(localPoints.length / 2);
-      const segmentsCount = isClosed ? numPoints : numPoints - 1;
-      for (let i = 0; i < segmentsCount; i++) {
-        const nextIndex = (i + 1) % numPoints;
-        const p1 = localToWorldPoint(
-          shape,
-          localPoints[i * 2],
-          localPoints[i * 2 + 1]
-        );
-        const p2 = localToWorldPoint(
-          shape,
-          localPoints[nextIndex * 2],
-          localPoints[nextIndex * 2 + 1]
-        );
-        const closest = closestPointOnSegment(pos, {
-          x1: p1.x,
-          y1: p1.y,
-          x2: p2.x,
-          y2: p2.y,
+    // When the offset value changes, recompute existing seam figures (keep same IDs).
+    setFigures(
+      (prev) => {
+        let changed = false;
+        const byId = new Map(prev.map((f) => [f.id, f] as const));
+        const next = prev.map((f) => {
+          if (f.kind !== "seam" || !f.parentId) return f;
+          if (f.offsetCm === offsetValueCm) return f;
+          const base = byId.get(f.parentId);
+          if (!base) return f;
+          const updated = recomputeSeamFigure(base, f, offsetValueCm);
+          if (!updated) return f;
+          changed = true;
+          return updated;
         });
-        if (closest.distance < bestDistance) {
-          bestDistance = closest.distance;
-          bestPoint = { x: closest.x, y: closest.y };
+        return changed ? next : prev;
+      },
+      false
+    );
+  }, [offsetValueCm, setFigures]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const ro = new ResizeObserver(() => {
+      setSize({ width: el.clientWidth, height: el.clientHeight });
+    });
+    ro.observe(el);
+    setSize({ width: el.clientWidth, height: el.clientHeight });
+    return () => ro.disconnect();
+  }, []);
+
+  const viewportWorld = useMemo(() => {
+    const w0 = -position.x / scale;
+    const h0 = -position.y / scale;
+    return {
+      x0: w0,
+      y0: h0,
+      x1: w0 + size.width / scale,
+      y1: h0 + size.height / scale,
+    };
+  }, [position.x, position.y, scale, size.width, size.height]);
+
+  const gridLines = useMemo(() => {
+    if (!showGrid) return [] as Array<{ points: number[] }>; // local to world
+    const lines: Array<{ points: number[] }> = [];
+
+    // Keep grid aligned with the ruler's unit scale.
+    // pixelsPerUnit defines how many screen pixels correspond to 1 unit (e.g. 1 cm).
+    const step = Math.max(4, pixelsPerUnit);
+
+    const startX = Math.floor(viewportWorld.x0 / step) * step;
+    const endX = Math.ceil(viewportWorld.x1 / step) * step;
+    const startY = Math.floor(viewportWorld.y0 / step) * step;
+    const endY = Math.ceil(viewportWorld.y1 / step) * step;
+
+    for (let x = startX; x <= endX; x += step) {
+      lines.push({ points: [x, startY, x, endY] });
+    }
+
+    for (let y = startY; y <= endY; y += step) {
+      lines.push({ points: [startX, y, endX, y] });
+    }
+
+    return lines;
+  }, [pixelsPerUnit, showGrid, viewportWorld]);
+
+  const handleWheel = useCallback(
+    (e: Konva.KonvaEventObject<WheelEvent>) => {
+      e.evt.preventDefault();
+      const stage = stageRef.current;
+      if (!stage) return;
+
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      const direction = e.evt.deltaY > 0 ? -1 : 1;
+      const factor = direction > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
+      const nextScale = clamp(scale * factor, MIN_ZOOM_SCALE, MAX_ZOOM_SCALE);
+
+      const mousePointTo = {
+        x: (pointer.x - position.x) / scale,
+        y: (pointer.y - position.y) / scale,
+      };
+
+      const nextPosition = {
+        x: pointer.x - mousePointTo.x * nextScale,
+        y: pointer.y - mousePointTo.y * nextScale,
+      };
+
+      setScale(nextScale);
+      setPosition(nextPosition);
+    },
+    [position.x, position.y, scale, setPosition, setScale]
+  );
+
+  const handlePointerDown = useCallback(
+    (e: Konva.KonvaEventObject<PointerEvent>) => {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const pos = stage.getPointerPosition();
+      if (!pos) return;
+
+      // Background click clears selection
+      if (e.target === stage) {
+        setSelectedFigureId(null);
+      }
+
+      // Pan tool or middle mouse
+      if (tool === "pan" || e.evt.button === 1) {
+        setIsPanning(true);
+        lastPointerRef.current = { x: pos.x, y: pos.y };
+        return;
+      }
+
+      const world = {
+        x: (pos.x - position.x) / scale,
+        y: (pos.y - position.y) / scale,
+      };
+
+      if (tool === "measure") {
+        setMeasureDraft({
+          startWorld: world,
+          endWorld: world,
+          snappedEndWorld: world,
+          isSnapped: false,
+        });
+        return;
+      }
+
+      if (tool === "dart") {
+        if (!selectedFigure) return;
+        const local = worldToFigureLocal(selectedFigure, world);
+
+        if (!dartDraft) {
+          if (!hoveredEdge || hoveredEdge.figureId !== selectedFigure.id) return;
+          setDartDraft({
+            figureId: selectedFigure.id,
+            step: "pickB",
+            a: hoveredEdge,
+            b: null,
+            currentWorld: world,
+          });
+          return;
         }
-      }
-    }
 
-    return {
-      point: bestPoint || pos,
-      isSnapped: Boolean(bestPoint),
-    };
-  };
+        if (dartDraft.step === "pickB") {
+          if (!hoveredEdge || hoveredEdge.figureId !== selectedFigure.id) return;
+          if (dist(dartDraft.a!.pointLocal, hoveredEdge.pointLocal) < 6) return;
+          setDartDraft({
+            ...dartDraft,
+            step: "pickApex",
+            b: hoveredEdge,
+            currentWorld: world,
+          });
+          return;
+        }
 
-  const beginPan = (stage: Konva.Stage) => {
-    setIsPanDrag(true);
-    stage.draggable(true);
-    stage.startDrag();
-  };
+        // pickApex
+        const aLocal = dartDraft.a!.pointLocal;
+        const bLocal = dartDraft.b!.pointLocal;
+        const apexLocal = local;
 
-  const normalizeRectangle = (
-    start: { x: number; y: number },
-    end: { x: number; y: number }
-  ) => {
-    const width = end.x - start.x;
-    const height = end.y - start.y;
-
-    return {
-      x: width < 0 ? end.x : start.x,
-      y: height < 0 ? end.y : start.y,
-      width: Math.abs(width),
-      height: Math.abs(height),
-    };
-  };
-
-  const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    const stage = e.target.getStage();
-    if (!stage) return;
-
-    const isMiddleButton = e.evt.button === 1;
-    const isBackground =
-      e.target === stage || e.target.name() === "workspace-background";
-
-    if (
-      isMiddleButton ||
-      isSpacePressed ||
-      tool === "pan" ||
-      ((tool === "select" || tool === "node") && isBackground)
-    ) {
-      // Deselect if clicking on background with select or node tool
-      if ((tool === "select" || tool === "node") && isBackground) {
-        setSelectedShapeId(null);
-        setSelectedNodeIndex(null);
-      }
-      beginPan(stage);
-      return;
-    }
-
-    if (tool === "dart") {
-      if (isBackground) {
-        setSelectedShapeId(null);
-        setSelectedNodeIndex(null);
-        setDartTargetId(null);
+        setFigures((prev) =>
+          prev.map((f) => {
+            if (f.id !== selectedFigure.id) return f;
+            const next = insertDartIntoFigure(f, aLocal, bLocal, apexLocal);
+            return next ?? f;
+          })
+        );
         setDartDraft(null);
-        dartDragRef.current = null;
         return;
       }
 
-      // Ignore double-click: dart is a click+drag gesture.
-      if ((e.evt as MouseEvent).detail && (e.evt as MouseEvent).detail > 1) {
+      if (
+        tool === "node" &&
+        hoveredEdge &&
+        selectedFigureId &&
+        hoveredEdge.figureId === selectedFigureId
+      ) {
+        setFigures((prev) =>
+          prev.map((f) => {
+            if (f.id !== selectedFigureId) return f;
+            const res = splitFigureEdge(f, hoveredEdge.edgeId, hoveredEdge.t);
+            if (res.newNodeId) {
+              setNodeSelection({
+                figureId: selectedFigureId,
+                nodeId: res.newNodeId,
+                handle: null,
+              });
+              setHoveredEdge(null);
+            }
+            return res.figure;
+          })
+        );
         return;
       }
 
-      // Start dart draft only when we have a valid edge snap.
-      const hover = dartHover;
-      if (!hover) return;
+      if (tool === "curve") {
+        // Multi-click cubic: click to add points, double-click to finish.
+        if (e.evt.detail >= 2 && curveDraft) {
+          const pts = curveDraft.pointsWorld;
+          const first = pts[0];
+          const distToStart = len(sub(world, first));
+          const closed = pts.length >= 3 && distToStart < 12;
+          const finalized = makeCurveFromPoints(pts, closed, "aci7");
+          if (finalized) {
+            setFigures((prev) => [...prev, finalized]);
+            setSelectedFigureId(finalized.id);
+          }
+          setCurveDraft(null);
+          return;
+        }
 
-      const targetShape = shapes.find((s) => s.id === hover.shapeId);
-      if (!targetShape) return;
-      const basePoly = getBasePolygonPointsLocal(targetShape);
-      if (basePoly.length < 3) return;
+        if (!curveDraft) {
+          setCurveDraft({ pointsWorld: [world], currentWorld: world });
+          return;
+        }
 
-      const a = basePoly[hover.segmentIndex];
-      const b = basePoly[(hover.segmentIndex + 1) % basePoly.length];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const segLen = Math.sqrt(dx * dx + dy * dy);
-      if (segLen < 1e-6) return;
-      const ux = dx / segLen;
-      const uy = dy / segLen;
-
-      const halfOpeningPx =
-        Math.max(MIN_DART_OPENING_CM, dartOpeningCm / 2) * PX_PER_CM;
-      const maxLeftPx = hover.t * segLen;
-      const maxRightPx = (1 - hover.t) * segLen;
-      const safeLeft = Math.min(halfOpeningPx, maxLeftPx);
-      const safeRight = Math.min(halfOpeningPx, maxRightPx);
-
-      const centerLocal = hover.snapLocal;
-      const baseLeftLocal = {
-        x: centerLocal.x - ux * safeLeft,
-        y: centerLocal.y - uy * safeLeft,
-      };
-      const baseRightLocal = {
-        x: centerLocal.x + ux * safeRight,
-        y: centerLocal.y + uy * safeRight,
-      };
-
-      const normal = getPolygonInwardNormal(basePoly, hover.segmentIndex);
-      const defaultDepthPx = Math.max(MIN_DART_DEPTH_CM, dartDepthCm) * PX_PER_CM;
-      const apexLocal = {
-        x: centerLocal.x + normal.x * defaultDepthPx,
-        y: centerLocal.y + normal.y * defaultDepthPx,
-      };
-
-      setSelectedShapeId(hover.shapeId);
-      setDartTargetId(hover.shapeId);
-      setDartDraft({
-        shapeId: hover.shapeId,
-        segmentIndex: hover.segmentIndex,
-        anchorS: hover.anchorS,
-        baseLeftLocal,
-        baseRightLocal,
-        centerLocal,
-        apexLocal,
-      });
-
-      const stagePos = getRelativePointer(stage);
-      if (stagePos) {
-        dartDragRef.current = { startWorld: stagePos, didDrag: false };
-      } else {
-        dartDragRef.current = { startWorld: { x: 0, y: 0 }, didDrag: false };
+        setCurveDraft((prev) =>
+          prev
+            ? {
+                pointsWorld: [...prev.pointsWorld, world],
+                currentWorld: world,
+              }
+            : { pointsWorld: [world], currentWorld: world }
+        );
+        return;
       }
-      return;
-    }
 
-    // Tools that act on an existing shape (they should NOT start a draw gesture).
-    // Their behavior is triggered by clicking a shape (handled in handleShapeClick).
-    if (tool === "offset" || tool === "mirror" || tool === "unfold") {
-      if (isBackground) {
-        setSelectedShapeId(null);
-        setSelectedNodeIndex(null);
+      if (tool === "line" || tool === "rectangle" || tool === "circle") {
+        setDraft({ tool, startWorld: world, currentWorld: world });
       }
-      return;
-    }
+    },
+    [
+      curveDraft,
+      dartDraft,
+      position.x,
+      position.y,
+      scale,
+      setFigures,
+      setSelectedFigureId,
+      hoveredEdge,
+      selectedFigureId,
+      selectedFigure,
+      tool,
+    ]
+  );
 
-    if (tool === "select" || tool === "node") {
-      // Handle selection logic here if needed, Konva handles click on shapes usually
-      if (isBackground) {
-        setSelectedShapeId(null);
-        setSelectedNodeIndex(null);
+  const handlePointerMove = useCallback(
+    (e: Konva.KonvaEventObject<PointerEvent>) => {
+      void e;
+      const stage = stageRef.current;
+      if (!stage) return;
+      const pos = stage.getPointerPosition();
+      if (!pos) return;
+
+      if (isPanning) {
+        const last = lastPointerRef.current;
+        if (!last) return;
+        const dx = pos.x - last.x;
+        const dy = pos.y - last.y;
+        lastPointerRef.current = { x: pos.x, y: pos.y };
+        setPosition({ x: position.x + dx, y: position.y + dy });
+        return;
       }
+
+      if ((tool === "node" || tool === "dart") && selectedFigure) {
+        const world = {
+          x: (pos.x - position.x) / scale,
+          y: (pos.y - position.y) / scale,
+        };
+        const local = worldToFigureLocal(selectedFigure, world);
+
+        if (tool === "dart") {
+          setDartDraft((prev) => (prev ? { ...prev, currentWorld: world } : prev));
+        }
+
+        const hit = findNearestEdge(selectedFigure, local);
+        const threshold = 10 / scale;
+        setHoveredEdge(hit.best && hit.bestDist <= threshold ? hit.best : null);
+      }
+
+      if (tool === "measure" && measureDraft) {
+        const world = {
+          x: (pos.x - position.x) / scale,
+          y: (pos.y - position.y) / scale,
+        };
+
+        // Snap to closest point on any figure polyline.
+        let bestD = Number.POSITIVE_INFINITY;
+        let bestPoint = world;
+        for (const fig of figures) {
+          const poly = figureWorldPolyline(fig, 60);
+          const hit = nearestOnPolylineWorld(world, poly);
+          if (!hit) continue;
+          if (hit.d < bestD) {
+            bestD = hit.d;
+            bestPoint = hit.point;
+          }
+        }
+
+        const thresholdWorld = measureSnapStrengthPx / scale;
+        const isSnapped = bestD <= thresholdWorld;
+        setMeasureDraft((prev) =>
+          prev
+            ? {
+                ...prev,
+                endWorld: world,
+                snappedEndWorld: isSnapped ? bestPoint : world,
+                isSnapped,
+              }
+            : prev
+        );
+        return;
+      }
+
+      if (!draft) return;
+
+      const world = {
+        x: (pos.x - position.x) / scale,
+        y: (pos.y - position.y) / scale,
+      };
+
+      setDraft({ ...draft, currentWorld: world });
+    },
+    [
+      draft,
+      figures,
+      isPanning,
+      measureDraft,
+      measureSnapStrengthPx,
+      position.x,
+      position.y,
+      scale,
+      selectedFigure,
+      setPosition,
+      tool,
+    ]
+  );
+
+  const handleCurvePointerMove = useCallback(
+    (e: Konva.KonvaEventObject<PointerEvent>) => {
+      void e;
+      if (!curveDraft) return;
+      const stage = stageRef.current;
+      if (!stage) return;
+      const pos = stage.getPointerPosition();
+      if (!pos) return;
+
+      const world = {
+        x: (pos.x - position.x) / scale,
+        y: (pos.y - position.y) / scale,
+      };
+
+      setCurveDraft((prev) => (prev ? { ...prev, currentWorld: world } : prev));
+    },
+    [curveDraft, position.x, position.y, scale]
+  );
+
+  const handlePointerUp = useCallback(() => {
+    if (isPanning) {
+      setIsPanning(false);
+      lastPointerRef.current = null;
       return;
     }
 
     if (tool === "measure") {
-      const pos = getRelativePointer(stage);
-      if (!pos) return;
-
-      const result = getMeasureMagneticResult(pos);
-
-      // Clear any previous measurement and start new one
-      setMeasureStart(result.point);
-      setMeasureEnd(result.point);
-      setMeasureSnapPreview(result.isSnapped ? result.point : null);
-      setIsMeasuring(true);
+      setMeasureDraft(null);
       return;
     }
 
-    // Only drawing tools start a new shape on mouse down.
-    if (
-      tool !== "rectangle" &&
-      tool !== "circle" &&
-      tool !== "line" &&
-      tool !== "curve"
-    ) {
+    if (!draft) return;
+
+    const a = draft.startWorld;
+    const b = draft.currentWorld;
+
+    const delta = sub(b, a);
+    if (len(delta) < 2) {
+      setDraft(null);
       return;
     }
 
-    const pos = getRelativePointer(stage);
-    if (!pos) return;
+    setFigures((prev) => {
+      const next = [...prev];
+      if (draft.tool === "line") next.push(makeLineFigure(a, b, "line", "aci7"));
+      if (draft.tool === "rectangle") next.push(makeRectFigure(a, b, "aci7"));
+      if (draft.tool === "circle") {
+        const radius = len(delta);
+        next.push(makeCircleFigure(a, radius, "aci7"));
+      }
+      return next;
+    });
 
-    isDrawing.current = true;
+    setDraft(null);
+  }, [draft, isPanning, setFigures, tool]);
 
-    const drawTool: DrawingTool = tool as DrawingTool;
-    const newShape: Shape = {
-      id: crypto.randomUUID(),
-      tool: drawTool,
-      x: pos.x,
-      y: pos.y,
-      width: 0,
-      height: 0,
-      radius: 0,
-      points:
-        drawTool === "rectangle"
-          ? createRectanglePoints(0, 0)
-          : drawTool === "circle"
-            ? createCirclePoints(0)
-            : drawTool === "line" || drawTool === "curve"
-              ? [0, 0]
-              : [],
-      controlPoint: drawTool === "curve" ? { x: 0, y: 0 } : undefined,
-      stroke: DEFAULT_STROKE,
-      strokeWidth: 2,
-      fill:
-        drawTool === "rectangle" || drawTool === "circle"
-          ? DEFAULT_FILL
-          : undefined,
+  const measureOverlay = useMemo(() => {
+    if (tool !== "measure" || !measureDraft) return null;
+    const a = measureDraft.startWorld;
+    const b = measureDraft.snappedEndWorld;
+    const dPx = len(sub(b, a));
+    const dCm = dPx / PX_PER_CM;
+    const label = `${dCm.toFixed(2)} cm`;
+
+    const tx = b.x + 8 / scale;
+    const ty = b.y + 8 / scale;
+
+    return (
+      <>
+        <Line
+          points={[a.x, a.y, b.x, b.y]}
+          stroke={previewStroke}
+          strokeWidth={1 / scale}
+          listening={false}
+        />
+        <Circle
+          x={a.x}
+          y={a.y}
+          radius={3 / scale}
+          fill={previewStroke}
+          listening={false}
+        />
+        <Circle
+          x={b.x}
+          y={b.y}
+          radius={3 / scale}
+          fill={measureDraft.isSnapped ? "#2563eb" : previewStroke}
+          listening={false}
+        />
+        <Text
+          x={tx}
+          y={ty}
+          text={label}
+          fontSize={12 / scale}
+          fill={previewStroke}
+          listening={false}
+        />
+      </>
+    );
+  }, [measureDraft, previewStroke, scale, tool]);
+
+  useEffect(() => {
+    const onKeyDown = (evt: KeyboardEvent) => {
+      if (evt.key === "Escape") {
+        setDraft(null);
+        setCurveDraft(null);
+        dragNodeRef.current = null;
+        dragHandleRef.current = null;
+      }
+
+      if (tool === "curve" && evt.key === "Enter" && curveDraft) {
+        const pts = curveDraft.pointsWorld;
+        const finalized = makeCurveFromPoints(pts, false, "aci7");
+        if (finalized) {
+          setFigures((prev) => [...prev, finalized]);
+          setSelectedFigureId(finalized.id);
+        }
+        setCurveDraft(null);
+      }
     };
 
-    currentShape.current = newShape;
-    currentShapeIndex.current = shapes.length;
-    setShapes([...shapes, newShape], false); // Don't save to history yet (temporary)
-  };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [curveDraft, setFigures, setSelectedFigureId, tool]);
 
-  const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (tool === "dart") {
-      const stage = e.target.getStage();
-      if (!stage) return;
+  const pageGuides = useMemo(() => {
+    if (!showPageGuides) return null;
+    const { widthCm, heightCm } = getPaperDimensionsCm(
+      pageGuideSettings.paperSize,
+      pageGuideSettings.orientation
+    );
+    const w = widthCm * PX_PER_CM;
+    const h = heightCm * PX_PER_CM;
+    const margin = pageGuideSettings.marginCm * PX_PER_CM;
 
-      const pos = getRelativePointer(stage);
-      if (!pos) return;
+    return (
+      <>
+        <Rect
+          x={0}
+          y={0}
+          width={w}
+          height={h}
+          stroke={pageGuideStroke}
+          strokeWidth={1}
+          listening={false}
+        />
+        <Rect
+          x={margin}
+          y={margin}
+          width={Math.max(0, w - 2 * margin)}
+          height={Math.max(0, h - 2 * margin)}
+          stroke={pageGuideInnerStroke}
+          strokeWidth={1}
+          dash={[6, 6]}
+          listening={false}
+        />
+      </>
+    );
+  }, [
+    pageGuideInnerStroke,
+    pageGuideSettings.marginCm,
+    pageGuideSettings.orientation,
+    pageGuideSettings.paperSize,
+    pageGuideStroke,
+    showPageGuides,
+  ]);
 
-      // If we're drafting a dart, update apex by dragging.
-      if (dartDraft) {
-        const shape = shapes.find((s) => s.id === dartDraft.shapeId);
-        if (!shape) return;
-        const basePoly = getBasePolygonPointsLocal(shape);
-        if (basePoly.length < 3) return;
+  const draftPreview = useMemo(() => {
+    if (!draft) return null;
+    const a = draft.startWorld;
+    const b = draft.currentWorld;
 
-        const local = worldToLocalPoint(shape, pos.x, pos.y);
-        const normal = getPolygonInwardNormal(basePoly, dartDraft.segmentIndex);
-        const vx = local.x - dartDraft.centerLocal.x;
-        const vy = local.y - dartDraft.centerLocal.y;
-        const depthPx = Math.max(
-          MIN_DART_DEPTH_CM * PX_PER_CM,
-          vx * normal.x + vy * normal.y
-        );
-
-        // Mark as a real drag only after a small movement threshold.
-        if (dartDragRef.current) {
-          const dxW = pos.x - dartDragRef.current.startWorld.x;
-          const dyW = pos.y - dartDragRef.current.startWorld.y;
-          const distW = Math.sqrt(dxW * dxW + dyW * dyW);
-          if (distW > 4 / stageScale) {
-            dartDragRef.current.didDrag = true;
-          }
-        }
-
-        const apexLocal = {
-          x: dartDraft.centerLocal.x + normal.x * depthPx,
-          y: dartDraft.centerLocal.y + normal.y * depthPx,
-        };
-
-        setDartDraft({ ...dartDraft, apexLocal });
-        return;
-      }
-
-      const thresholdWorld = 14 / stageScale;
-      let best: {
-        shapeId: string;
-        anchorS: number;
-        segmentIndex: number;
-        t: number;
-        snapLocal: { x: number; y: number };
-        snapWorld: { x: number; y: number };
-        dist: number;
-      } | null = null;
-
-      for (const shape of shapes) {
-        if (!isDartEligibleShape(shape)) continue;
-        const local = worldToLocalPoint(shape, pos.x, pos.y);
-        const snap = getDartSnapOnShape(shape, local);
-        if (!snap) continue;
-        if (snap.dist > thresholdWorld) continue;
-        const snapWorld = localToWorldPoint(
-          shape,
-          snap.snapPoint.x,
-          snap.snapPoint.y
-        );
-        if (!best || snap.dist < best.dist) {
-          best = {
-            shapeId: shape.id,
-            anchorS: snap.anchorS,
-            segmentIndex: snap.segmentIndex,
-            t: snap.t,
-            snapLocal: snap.snapPoint,
-            snapWorld,
-            dist: snap.dist,
-          };
-        }
-      }
-
-      setDartHover(
-        best
-          ? {
-              shapeId: best.shapeId,
-              anchorS: best.anchorS,
-              segmentIndex: best.segmentIndex,
-              t: best.t,
-              snapLocal: best.snapLocal,
-              snapWorld: best.snapWorld,
-            }
-          : null
+    if (draft.tool === "circle") {
+      const r = len(sub(b, a));
+      const fig = makeCircleFigure(a, r, "aci7");
+      const pts = figureLocalPolyline(fig, 40);
+      return (
+        <Group x={fig.x} y={fig.y} rotation={fig.rotation} listening={false}>
+          <Line
+            points={pts}
+            stroke={previewStroke}
+            strokeWidth={1 / scale}
+            dash={previewDash}
+            closed
+          />
+        </Group>
       );
-      return;
     }
 
-    // Preview snap before starting measure
-    if (tool === "measure" && !isMeasuring) {
-      const stage = e.target.getStage();
-      if (!stage) return;
-
-      const pos = getRelativePointer(stage);
-      if (!pos) return;
-
-      const result = getMeasureMagneticResult(pos);
-      setMeasureSnapPreview(result.isSnapped ? result.point : null);
-      return;
-    }
-
-    // Handle measure tool
-    if (isMeasuring) {
-      const stage = e.target.getStage();
-      if (!stage) return;
-
-      const pos = getRelativePointer(stage);
-      if (!pos) return;
-
-      const result = getMeasureMagneticResult(pos);
-      setMeasureEnd(result.point);
-      setMeasureSnapPreview(result.isSnapped ? result.point : null);
-      return;
-    }
-
-    if (!isDrawing.current) return;
-
-    const stage = e.target.getStage();
-    if (!stage) return;
-
-    const pos = getRelativePointer(stage);
-    if (!pos) return;
-
-    const lastShape = currentShape.current;
-    if (!lastShape) return;
-
-    const shapeIndex = currentShapeIndex.current;
-    if (shapeIndex === -1) return;
-
-    const updatedShapes = shapes.slice();
-
-    if (lastShape.tool === "rectangle") {
-        const rect = normalizeRectangle({ x: lastShape.x, y: lastShape.y }, pos);
-
-      // If SHIFT is pressed, force 1:1 aspect ratio (square)
-      if (isShiftPressed) {
-        const size = Math.min(rect.width, rect.height);
-        rect.width = size;
-        rect.height = size;
-      }
-
-      updatedShapes[shapeIndex] = {
-        ...lastShape,
-        width: rect.width,
-        height: rect.height,
-        x: rect.x,
-        y: rect.y,
-        points: createRectanglePoints(rect.width, rect.height),
-      };
-    } else if (lastShape.tool === "circle") {
-      const dx = pos.x - lastShape.x;
-      const dy = pos.y - lastShape.y;
-
-      // Circles always use diagonal distance for radius (naturally perfect circles)
-      // SHIFT key has no effect on circle behavior
-      const radius = Math.sqrt(dx * dx + dy * dy);
-
-      updatedShapes[shapeIndex] = {
-        ...lastShape,
-        radius,
-        points: createCirclePoints(radius),
-      };
-    } else if (lastShape.tool === "line") {
-      updatedShapes[shapeIndex] = {
-        ...lastShape,
-        points: [0, 0, pos.x - lastShape.x, pos.y - lastShape.y],
-      };
-    } else if (lastShape.tool === "curve") {
-      // Calculate midpoint for control point (relative to shape origin)
-      const endX = pos.x - lastShape.x;
-      const endY = pos.y - lastShape.y;
-      const midX = endX / 2;
-      const midY = endY / 2;
-      updatedShapes[shapeIndex] = {
-        ...lastShape,
-        points: [0, 0, endX, endY],
-        controlPoint: { x: midX, y: midY },
-      };
-    }
-
-    setShapes(updatedShapes, false); // Don't save to history during drawing
-  };
-
-  const handleStageEnter = () => {
-    setIsKeyboardActive(true);
-  };
-
-  const handleStageLeave = () => {
-    setIsKeyboardActive(false);
-    handleMouseUp();
-  };
-
-  const handleMouseUp = () => {
-    // Finalize dart draft (bake into points)
-    if (tool === "dart" && dartDraft) {
-      const draft = dartDraft;
-      const dartId = crypto.randomUUID();
-
-      const didDrag = dartDragRef.current?.didDrag ?? false;
-      dartDragRef.current = null;
-
-      // Click without drag cancels the gesture (no-op).
-      if (!didDrag) {
-        setDartDraft(null);
-        return;
-      }
-
-      setDartDraft(null);
-
-      setShapes((prev) => {
-        const next = prev.map((shape) => {
-          if (shape.id !== draft.shapeId) return shape;
-
-          const basePoly = getBasePolygonPointsLocal(shape);
-          if (basePoly.length < 3) return shape;
-
-          // Build new points by splitting the target segment and inserting 3 vertices.
-          const n = basePoly.length;
-          const newPoly: Point[] = [];
-          for (let i = 0; i < n; i++) {
-            newPoly.push(basePoly[i]);
-            if (i === draft.segmentIndex) {
-              newPoly.push(
-                { ...draft.baseLeftLocal },
-                { ...draft.apexLocal },
-                { ...draft.baseRightLocal }
-              );
-            }
-          }
-
-          const insertVertexIndex = draft.segmentIndex + 1;
-          const baked = {
-            id: dartId,
-            baseLeftIndex: insertVertexIndex,
-            apexIndex: insertVertexIndex + 1,
-            baseRightIndex: insertVertexIndex + 2,
-          };
-
-          // We inserted 3 vertices at insertVertexIndex; shift existing baked indices after that.
-          const shiftedBaked = (shape.bakedDarts ?? []).map((d) => {
-            const shiftIndex = (idx: number) =>
-              idx >= insertVertexIndex ? idx + 3 : idx;
-            return {
-              ...d,
-              baseLeftIndex: shiftIndex(d.baseLeftIndex),
-              apexIndex: shiftIndex(d.apexIndex),
-              baseRightIndex: shiftIndex(d.baseRightIndex),
-            };
-          });
-
-          const toNumbers = (pts: Point[]) => {
-            const arr: number[] = [];
-            for (const p of pts) arr.push(p.x, p.y);
-            return arr;
-          };
-
-          const updated: Shape = {
-            ...shape,
-            tool: "polygon",
-            width: undefined,
-            height: undefined,
-            radius: undefined,
-            points: toNumbers(newPoly),
-            darts: undefined,
-            dartSourcePoints: undefined,
-            bakedDarts: [...shiftedBaked, baked],
-          };
-
-          return updated;
-        });
-
-        return recomputeSeamsForParent(next, draft.shapeId);
-      }, true);
-      return;
-    }
-
-    // Clear measure tool state
-    if (isMeasuring) {
-      setIsMeasuring(false);
-      setMeasureStart(null);
-      setMeasureEnd(null);
-      return;
-    }
-
-    // If we were drawing, save the final state to history
-    if (isDrawing.current && currentShape.current) {
-      // Use identity function to capture and save current state to history
-      // (previous updates used saveHistory=false, so we need to commit to history now)
-      setShapes((current) => current, true);
-    }
-
-    isDrawing.current = false;
-    currentShape.current = null;
-    currentShapeIndex.current = -1;
-
-    if (!isSpacePressed && tool !== "pan") {
-      setIsPanDrag(false);
-      if (stageRef.current?.isDragging()) {
-        stageRef.current.stopDrag();
-      }
-      stageRef.current?.draggable(false);
-    }
-  };
-
-  const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
-    e.evt.preventDefault();
-    const stage = stageRef.current;
-    if (!stage) return;
-
-    const oldScale = stageScale;
-    const pointer = stage.getPointerPosition();
-    if (!pointer) return;
-
-    const position = stage.position();
-    const mousePointTo = {
-      x: (pointer.x - position.x) / oldScale,
-      y: (pointer.y - position.y) / oldScale,
-    };
-
-    const newScale =
-      e.evt.deltaY > 0 ? oldScale / ZOOM_FACTOR : oldScale * ZOOM_FACTOR;
-    const clampedScale = Math.min(
-      Math.max(newScale, MIN_ZOOM_SCALE),
-      MAX_ZOOM_SCALE
-    );
-
-    const newPosition = {
-      x: pointer.x - mousePointTo.x * clampedScale,
-      y: pointer.y - mousePointTo.y * clampedScale,
-    };
-
-    setStageScale(clampedScale);
-    setStagePosition(newPosition);
-  };
-
-  const handleDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
-    // Only update stage position if the stage itself is being dragged
-    if (e.target === stageRef.current) {
-      const stage = e.target as Konva.Stage;
-      setStagePosition({ x: stage.x(), y: stage.y() });
-    }
-  };
-
-  const handleShapeClick = (id: string) => {
-    const parentId = getParentIdForShape(id);
-
-    // If dart tool is active, select the clicked shape as target.
-    if (tool === "dart") {
-      const base = shapes.find((s) => s.id === parentId);
-      if (!base) return;
-
-      setSelectedShapeId(parentId);
-      setDartTargetId(parentId);
-
-      return;
-    }
-
-    // If mirror tool is active, create a mirrored copy of the clicked shape
-    if (tool === "mirror") {
-      const base = shapes.find((s) => s.id === parentId);
-      if (!base) return;
-
-      setSelectedShapeId(parentId);
-
-      // Get axis position from shape center
-      const axisPosition = getAxisPositionForShape(base, mirrorAxis, "center");
-
-      // Create mirrored shape
-      const mirrored = mirrorShape(base, mirrorAxis, axisPosition);
-
-      // Add the mirrored shape to canvas
-      setShapes((prev) => [...prev, mirrored]);
-
-      return;
-    }
-
-    // If unfold tool is active, unfold the clicked shape
-    if (tool === "unfold") {
-      const base = shapes.find((s) => s.id === parentId);
-      if (!base) return;
-
-      setSelectedShapeId(parentId);
-
-      // Check if shape can be unfolded
-      if (!canUnfoldShape(base)) {
-        // Shape can't be unfolded (only lines and curves supported)
-        return;
-      }
-
-      // Get suggested axis position
-      const axisPosition = getSuggestedUnfoldAxis(base, unfoldAxis);
-
-      // Create unfolded shape
-      const unfolded = unfoldShape(base, unfoldAxis, axisPosition);
-
-      if (!unfolded) return;
-
-      // Replace the original shape with the unfolded version
-      setShapes((prev) => {
-        return prev.map((shape) => {
-          if (shape.id === parentId) {
-            return unfolded;
-          }
-          return shape;
-        });
-      });
-
-      return;
-    }
-
-    // If offset tool is active, apply or edit seam allowance for the clicked shape
-    if (tool === "offset") {
-      const base = shapes.find((s) => s.id === parentId);
-      if (!base) return;
-
-      setSelectedShapeId(parentId);
-      setOffsetTargetId(parentId);
-
-      const existingSeams = shapes.filter(
-        (s) => s.kind === "seam" && s.parentId === parentId
+    if (draft.tool === "rectangle") {
+      const fig = makeRectFigure(a, b, "aci7");
+      const pts = figureLocalPolyline(fig, 10);
+      return (
+        <Group x={fig.x} y={fig.y} rotation={fig.rotation} listening={false}>
+          <Line
+            points={pts}
+            stroke={previewStroke}
+            strokeWidth={1 / scale}
+            dash={previewDash}
+            closed
+          />
+        </Group>
       );
-
-      // If already has seam allowance, just open editor (do not create another)
-      if (existingSeams.length > 0) {
-        return;
-      }
-
-      // Apply seam allowance with default value
-      setShapes((prev) => {
-        const alreadyHasSeams = prev.some(
-          (s) => s.kind === "seam" && s.parentId === parentId
-        );
-        if (alreadyHasSeams) return prev;
-
-        const latestBase = prev.find((s) => s.id === parentId);
-        if (!latestBase) return prev;
-        const nextSeams = upsertSeamAllowance(
-          latestBase,
-          [],
-          offsetValueCm,
-          PX_PER_CM
-        );
-        return [...prev, ...nextSeams];
-      });
-
-      return;
     }
 
-    // Normal selection behavior (clicking seam selects its parent)
-    if (tool === "select" || tool === "node") {
-      setSelectedShapeId(parentId);
-    }
-  };
-
-  const handleShapeDragEnd = (
-    id: string,
-    e: Konva.KonvaEventObject<DragEvent>
-  ) => {
-    const node = e.target;
-    seamDragRef.current = null;
-    setShapes((prev) => {
-      const updatedShapes = prev.map((shape) => {
-        if (shape.id === id) {
-          return {
-            ...shape,
-            x: node.x(),
-            y: node.y(),
-          };
-        }
-        return shape;
-      });
-
-      return recomputeSeamsForParent(updatedShapes, id);
-    });
-  };
-
-  const handleShapeTransformEnd = (
-    id: string,
-    e: Konva.KonvaEventObject<Event>
-  ) => {
-    const node = e.target;
-    const scaleX = node.scaleX();
-    const scaleY = node.scaleY();
-
-    // Reset scale to 1 and update width/height/radius instead
-    node.scaleX(1);
-    node.scaleY(1);
-
-    setShapes((prev) => {
-      const updatedShapes = prev.map((shape) => {
-        if (shape.id === id) {
-          const updated: Shape = {
-            ...shape,
-            x: node.x(),
-            y: node.y(),
-            rotation: node.rotation(),
-          };
-
-          if (shape.tool === "rectangle") {
-            updated.width = Math.max(5, (shape.width || 0) * scaleX);
-            updated.height = Math.max(5, (shape.height || 0) * scaleY);
-            updated.points = createRectanglePoints(
-              updated.width,
-              updated.height
-            );
-          } else if (shape.tool === "circle") {
-            updated.radius = Math.max(2.5, (shape.radius || 0) * scaleX);
-            updated.points = createCirclePoints(updated.radius);
-          } else if (shape.tool === "line" && shape.points) {
-            const scaledPoints = shape.points.map((point, index) => {
-              if (index % 2 === 0) {
-                return point * scaleX;
-              }
-              return point * scaleY;
-            });
-            updated.points = scaledPoints;
-          } else if (shape.tool === "curve" && shape.points && shape.controlPoint) {
-            const scaledPoints = shape.points.map((point, index) => {
-              if (index % 2 === 0) {
-                return point * scaleX;
-              }
-              return point * scaleY;
-            });
-            updated.points = scaledPoints;
-            updated.controlPoint = {
-              x: shape.controlPoint.x * scaleX,
-              y: shape.controlPoint.y * scaleY,
-            };
-          }
-
-          return updated;
-        }
-        return shape;
-      });
-
-      return recomputeSeamsForParent(updatedShapes, id);
-    });
-  };
-
-  const handleControlPointDragStart = (
-    e: Konva.KonvaEventObject<DragEvent>
-  ) => {
-    e.cancelBubble = true;
-  };
-
-  const handleControlPointDragMove = (
-    shapeId: string,
-    e: Konva.KonvaEventObject<DragEvent>
-  ) => {
-    e.cancelBubble = true;
-    const stage = e.target.getStage();
-    if (!stage) return;
-
-    const circle = e.target as Konva.Circle;
-    const absoluteCx = circle.x();
-    const absoluteCy = circle.y();
-
-    // Find the shape to get start/end points
-    const shape = shapes.find((s) => s.id === shapeId);
-    if (!shape || !shape.points || shape.points.length < 4) return;
-
-    // Convert to relative coordinates
-    const cx = absoluteCx - shape.x;
-    const cy = absoluteCy - shape.y;
-
-    const x1 = shape.points[0];
-    const y1 = shape.points[1];
-    const x2 = shape.points[2];
-    const y2 = shape.points[3];
-
-    // Calculate new curve points directly for performance (avoiding React state update during drag)
-    const curvePoints: number[] = [];
-    const steps = 50;
-
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const mt = 1 - t;
-      const mt2 = mt * mt;
-      const t2 = t * t;
-
-      const x = mt2 * x1 + 2 * mt * t * cx + t2 * x2;
-      const y = mt2 * y1 + 2 * mt * t * cy + t2 * y2;
-
-      curvePoints.push(x, y);
-    }
-
-    // Update the visual nodes directly
-    const layer = circle.getLayer();
-    if (layer) {
-      const curveLine = layer.findOne(`.curve-${shapeId}`) as Konva.Line;
-      if (curveLine) {
-        curveLine.points(curvePoints);
-      }
-
-      const guide1 = layer.findOne(`.guide1-${shapeId}`) as Konva.Line;
-      if (guide1) {
-        guide1.points([shape.x + x1, shape.y + y1, absoluteCx, absoluteCy]);
-      }
-
-      const guide2 = layer.findOne(`.guide2-${shapeId}`) as Konva.Line;
-      if (guide2) {
-        guide2.points([absoluteCx, absoluteCy, shape.x + x2, shape.y + y2]);
-      }
-    }
-  };
-
-  const handleControlPointDragEnd = (
-    shapeId: string,
-    e: Konva.KonvaEventObject<DragEvent>
-  ) => {
-    e.cancelBubble = true;
-    const circle = e.target as Konva.Circle;
-    const absoluteX = circle.x();
-    const absoluteY = circle.y();
-
-    setShapes((prev) => {
-      const updatedShapes = prev.map((shape) => {
-        if (shape.id === shapeId && shape.tool === "curve") {
-          return {
-            ...shape,
-            controlPoint: {
-              x: absoluteX - shape.x,
-              y: absoluteY - shape.y,
-            },
-          };
-        }
-        return shape;
-      });
-
-      return recomputeSeamsForParent(updatedShapes, shapeId);
-    });
-  };
-
-  const handleNodeAnchorDragStart = (shapeId: string, nodeIndex: number) => {
-    // Cache snap points at the start of drag to avoid recalculating on every move
-    cachedSnapPoints.current = getAllSnapPoints(shapes, shapeId, nodeIndex);
-  };
-
-  const handleNodeAnchorDragMove = (
-    shapeId: string,
-    nodeIndex: number,
-    e: Konva.KonvaEventObject<DragEvent>
-  ) => {
-    e.cancelBubble = true;
-    const anchor = e.target as Konva.Circle;
-    const stage = e.target.getStage();
-    if (!stage) return;
-
-    const shape = shapes.find((s) => s.id === shapeId);
-    if (!shape || !shape.points) return;
-
-    let absoluteX = anchor.x();
-    let absoluteY = anchor.y();
-
-    // Use cached snap points if available, otherwise calculate on-the-fly
-    const snapPoints =
-      cachedSnapPoints.current || getAllSnapPoints(shapes, shapeId, nodeIndex);
-
-    // Check for nearby snap point
-    const nearestSnap = findNearestSnapPoint(absoluteX, absoluteY, snapPoints);
-
-    if (nearestSnap) {
-      // Snap to the nearest point
-      absoluteX = nearestSnap.x;
-      absoluteY = nearestSnap.y;
-      anchor.x(absoluteX);
-      anchor.y(absoluteY);
-
-      // Show snap indicator
-      setActiveSnapPoint(nearestSnap);
-    } else {
-      // Clear snap indicator
-      setActiveSnapPoint(null);
-    }
-
-    // Convert to relative coordinates
-    const relativeX = absoluteX - shape.x;
-    const relativeY = absoluteY - shape.y;
-
-    // Update the points array
-    const updatedPoints = [...shape.points];
-    updatedPoints[nodeIndex * 2] = relativeX;
-    updatedPoints[nodeIndex * 2 + 1] = relativeY;
-
-    // Update the shape's visual representation immediately
-    const layer = anchor.getLayer();
-    if (layer) {
-      const shapeLine = layer.findOne(`#shape-${shapeId}`) as Konva.Line;
-      if (shapeLine) {
-        shapeLine.points(updatedPoints);
-      }
-    }
-  };
-
-  const handleNodeAnchorDragEnd = (
-    shapeId: string,
-    nodeIndex: number,
-    e: Konva.KonvaEventObject<DragEvent>
-  ) => {
-    e.cancelBubble = true;
-    const anchor = e.target as Konva.Circle;
-
-    let absoluteX = anchor.x();
-    let absoluteY = anchor.y();
-
-    // Use cached snap points if available, otherwise calculate on-the-fly
-    const snapPoints =
-      cachedSnapPoints.current || getAllSnapPoints(shapes, shapeId, nodeIndex);
-
-    // Check for nearby snap point and apply final snap
-    const nearestSnap = findNearestSnapPoint(absoluteX, absoluteY, snapPoints);
-
-    if (nearestSnap) {
-      absoluteX = nearestSnap.x;
-      absoluteY = nearestSnap.y;
-      anchor.x(absoluteX);
-      anchor.y(absoluteY);
-    }
-
-    // Clear snap indicator and cache
-    setActiveSnapPoint(null);
-    cachedSnapPoints.current = null;
-
-    setShapes((prev) => {
-      const updatedShapes = prev.map((shape) => {
-        if (shape.id === shapeId && shape.points) {
-          const relativeX = absoluteX - shape.x;
-          const relativeY = absoluteY - shape.y;
-
-          const updatedPoints = [...shape.points];
-          updatedPoints[nodeIndex * 2] = relativeX;
-          updatedPoints[nodeIndex * 2 + 1] = relativeY;
-
-          return {
-            ...shape,
-            points: updatedPoints,
-          };
-        }
-        return shape;
-      });
-
-      return recomputeSeamsForParent(updatedShapes, shapeId);
-    });
-  };
-
-
-  const cursor =
-    tool === "offset"
-      ? "pointer"
-      : tool === "dart"
-        ? dartDraft
-          ? "crosshair"
-          : "pointer"
-      : tool === "pan" || isSpacePressed || isPanDrag
-        ? isPanDrag
-          ? "grabbing"
-          : "grab"
-        : tool === "select" || tool === "node"
-          ? "default"
-          : "crosshair";
-
-  // Calculate measure tooltip data
-  const measureTooltipData = useMemo(() => {
-    if (!isMeasuring || !measureStart || !measureEnd) {
-      return null;
-    }
-    return calculateMeasureTooltip(
-      measureStart,
-      measureEnd,
-      stageScale,
-      stagePosition
+    // line
+    return (
+      <Line
+        points={[a.x, a.y, b.x, b.y]}
+        stroke={previewStroke}
+        strokeWidth={1 / scale}
+        dash={previewDash}
+        listening={false}
+      />
     );
-  }, [isMeasuring, measureStart, measureEnd, stageScale, stagePosition]);
+  }, [draft, previewDash, previewStroke, scale]);
 
-  const offsetTargetSeams = useMemo(() => {
-    if (!offsetTargetId) return [];
-    return shapes.filter(
-      (s) => s.kind === "seam" && s.parentId === offsetTargetId
+  const curveDraftPreview = useMemo(() => {
+    if (!curveDraft) return null;
+    const pts = [...curveDraft.pointsWorld, curveDraft.currentWorld];
+    if (pts.length < 2) return null;
+
+    const fig = makeCurveFromPoints(pts, false, "aci7");
+    if (!fig) return null;
+    const poly = figureLocalPolyline(fig, 60);
+    return (
+      <Line
+        points={poly}
+        stroke={previewStroke}
+        strokeWidth={1 / scale}
+        dash={previewDash}
+        listening={false}
+        lineCap="round"
+        lineJoin="round"
+      />
     );
-  }, [offsetTargetId, shapes]);
+  }, [curveDraft, previewDash, previewStroke, scale]);
 
-  const offsetInputValueCm =
-    offsetTargetSeams[0]?.offsetCm ?? offsetValueCm;
+  const nodeOverlay = useMemo(() => {
+    if (tool !== "node" || !selectedFigure) return null;
 
-  const hasOffsetTarget = Boolean(offsetTargetId);
+    const rNode = 6 / scale;
+    const rHandle = 4 / scale;
 
-  return (
-    <div
-      ref={containerRef}
-      className="h-full w-full bg-canvas-bg dark:bg-canvas-bg-dark relative flex flex-col"
-    >
-      {showRulers && (
-        <div className="flex h-6 shrink-0 z-10 bg-surface-light dark:bg-surface-dark border-b border-gray-200 dark:border-gray-700">
-          <div className="w-6 shrink-0 border-r border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark z-20"></div>
-          <div className="flex-1 relative overflow-hidden">
-            <Ruler orientation="horizontal" />
-          </div>
-        </div>
-      )}
+    return (
+      <Group
+        x={selectedFigure.x}
+        y={selectedFigure.y}
+        rotation={selectedFigure.rotation || 0}
+      >
+        {selectedFigure.nodes.map((n) => {
+          const inH = n.inHandle;
+          const outH = n.outHandle;
+          const isSelectedNode =
+            nodeSelection?.figureId === selectedFigure.id &&
+            nodeSelection.nodeId === n.id &&
+            nodeSelection.handle === null;
 
-      <div className="flex-1 flex min-h-0 relative">
-        {showRulers && (
-          <div className="w-6 shrink-0 h-full border-r border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark z-10 relative overflow-hidden">
-            <Ruler orientation="vertical" />
-          </div>
-        )}
-
-        <div className="flex-1 relative overflow-hidden">
-          <Stage
-            ref={stageRef}
-            width={stageSize.width - (showRulers ? RULER_THICKNESS : 0)}
-            height={stageSize.height - (showRulers ? RULER_THICKNESS : 0)}
-            scaleX={stageScale}
-            scaleY={stageScale}
-            x={stagePosition.x}
-            y={stagePosition.y}
-            draggable={isPanning}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseEnter={handleStageEnter}
-            onMouseLeave={handleStageLeave}
-            onWheel={handleWheel}
-            onDragMove={handleDragMove}
-            onDragEnd={handleDragMove}
-            className="h-full w-full"
-            style={{ cursor }}
-          >
-            <Layer>
-              <KonvaRect
-                x={-WORKSPACE_SIZE / 2}
-                y={-WORKSPACE_SIZE / 2}
-                width={WORKSPACE_SIZE}
-                height={WORKSPACE_SIZE}
-                fill={WORKSPACE_BACKGROUND}
-                name="workspace-background"
-              />
-
-              {/* Grid lines */}
-              {showGrid && gridLines}
-
-              {/* Page guides */}
-              {showPageGuides && pageGuideRects}
-
-              {shapes.map((shape) => {
-                const isSelected = shape.id === selectedShapeId;
-                const stroke = isSelected ? "#673b45" : shape.stroke; // Primary color for selection
-                const strokeWidth = isSelected
-                  ? shape.strokeWidth + 1
-                  : shape.strokeWidth;
-                const isSeam = shape.kind === "seam";
-                const isDraggable = tool === "select" && isSelected && !isSeam;
-                const showNodeAnchors = tool === "node" && isSelected && !isSeam;
-                const isListening = !isSeam || tool === "offset";
-
-                // For curve shapes, handle differently
-                if (shape.tool === "curve") {
-                  const points = shape.points || [];
-                  const cp = shape.controlPoint;
-
-                  if (points.length >= 4 && cp) {
-                    // Create quadratic Bézier curve points
-                    const x1 = points[0];
-                    const y1 = points[1];
-                    const x2 = points[2];
-                    const y2 = points[3];
-                    const cx = cp.x;
-                    const cy = cp.y;
-
-                    // Generate curve points using quadratic Bézier formula
-                    const curvePoints: number[] = [];
-                    const steps = 50; // Number of segments for smooth curve
-
-                    for (let i = 0; i <= steps; i++) {
-                      const t = i / steps;
-                      const mt = 1 - t;
-                      const mt2 = mt * mt;
-                      const t2 = t * t;
-
-                      // Quadratic Bézier formula: B(t) = (1-t)²P₀ + 2(1-t)tP₁ + t²P₂
-                      const x = mt2 * x1 + 2 * mt * t * cx + t2 * x2;
-                      const y = mt2 * y1 + 2 * mt * t * cy + t2 * y2;
-
-                      curvePoints.push(x, y);
-                    }
-
-                    return (
-                      <Fragment key={shape.id}>
-                        <Line
-                          ref={(node) => {
-                            if (node) {
-                              shapeRefs.current.set(shape.id, node);
-                            } else {
-                              shapeRefs.current.delete(shape.id);
-                            }
-                          }}
-                          id={`shape-${shape.id}`}
-                          name={`curve-${shape.id}`}
-                          x={shape.x}
-                          y={shape.y}
-                          points={curvePoints}
-                          stroke={stroke}
-                          strokeWidth={strokeWidth}
-                          dash={shape.dash}
-                          rotation={shape.rotation || 0}
-                          tension={0}
-                          lineCap="round"
-                          lineJoin="round"
-                          draggable={isDraggable}
-                          listening={isListening}
-                          onClick={() => handleShapeClick(shape.id)}
-                          onTap={() => handleShapeClick(shape.id)}
-                          onDragStart={(e) =>
-                            handleShapeDragStart(shape.id, e)
-                          }
-                          onDragMove={(e) => handleShapeDragMove(shape.id, e)}
-                          onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
-                          onTransformEnd={(e) =>
-                            handleShapeTransformEnd(shape.id, e)
-                          }
-                        />
-                        {/* Show control point anchor when selected with select tool */}
-                        {isSelected && tool === "select" && (
-                          <>
-                            {/* Line from start to control point */}
-                            <Line
-                              key={`${shape.id}-guide1`}
-                              name={`guide1-${shape.id}`}
-                              points={[
-                                shape.x + x1,
-                                shape.y + y1,
-                                shape.x + cx,
-                                shape.y + cy,
-                              ]}
-                              stroke="#673b45"
-                              strokeWidth={1}
-                              dash={[5, 5]}
-                              opacity={0.5}
-                              listening={false}
-                            />
-                            {/* Line from control point to end */}
-                            <Line
-                              key={`${shape.id}-guide2`}
-                              name={`guide2-${shape.id}`}
-                              points={[
-                                shape.x + cx,
-                                shape.y + cy,
-                                shape.x + x2,
-                                shape.y + y2,
-                              ]}
-                              stroke="#673b45"
-                              strokeWidth={1}
-                              dash={[5, 5]}
-                              opacity={0.5}
-                              listening={false}
-                            />
-                            {/* Draggable control point anchor */}
-                            <KonvaCircle
-                              key={`${shape.id}-control`}
-                              x={shape.x + cx}
-                              y={shape.y + cy}
-                              radius={CONTROL_POINT_RADIUS}
-                              fill="#673b45"
-                              stroke="#ffffff"
-                              strokeWidth={2}
-                              draggable={true}
-                              onDragStart={handleControlPointDragStart}
-                              onDragMove={(e) =>
-                                handleControlPointDragMove(shape.id, e)
-                              }
-                              onDragEnd={(e) =>
-                                handleControlPointDragEnd(shape.id, e)
-                              }
-                            />
-                          </>
-                        )}
-                        {/* Show node anchors when node tool is active */}
-                        {showNodeAnchors &&
-                          shape.points &&
-                          shape.points.map((_, index) => {
-                            if (index % 2 !== 0) return null; // Skip y coordinates
-                            const nodeIndex = index / 2;
-                            const nodeX = shape.x + shape.points![index];
-                            const nodeY = shape.y + shape.points![index + 1];
-                            const isNodeSelected =
-                              selectedNodeIndex === nodeIndex;
-
-                            return (
-                              <KonvaCircle
-                                key={`${shape.id}-node-${nodeIndex}`}
-                                x={nodeX}
-                                y={nodeY}
-                                radius={NODE_ANCHOR_RADIUS}
-                                fill={isNodeSelected ? "#ff6b6b" : "#673b45"}
-                                stroke="#ffffff"
-                                strokeWidth={2}
-                                draggable={true}
-                                onClick={() => setSelectedNodeIndex(nodeIndex)}
-                                onDragStart={() =>
-                                  handleNodeAnchorDragStart(shape.id, nodeIndex)
-                                }
-                                onDragMove={(e) =>
-                                  handleNodeAnchorDragMove(
-                                    shape.id,
-                                    nodeIndex,
-                                    e
-                                  )
-                                }
-                                onDragEnd={(e) =>
-                                  handleNodeAnchorDragEnd(
-                                    shape.id,
-                                    nodeIndex,
-                                    e
-                                  )
-                                }
-                              />
-                            );
-                          })}
-                      </Fragment>
-                    );
-                  }
-                  return null;
-                }
-
-                // For all other shapes (rectangle, circle, line), render as Line with points
-                if (!shape.points || shape.points.length === 0) return null;
-
-                const isClosed =
-                  shape.tool === "rectangle" ||
-                  shape.tool === "circle" ||
-                  shape.tool === "polygon";
-
-                return (
-                  <Fragment key={shape.id}>
-                    <Line
-                      ref={(node) => {
-                        if (node) {
-                          shapeRefs.current.set(shape.id, node);
-                        } else {
-                          shapeRefs.current.delete(shape.id);
-                        }
-                      }}
-                      id={`shape-${shape.id}`}
-                      x={shape.x}
-                      y={shape.y}
-                      points={shape.points}
-                      stroke={stroke}
-                      strokeWidth={strokeWidth}
-                      dash={shape.dash}
-                      fill={isClosed ? shape.fill : undefined}
-                      closed={isClosed}
-                      rotation={shape.rotation || 0}
-                      draggable={isDraggable}
-                      listening={isListening}
-                      onClick={() => handleShapeClick(shape.id)}
-                      onTap={() => handleShapeClick(shape.id)}
-                      onDragStart={(e) => handleShapeDragStart(shape.id, e)}
-                      onDragMove={(e) => handleShapeDragMove(shape.id, e)}
-                      onDragEnd={(e) => handleShapeDragEnd(shape.id, e)}
-                      onTransformEnd={(e) =>
-                        handleShapeTransformEnd(shape.id, e)
-                      }
-                    />
-                    {/* Show node anchors when node tool is active and shape is selected */}
-                    {showNodeAnchors &&
-                      shape.points.map((_, index) => {
-                        if (index % 2 !== 0) return null; // Skip y coordinates
-                        const nodeIndex = index / 2;
-                        const nodeX = shape.x + shape.points![index];
-                        const nodeY = shape.y + shape.points![index + 1];
-                        const isNodeSelected = selectedNodeIndex === nodeIndex;
-
-                        // Highlight adjacent segments
-                        const numNodes = shape.points!.length / 2;
-                        const prevIndex = (nodeIndex - 1 + numNodes) % numNodes;
-                        const nextIndex = (nodeIndex + 1) % numNodes;
-
-                        return (
-                          <Fragment key={`${shape.id}-node-${nodeIndex}`}>
-                            {/* Highlight segments adjacent to selected node.
-                                Only for closed shapes (rectangles, circles) since open shapes
-                                (lines) don't have well-defined "adjacent" segments in the same way. */}
-                            {isNodeSelected && isClosed && (
-                              <>
-                                <Line
-                                  points={[
-                                    shape.x + shape.points![prevIndex * 2],
-                                    shape.y + shape.points![prevIndex * 2 + 1],
-                                    nodeX,
-                                    nodeY,
-                                  ]}
-                                  stroke="#ff6b6b"
-                                  strokeWidth={strokeWidth + 2}
-                                  opacity={0.6}
-                                  listening={false}
-                                />
-                                <Line
-                                  points={[
-                                    nodeX,
-                                    nodeY,
-                                    shape.x + shape.points![nextIndex * 2],
-                                    shape.y + shape.points![nextIndex * 2 + 1],
-                                  ]}
-                                  stroke="#ff6b6b"
-                                  strokeWidth={strokeWidth + 2}
-                                  opacity={0.6}
-                                  listening={false}
-                                />
-                              </>
-                            )}
-                            <KonvaCircle
-                              x={nodeX}
-                              y={nodeY}
-                              radius={NODE_ANCHOR_RADIUS}
-                              fill={isNodeSelected ? "#ff6b6b" : "#673b45"}
-                              stroke="#ffffff"
-                              strokeWidth={2}
-                              draggable={true}
-                              onClick={() => setSelectedNodeIndex(nodeIndex)}
-                              onDragStart={() =>
-                                handleNodeAnchorDragStart(shape.id, nodeIndex)
-                              }
-                              onDragMove={(e) =>
-                                handleNodeAnchorDragMove(shape.id, nodeIndex, e)
-                              }
-                              onDragEnd={(e) =>
-                                handleNodeAnchorDragEnd(shape.id, nodeIndex, e)
-                              }
-                            />
-                          </Fragment>
-                        );
-                      })}
-                  </Fragment>
-                );
-              })}
-
-              {/* Dart (pence) overlay: full dashed triangle + dashed centerline */}
-              {shapes.map((shape) => {
-                const baked = shape.bakedDarts ?? [];
-                if (baked.length === 0 || !shape.points) return null;
-
-                const pts = toLocalPoints(shape.points);
-                return (
-                  <Fragment key={`${shape.id}-baked-darts`}>
-                    {baked.map((d) => {
-                      const baseLeft = pts[d.baseLeftIndex];
-                      const apex = pts[d.apexIndex];
-                      const baseRight = pts[d.baseRightIndex];
-                      if (!baseLeft || !apex || !baseRight) return null;
-
-                      const baseLeftW = localToWorldPoint(shape, baseLeft.x, baseLeft.y);
-                      const apexW = localToWorldPoint(shape, apex.x, apex.y);
-                      const baseRightW = localToWorldPoint(shape, baseRight.x, baseRight.y);
-
-                      const mid = {
-                        x: (baseLeftW.x + baseRightW.x) / 2,
-                        y: (baseLeftW.y + baseRightW.y) / 2,
-                      };
-
-                      return (
-                        <Fragment key={`${shape.id}-baked-dart-${d.id}`}>
-                          {/* Triangle edges (all dashed) */}
-                          <Line
-                            points={[
-                              baseLeftW.x,
-                              baseLeftW.y,
-                              apexW.x,
-                              apexW.y,
-                              baseRightW.x,
-                              baseRightW.y,
-                              baseLeftW.x,
-                              baseLeftW.y,
-                            ]}
-                            closed={false}
-                            stroke="#673b45"
-                            strokeWidth={2}
-                            dash={[6, 6]}
-                            listening={false}
-                          />
-
-                          {/* Centerline (dashed) */}
-                          <Line
-                            points={[mid.x, mid.y, apexW.x, apexW.y]}
-                            stroke="#673b45"
-                            strokeWidth={1.5}
-                            dash={[6, 6]}
-                            opacity={0.9}
-                            listening={false}
-                          />
-                        </Fragment>
-                      );
-                    })}
-                  </Fragment>
-                );
-              })}
-
-              {/* Dart draft overlay during click+drag */}
-              {tool === "dart" && dartDraft ? (
-                (() => {
-                  const shape = shapes.find((s) => s.id === dartDraft.shapeId);
-                  if (!shape) return null;
-                  const blW = localToWorldPoint(
-                    shape,
-                    dartDraft.baseLeftLocal.x,
-                    dartDraft.baseLeftLocal.y
-                  );
-                  const brW = localToWorldPoint(
-                    shape,
-                    dartDraft.baseRightLocal.x,
-                    dartDraft.baseRightLocal.y
-                  );
-                  const apW = localToWorldPoint(
-                    shape,
-                    dartDraft.apexLocal.x,
-                    dartDraft.apexLocal.y
-                  );
-                  const mid = { x: (blW.x + brW.x) / 2, y: (blW.y + brW.y) / 2 };
-                  return (
-                    <>
-                      <Line
-                        points={[
-                          blW.x,
-                          blW.y,
-                          apW.x,
-                          apW.y,
-                          brW.x,
-                          brW.y,
-                          blW.x,
-                          blW.y,
-                        ]}
-                        stroke="#673b45"
-                        strokeWidth={2}
-                        dash={[6, 6]}
-                        listening={false}
-                        opacity={0.95}
-                      />
-                      <Line
-                        points={[mid.x, mid.y, apW.x, apW.y]}
-                        stroke="#673b45"
-                        strokeWidth={1.5}
-                        dash={[6, 6]}
-                        listening={false}
-                        opacity={0.9}
-                      />
-                    </>
-                  );
-                })()
+          return (
+            <React.Fragment key={n.id}>
+              {inH ? (
+                <Line
+                  points={[n.x, n.y, inH.x, inH.y]}
+                  stroke="rgba(37, 99, 235, 0.5)"
+                  strokeWidth={1 / scale}
+                  listening={false}
+                />
+              ) : null}
+              {outH ? (
+                <Line
+                  points={[n.x, n.y, outH.x, outH.y]}
+                  stroke="rgba(37, 99, 235, 0.5)"
+                  strokeWidth={1 / scale}
+                  listening={false}
+                />
               ) : null}
 
-              {/* Snap point indicator - yellow square */}
-              {activeSnapPoint && (
-                <KonvaRect
-                  x={activeSnapPoint.x - 4}
-                  y={activeSnapPoint.y - 4}
-                  width={8}
-                  height={8}
-                  fill="#fbbf24"
-                  stroke="#f59e0b"
-                  strokeWidth={1}
-                  listening={false}
-                  opacity={0.8}
-                />
-              )}
-
-              {/* Measure snap preview indicator (blue dot) */}
-              {tool === "measure" && measureSnapPreview && (
-                <KonvaCircle
-                  x={measureSnapPreview.x}
-                  y={measureSnapPreview.y}
-                  radius={3}
-                  fill="#3b82f6"
-                  stroke="#ffffff"
-                  strokeWidth={1}
-                  listening={false}
-                  opacity={0.9}
-                />
-              )}
-
-              {/* Dart snap preview indicator */}
-              {tool === "dart" && dartHover && !dartDraft && (
-                <KonvaCircle
-                  x={dartHover.snapWorld.x}
-                  y={dartHover.snapWorld.y}
-                  radius={4}
-                  fill="#3b82f6"
-                  stroke="#ffffff"
-                  strokeWidth={1}
-                  listening={false}
-                  opacity={0.9}
-                />
-              )}
-
-              {/* Measure tool line and distance display */}
-              {isMeasuring && measureStart && measureEnd && (
-                <>
-                  <Line
-                    points={[
-                      measureStart.x,
-                      measureStart.y,
-                      measureEnd.x,
-                      measureEnd.y,
-                    ]}
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dash={[10, 5]}
-                    listening={false}
-                    opacity={0.8}
-                  />
-                </>
-              )}
-
-              {/* Transformer for selection and transformation */}
-              <Transformer
-                ref={transformerRef}
-                boundBoxFunc={(oldBox, newBox) => {
-                  // Limit resize to minimum 5px
-                  if (newBox.width < 5 || newBox.height < 5) {
-                    return oldBox;
-                  }
-                  return newBox;
+              <Circle
+                x={n.x}
+                y={n.y}
+                radius={rNode}
+                fill={isSelectedNode ? "#2563eb" : "#ffffff"}
+                stroke="#2563eb"
+                strokeWidth={1 / scale}
+                draggable
+                onDragStart={() => {
+                  dragNodeRef.current = {
+                    figureId: selectedFigure.id,
+                    nodeId: n.id,
+                    startNode: { x: n.x, y: n.y },
+                    startIn: n.inHandle ? { ...n.inHandle } : undefined,
+                    startOut: n.outHandle ? { ...n.outHandle } : undefined,
+                  };
+                  setNodeSelection({
+                    figureId: selectedFigure.id,
+                    nodeId: n.id,
+                    handle: null,
+                  });
                 }}
-                enabledAnchors={[
-                  "top-left",
-                  "top-right",
-                  "bottom-left",
-                  "bottom-right",
-                  "top-center",
-                  "bottom-center",
-                  "middle-left",
-                  "middle-right",
-                ]}
-                rotateEnabled={true}
-                borderStroke="#673b45"
-                borderStrokeWidth={2}
-                anchorFill="#673b45"
-                anchorStroke="#ffffff"
-                anchorStrokeWidth={2}
-                anchorSize={8}
-                rotateAnchorOffset={20}
+                onDragMove={(ev) => {
+                  const ref = dragNodeRef.current;
+                  if (!ref) return;
+                  const nx = ev.target.x();
+                  const ny = ev.target.y();
+                  const dx = nx - ref.startNode.x;
+                  const dy = ny - ref.startNode.y;
+
+                  setFigures((prev) =>
+                    prev.map((f) => {
+                      if (f.id !== ref.figureId) return f;
+                      return {
+                        ...f,
+                        nodes: f.nodes.map((node) => {
+                          if (node.id !== ref.nodeId) return node;
+                          const nextIn = ref.startIn
+                            ? { x: ref.startIn.x + dx, y: ref.startIn.y + dy }
+                            : node.inHandle;
+                          const nextOut = ref.startOut
+                            ? { x: ref.startOut.x + dx, y: ref.startOut.y + dy }
+                            : node.outHandle;
+                          return {
+                            ...node,
+                            x: nx,
+                            y: ny,
+                            inHandle: nextIn,
+                            outHandle: nextOut,
+                          };
+                        }),
+                      };
+                    })
+                  );
+                }}
+                onDragEnd={() => {
+                  dragNodeRef.current = null;
+                }}
+                onDblClick={() => {
+                  setFigures((prev) =>
+                    prev.map((f) => {
+                      if (f.id !== selectedFigure.id) return f;
+                      return {
+                        ...f,
+                        nodes: f.nodes.map((node) => {
+                          if (node.id !== n.id) return node;
+                          return {
+                            ...node,
+                            mode: node.mode === "smooth" ? "corner" : "smooth",
+                          };
+                        }),
+                      };
+                    })
+                  );
+                }}
+                onPointerDown={(ev) => {
+                  ev.cancelBubble = true;
+                  setNodeSelection({
+                    figureId: selectedFigure.id,
+                    nodeId: n.id,
+                    handle: null,
+                  });
+                }}
               />
-            </Layer>
-          </Stage>
 
-          {/* Overlay UI elements like zoom level could go here if not in toolbar */}
-          <div className="absolute bottom-4 left-4 bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 rounded px-2 py-1 text-xs text-text-muted dark:text-text-muted-dark shadow-sm pointer-events-none">
-            {Math.round(stageScale * 100)}%
-          </div>
-
-          {/* Measure tool tooltip */}
-          {measureTooltipData && (
-            <div
-              className="absolute bg-blue-500 text-white px-3 py-2 rounded-md text-sm font-medium shadow-lg pointer-events-none"
-              style={{
-                left: `${measureTooltipData.screenX + 15}px`,
-                top: `${measureTooltipData.screenY - 10}px`,
-                transform: "translateY(-50%)",
-              }}
-            >
-              {measureTooltipData.distanceCm.toFixed(1)} cm
-            </div>
-          )}
-        </div>
-      </div>
-      {/* Offset tool configuration panel */}
-      {tool === "offset" && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-              Margem de Costura:
-            </span>
-            <input
-              type="number"
-              min="0.1"
-              max="10"
-              step="0.1"
-              value={offsetInputValueCm}
-              onChange={(e) => {
-                const value = parseFloat(e.target.value);
-                // Allow empty or intermediate states during typing
-                if (e.target.value === "" || e.target.value === ".") {
-                  return;
-                }
-                // Clamp value to valid range
-                if (!isNaN(value)) {
-                  const clampedValue = Math.max(0.1, Math.min(10, value));
-
-                  // Keep default in sync with last used value
-                  setOffsetValueCm(clampedValue);
-
-                  // If editing an existing seam allowance, update it too
-                  if (offsetTargetId) {
-                    setShapes((prev) =>
-                      recomputeSeamsForParent(prev, offsetTargetId, clampedValue)
+              {inH ? (
+                <Circle
+                  x={inH.x}
+                  y={inH.y}
+                  radius={rHandle}
+                  fill="#ffffff"
+                  stroke="#2563eb"
+                  strokeWidth={1 / scale}
+                  draggable
+                  onDragStart={() => {
+                    setNodeSelection({
+                      figureId: selectedFigure.id,
+                      nodeId: n.id,
+                      handle: "in",
+                    });
+                  }}
+                  onDragMove={(ev) => {
+                    const nx = ev.target.x();
+                    const ny = ev.target.y();
+                    setFigures((prev) =>
+                      prev.map((f) => {
+                        if (f.id !== selectedFigure.id) return f;
+                        return {
+                          ...f,
+                          nodes: f.nodes.map((node) => {
+                            if (node.id !== n.id) return node;
+                            const next: FigureNode = {
+                              ...node,
+                              inHandle: { x: nx, y: ny },
+                            };
+                            if (node.mode === "smooth") {
+                              next.outHandle = {
+                                x: 2 * node.x - nx,
+                                y: 2 * node.y - ny,
+                              };
+                            }
+                            return next;
+                          }),
+                        };
+                      })
                     );
-                  }
-                }
-              }}
-              onBlur={(e) => {
-                // On blur, ensure we have a valid value
-                const value = parseFloat(e.target.value);
-                if (isNaN(value) || value < 0.1) {
-                  setOffsetValueCm(1); // Reset to default
-                  if (offsetTargetId) {
-                    setShapes((prev) =>
-                      recomputeSeamsForParent(prev, offsetTargetId, 1)
+                  }}
+                  onPointerDown={(ev) => {
+                    ev.cancelBubble = true;
+                    setNodeSelection({
+                      figureId: selectedFigure.id,
+                      nodeId: n.id,
+                      handle: "in",
+                    });
+                  }}
+                />
+              ) : null}
+
+              {outH ? (
+                <Circle
+                  x={outH.x}
+                  y={outH.y}
+                  radius={rHandle}
+                  fill="#ffffff"
+                  stroke="#2563eb"
+                  strokeWidth={1 / scale}
+                  draggable
+                  onDragStart={() => {
+                    setNodeSelection({
+                      figureId: selectedFigure.id,
+                      nodeId: n.id,
+                      handle: "out",
+                    });
+                  }}
+                  onDragMove={(ev) => {
+                    const nx = ev.target.x();
+                    const ny = ev.target.y();
+                    setFigures((prev) =>
+                      prev.map((f) => {
+                        if (f.id !== selectedFigure.id) return f;
+                        return {
+                          ...f,
+                          nodes: f.nodes.map((node) => {
+                            if (node.id !== n.id) return node;
+                            const next: FigureNode = {
+                              ...node,
+                              outHandle: { x: nx, y: ny },
+                            };
+                            if (node.mode === "smooth") {
+                              next.inHandle = {
+                                x: 2 * node.x - nx,
+                                y: 2 * node.y - ny,
+                              };
+                            }
+                            return next;
+                          }),
+                        };
+                      })
                     );
-                  }
-                }
-              }}
-              className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                  }}
+                  onPointerDown={(ev) => {
+                    ev.cancelBubble = true;
+                    setNodeSelection({
+                      figureId: selectedFigure.id,
+                      nodeId: n.id,
+                      handle: "out",
+                    });
+                  }}
+                />
+              ) : null}
+            </React.Fragment>
+          );
+        })}
+      </Group>
+    );
+  }, [nodeSelection, scale, selectedFigure, setFigures, tool]);
+
+  const edgeHoverOverlay = useMemo(() => {
+    if ((tool !== "node" && tool !== "dart") || !selectedFigure || !hoveredEdge)
+      return null;
+    if (hoveredEdge.figureId !== selectedFigure.id) return null;
+
+    const edge = selectedFigure.edges.find((e) => e.id === hoveredEdge.edgeId);
+    if (!edge) return null;
+
+    const pts = edgeLocalPoints(selectedFigure, edge, edge.kind === "line" ? 1 : 60);
+    if (pts.length < 2) return null;
+    const flat: number[] = [];
+    for (const p of pts) flat.push(p.x, p.y);
+
+    return (
+      <Group
+        x={selectedFigure.x}
+        y={selectedFigure.y}
+        rotation={selectedFigure.rotation || 0}
+        listening={false}
+      >
+        <Line
+          points={flat}
+          stroke="rgba(37, 99, 235, 0.85)"
+          strokeWidth={2 / scale}
+          lineCap="round"
+          lineJoin="round"
+        />
+        <Circle
+          x={hoveredEdge.pointLocal.x}
+          y={hoveredEdge.pointLocal.y}
+          radius={4 / scale}
+          fill="#2563eb"
+          stroke="#ffffff"
+          strokeWidth={1 / scale}
+        />
+      </Group>
+    );
+  }, [hoveredEdge, scale, selectedFigure, tool]);
+
+  const dartOverlay = useMemo(() => {
+    if (tool !== "dart" || !selectedFigure || !dartDraft) return null;
+    if (dartDraft.figureId !== selectedFigure.id) return null;
+
+    const a = dartDraft.a?.pointLocal;
+    const b = dartDraft.b?.pointLocal;
+    const apexLocal = worldToFigureLocal(selectedFigure, dartDraft.currentWorld);
+
+    const stroke = previewStroke;
+    const dash = [6 / scale, 6 / scale];
+
+    return (
+      <Group
+        x={selectedFigure.x}
+        y={selectedFigure.y}
+        rotation={selectedFigure.rotation || 0}
+        listening={false}
+      >
+        {a ? <Circle x={a.x} y={a.y} radius={4 / scale} fill={previewStroke} /> : null}
+
+        {b ? <Circle x={b.x} y={b.y} radius={4 / scale} fill={previewStroke} /> : null}
+
+        {a && b && dartDraft.step === "pickApex" ? (
+          <>
+            <Line
+              points={[a.x, a.y, apexLocal.x, apexLocal.y]}
+              stroke={stroke}
+              strokeWidth={1 / scale}
+              dash={dash}
             />
-            <span className="text-sm text-gray-500 dark:text-gray-400">cm</span>
+            <Line
+              points={[apexLocal.x, apexLocal.y, b.x, b.y]}
+              stroke={stroke}
+              strokeWidth={1 / scale}
+              dash={dash}
+            />
+            <Circle
+              x={apexLocal.x}
+              y={apexLocal.y}
+              radius={4 / scale}
+              fill={previewStroke}
+            />
+          </>
+        ) : null}
+      </Group>
+    );
+  }, [dartDraft, previewStroke, scale, selectedFigure, tool]);
 
-            {hasOffsetTarget && offsetTargetSeams.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => {
-                  if (!offsetTargetId) return;
-                  setShapes((prev) => removeSeamsForParent(prev, offsetTargetId));
-                  setOffsetTargetId(null);
-                }}
-                className="ml-3 inline-flex items-center rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                Remover margem
-              </button>
-            ) : null}
-
-            <span className="text-xs text-gray-400 dark:text-gray-500 ml-2">
-              {hasOffsetTarget
-                ? "Clique em outra forma para editar"
-                : "Clique em uma forma para adicionar/editar margem"}
-            </span>
+  return (
+    <div className="w-full h-full relative">
+      {showRulers ? (
+        <>
+          <div className="absolute left-0 top-0 w-6 h-6 bg-surface-light dark:bg-surface-dark border-b border-r border-gray-200 dark:border-gray-700" />
+          <div className="absolute left-6 top-0 right-0 h-6 bg-surface-light dark:bg-surface-dark border-b border-gray-200 dark:border-gray-700">
+            <Ruler orientation="horizontal" />
           </div>
-        </div>
-      )}
+          <div className="absolute left-0 top-6 bottom-0 w-6 bg-surface-light dark:bg-surface-dark border-r border-gray-200 dark:border-gray-700">
+            <Ruler orientation="vertical" />
+          </div>
+        </>
+      ) : null}
+
+      <div
+        ref={containerRef}
+        className={showRulers ? "absolute left-6 top-6 right-0 bottom-0" : "absolute inset-0"}
+      >
+        <Stage
+          ref={(node) => {
+            stageRef.current = node;
+            registerStage(node);
+          }}
+          width={size.width}
+          height={size.height}
+          scaleX={scale}
+          scaleY={scale}
+          x={position.x}
+          y={position.y}
+          onWheel={handleWheel}
+          onPointerDown={handlePointerDown}
+          onPointerMove={(e) => {
+            handlePointerMove(e);
+            handleCurvePointerMove(e);
+          }}
+          onPointerUp={handlePointerUp}
+        >
+          <Layer>
+          {/* Background hit target */}
+          <Rect
+            x={-100000}
+            y={-100000}
+            width={200000}
+            height={200000}
+            fill="transparent"
+          />
+
+          {gridLines.map((l, idx) => (
+            <Line
+              key={idx}
+              points={l.points}
+              stroke={gridStroke}
+              strokeWidth={1 / scale}
+              listening={false}
+            />
+          ))}
+
+          {pageGuides}
+
+          {figures.map((fig) => {
+            const pts = figureLocalPolyline(fig, 60);
+            const isSelected = fig.id === selectedFigureId;
+
+            const isSeam = fig.kind === "seam" && !!fig.parentId;
+            const stroke = isSelected
+              ? "#2563eb"
+              : resolveStrokeColor(fig.stroke, isDark);
+            const opacity = (fig.opacity ?? 1) * (isSeam ? 0.7 : 1);
+            const strokeWidth = (fig.strokeWidth || 1) / scale;
+            const dash = fig.dash ? fig.dash.map((d) => d / scale) : undefined;
+
+            return (
+              <Group
+                key={fig.id}
+                x={fig.x}
+                y={fig.y}
+                rotation={fig.rotation || 0}
+                draggable={tool === "select" && isSelected}
+                onDragEnd={(e) => {
+                  const nx = e.target.x();
+                  const ny = e.target.y();
+                  setFigures((prev) => {
+                    const dx = nx - fig.x;
+                    const dy = ny - fig.y;
+                    return prev.map((f) => {
+                      if (f.id === fig.id) return { ...f, x: nx, y: ny };
+                      if (f.kind === "seam" && f.parentId === fig.id) {
+                        return { ...f, x: f.x + dx, y: f.y + dy };
+                      }
+                      return f;
+                    });
+                  });
+                }}
+              >
+                <Line
+                  points={pts}
+                  closed={fig.closed}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  dash={dash}
+                  opacity={opacity}
+                  lineCap="round"
+                  lineJoin="round"
+                  onPointerDown={(e) => {
+                    e.cancelBubble = true;
+
+                    const baseId = isSeam ? fig.parentId! : fig.id;
+                    const base = figures.find((f) => f.id === baseId);
+                    if (!base) {
+                      setSelectedFigureId(baseId);
+                      return;
+                    }
+
+                    if (tool === "mirror") {
+                      setSelectedFigureId(baseId);
+                      const bb = figureWorldBoundingBox(base);
+                      const axisPos =
+                        mirrorAxis === "vertical"
+                          ? (bb ? bb.x + bb.width / 2 : base.x)
+                          : (bb ? bb.y + bb.height / 2 : base.y);
+                      const mirrored = mirrorFigure(base, mirrorAxis, axisPos);
+                      setFigures((prev) => [...prev, mirrored]);
+                      return;
+                    }
+
+                    if (tool === "unfold") {
+                      setSelectedFigureId(baseId);
+                      const poly = figureWorldPolyline(base, 60);
+                      if (poly.length < 4) return;
+                      let axisPos = 0;
+                      if (unfoldAxis === "vertical") {
+                        let minX = Infinity;
+                        for (let i = 0; i < poly.length; i += 2) {
+                          minX = Math.min(minX, poly[i]);
+                        }
+                        axisPos = minX;
+                      } else {
+                        let minY = Infinity;
+                        for (let i = 0; i < poly.length; i += 2) {
+                          minY = Math.min(minY, poly[i + 1]);
+                        }
+                        axisPos = minY;
+                      }
+
+                      const unfolded = unfoldFigure(base, unfoldAxis, axisPos);
+                      if (!unfolded) return;
+
+                      // Keep same id (preserves selection) and drop old seams (need re-create)
+                      const nextUnfolded: Figure = { ...unfolded, id: base.id };
+                      setFigures((prev) =>
+                        prev.filter((f) => !(f.kind === "seam" && f.parentId === base.id)).map((f) => (f.id === base.id ? nextUnfolded : f))
+                      );
+                      return;
+                    }
+
+                    if (tool === "offset") {
+                      setSelectedFigureId(baseId);
+                      setOffsetTargetId(baseId);
+
+                      const existing = figures.some(
+                        (f) => f.kind === "seam" && f.parentId === baseId
+                      );
+                      if (existing) return;
+
+                      const seam = makeSeamFigure(base, offsetValueCm);
+                      if (!seam) return;
+                      setFigures((prev) => [...prev, seam]);
+                      return;
+                    }
+
+                    setSelectedFigureId(baseId);
+                  }}
+                />
+              </Group>
+            );
+          })}
+
+          {draftPreview}
+
+          {curveDraftPreview}
+
+          {edgeHoverOverlay}
+
+          {dartOverlay}
+
+          {measureOverlay}
+
+          {nodeOverlay}
+          </Layer>
+        </Stage>
+      </div>
     </div>
   );
 }
