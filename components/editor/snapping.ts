@@ -18,7 +18,11 @@ export interface SnapPoint {
  * Check if a shape is closed (forms a complete loop)
  */
 function isClosedShape(shape: Shape): boolean {
-  return shape.tool === "rectangle" || shape.tool === "circle";
+  return (
+    shape.tool === "rectangle" ||
+    shape.tool === "circle" ||
+    shape.tool === "polygon"
+  );
 }
 
 /**

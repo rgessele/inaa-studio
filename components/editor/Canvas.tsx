@@ -18,7 +18,10 @@ import { getPaperDimensionsCm } from "./exportSettings";
 import { Ruler } from "./Ruler";
 import { getAllSnapPoints, findNearestSnapPoint, SnapPoint } from "./snapping";
 import { upsertSeamAllowance } from "./offset";
-import { applyDartToShape } from "./dart";
+import {
+  getDartSnapOnShape,
+  isDartEligibleShape,
+} from "./dart";
 import { mirrorShape, getAxisPositionForShape } from "./mirror";
 import {
   unfoldShape,
@@ -38,8 +41,82 @@ const GRID_COLOR = "rgba(255, 255, 255, 0.05)";
 const CONTROL_POINT_RADIUS = 6; // Radius for control point anchor
 const NODE_ANCHOR_RADIUS = 5; // Radius for node anchors
 const MEASURE_SNAP_MIN_THRESHOLD_PX = 12;
-const DEFAULT_DART_POSITION_RATIO = 0.5; // Default dart position at middle of edge (50%)
-const DEFAULT_DART_EDGE_INDEX = 0; // Default edge for rectangles (top edge)
+const MIN_DART_OPENING_CM = 0.1;
+const MIN_DART_DEPTH_CM = 0.2;
+
+type Point = { x: number; y: number };
+
+function toLocalPoints(points: number[]): Point[] {
+  const result: Point[] = [];
+  for (let i = 0; i < points.length; i += 2) {
+    result.push({ x: points[i], y: points[i + 1] });
+  }
+  return result;
+}
+
+function pointInPolygon(point: Point, poly: Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x;
+    const yi = poly[i].y;
+    const xj = poly[j].x;
+    const yj = poly[j].y;
+
+    const intersect =
+      yi > point.y !== yj > point.y &&
+      point.x < ((xj - xi) * (point.y - yi)) / (yj - yi + 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function getPolygonInwardNormal(poly: Point[], segmentIndex: number): Point {
+  const a = poly[segmentIndex];
+  const b = poly[(segmentIndex + 1) % poly.length];
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 1e-9) return { x: 0, y: 0 };
+
+  // left normal
+  let nx = dy / len;
+  let ny = -dx / len;
+
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const eps = 2;
+  const test = { x: mid.x + nx * eps, y: mid.y + ny * eps };
+  if (!pointInPolygon(test, poly)) {
+    nx = -nx;
+    ny = -ny;
+  }
+  return { x: nx, y: ny };
+}
+
+function getBasePolygonPointsLocal(shape: Shape): Point[] {
+  if (shape.tool === "rectangle" && shape.width && shape.height) {
+    return toLocalPoints([0, 0, shape.width, 0, shape.width, shape.height, 0, shape.height]);
+  }
+
+  if (shape.tool === "circle" && Array.isArray(shape.points) && shape.points.length >= 6) {
+    return toLocalPoints(shape.points);
+  }
+  if (shape.tool === "circle" && shape.radius) {
+    // match Canvas circle segmentation
+    const segments = 32;
+    const pts: number[] = [];
+    for (let i = 0; i < segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      pts.push(Math.cos(angle) * shape.radius, Math.sin(angle) * shape.radius);
+    }
+    return toLocalPoints(pts);
+  }
+
+  if (Array.isArray(shape.points) && shape.points.length >= 6) {
+    return toLocalPoints(shape.points);
+  }
+
+  return [];
+}
 
 function degreesToRadians(degrees: number): number {
   return (degrees * Math.PI) / 180;
@@ -61,6 +138,27 @@ function localToWorldPoint(
   const rotatedX = localX * cos - localY * sin;
   const rotatedY = localX * sin + localY * cos;
   return { x: shape.x + rotatedX, y: shape.y + rotatedY };
+}
+
+function worldToLocalPoint(
+  shape: Pick<Shape, "x" | "y" | "rotation">,
+  worldX: number,
+  worldY: number
+): { x: number; y: number } {
+  const rotation = shape.rotation || 0;
+  const dx = worldX - shape.x;
+  const dy = worldY - shape.y;
+  if (!rotation) {
+    return { x: dx, y: dy };
+  }
+
+  const rad = degreesToRadians(-rotation);
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return {
+    x: dx * cos - dy * sin,
+    y: dx * sin + dy * cos,
+  };
 }
 
 function closestPointOnSegment(
@@ -199,6 +297,30 @@ export default function Canvas() {
     null
   );
 
+  const [dartHover, setDartHover] = useState<
+    | {
+        shapeId: string;
+        anchorS: number;
+        segmentIndex: number;
+        t: number;
+        snapWorld: { x: number; y: number };
+        snapLocal: { x: number; y: number };
+      }
+    | null
+  >(null);
+  const [dartDraft, setDartDraft] = useState<
+    | {
+        shapeId: string;
+        segmentIndex: number;
+        anchorS: number;
+        baseLeftLocal: { x: number; y: number };
+        baseRightLocal: { x: number; y: number };
+        centerLocal: { x: number; y: number };
+        apexLocal: { x: number; y: number };
+      }
+    | null
+  >(null);
+
   const getParentIdForShape = (shapeId: string) => {
     const shape = shapes.find((s) => s.id === shapeId);
     if (!shape) return shapeId;
@@ -267,6 +389,14 @@ export default function Canvas() {
         startX: number;
         startY: number;
         seamStarts: Map<string, { x: number; y: number }>;
+      }
+    | null
+  >(null);
+
+  const dartDragRef = useRef<
+    | {
+        startWorld: { x: number; y: number };
+        didDrag: boolean;
       }
     | null
   >(null);
@@ -497,6 +627,13 @@ export default function Canvas() {
     }
   }, [dartTargetId, setDartTargetId, tool]);
 
+  useEffect(() => {
+    if (tool !== "dart") {
+      setDartHover(null);
+      setDartDraft(null);
+    }
+  }, [tool]);
+
   // If the target shape is deleted, clear selection
   useEffect(() => {
     if (!offsetTargetId) return;
@@ -595,6 +732,9 @@ export default function Canvas() {
       } else if (shape.tool === "circle") {
         localPoints = shape.points || null;
         isClosed = true;
+      } else if (shape.tool === "polygon") {
+        localPoints = shape.points || null;
+        isClosed = true;
       } else if (shape.tool === "line") {
         localPoints = shape.points || null;
         isClosed = false;
@@ -684,6 +824,94 @@ export default function Canvas() {
       return;
     }
 
+    if (tool === "dart") {
+      if (isBackground) {
+        setSelectedShapeId(null);
+        setSelectedNodeIndex(null);
+        setDartTargetId(null);
+        setDartDraft(null);
+        dartDragRef.current = null;
+        return;
+      }
+
+      // Ignore double-click: dart is a click+drag gesture.
+      if ((e.evt as MouseEvent).detail && (e.evt as MouseEvent).detail > 1) {
+        return;
+      }
+
+      // Start dart draft only when we have a valid edge snap.
+      const hover = dartHover;
+      if (!hover) return;
+
+      const targetShape = shapes.find((s) => s.id === hover.shapeId);
+      if (!targetShape) return;
+      const basePoly = getBasePolygonPointsLocal(targetShape);
+      if (basePoly.length < 3) return;
+
+      const a = basePoly[hover.segmentIndex];
+      const b = basePoly[(hover.segmentIndex + 1) % basePoly.length];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const segLen = Math.sqrt(dx * dx + dy * dy);
+      if (segLen < 1e-6) return;
+      const ux = dx / segLen;
+      const uy = dy / segLen;
+
+      const halfOpeningPx =
+        Math.max(MIN_DART_OPENING_CM, dartOpeningCm / 2) * PX_PER_CM;
+      const maxLeftPx = hover.t * segLen;
+      const maxRightPx = (1 - hover.t) * segLen;
+      const safeLeft = Math.min(halfOpeningPx, maxLeftPx);
+      const safeRight = Math.min(halfOpeningPx, maxRightPx);
+
+      const centerLocal = hover.snapLocal;
+      const baseLeftLocal = {
+        x: centerLocal.x - ux * safeLeft,
+        y: centerLocal.y - uy * safeLeft,
+      };
+      const baseRightLocal = {
+        x: centerLocal.x + ux * safeRight,
+        y: centerLocal.y + uy * safeRight,
+      };
+
+      const normal = getPolygonInwardNormal(basePoly, hover.segmentIndex);
+      const defaultDepthPx = Math.max(MIN_DART_DEPTH_CM, dartDepthCm) * PX_PER_CM;
+      const apexLocal = {
+        x: centerLocal.x + normal.x * defaultDepthPx,
+        y: centerLocal.y + normal.y * defaultDepthPx,
+      };
+
+      setSelectedShapeId(hover.shapeId);
+      setDartTargetId(hover.shapeId);
+      setDartDraft({
+        shapeId: hover.shapeId,
+        segmentIndex: hover.segmentIndex,
+        anchorS: hover.anchorS,
+        baseLeftLocal,
+        baseRightLocal,
+        centerLocal,
+        apexLocal,
+      });
+
+      const stagePos = getRelativePointer(stage);
+      if (stagePos) {
+        dartDragRef.current = { startWorld: stagePos, didDrag: false };
+      } else {
+        dartDragRef.current = { startWorld: { x: 0, y: 0 }, didDrag: false };
+      }
+      return;
+    }
+
+    // Tools that act on an existing shape (they should NOT start a draw gesture).
+    // Their behavior is triggered by clicking a shape (handled in handleShapeClick).
+    if (tool === "offset" || tool === "mirror" || tool === "unfold") {
+      if (isBackground) {
+        setSelectedShapeId(null);
+        setSelectedNodeIndex(null);
+      }
+      return;
+    }
+
     if (tool === "select" || tool === "node") {
       // Handle selection logic here if needed, Konva handles click on shapes usually
       if (isBackground) {
@@ -704,6 +932,16 @@ export default function Canvas() {
       setMeasureEnd(result.point);
       setMeasureSnapPreview(result.isSnapped ? result.point : null);
       setIsMeasuring(true);
+      return;
+    }
+
+    // Only drawing tools start a new shape on mouse down.
+    if (
+      tool !== "rectangle" &&
+      tool !== "circle" &&
+      tool !== "line" &&
+      tool !== "curve"
+    ) {
       return;
     }
 
@@ -744,6 +982,98 @@ export default function Canvas() {
   };
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (tool === "dart") {
+      const stage = e.target.getStage();
+      if (!stage) return;
+
+      const pos = getRelativePointer(stage);
+      if (!pos) return;
+
+      // If we're drafting a dart, update apex by dragging.
+      if (dartDraft) {
+        const shape = shapes.find((s) => s.id === dartDraft.shapeId);
+        if (!shape) return;
+        const basePoly = getBasePolygonPointsLocal(shape);
+        if (basePoly.length < 3) return;
+
+        const local = worldToLocalPoint(shape, pos.x, pos.y);
+        const normal = getPolygonInwardNormal(basePoly, dartDraft.segmentIndex);
+        const vx = local.x - dartDraft.centerLocal.x;
+        const vy = local.y - dartDraft.centerLocal.y;
+        const depthPx = Math.max(
+          MIN_DART_DEPTH_CM * PX_PER_CM,
+          vx * normal.x + vy * normal.y
+        );
+
+        // Mark as a real drag only after a small movement threshold.
+        if (dartDragRef.current) {
+          const dxW = pos.x - dartDragRef.current.startWorld.x;
+          const dyW = pos.y - dartDragRef.current.startWorld.y;
+          const distW = Math.sqrt(dxW * dxW + dyW * dyW);
+          if (distW > 4 / stageScale) {
+            dartDragRef.current.didDrag = true;
+          }
+        }
+
+        const apexLocal = {
+          x: dartDraft.centerLocal.x + normal.x * depthPx,
+          y: dartDraft.centerLocal.y + normal.y * depthPx,
+        };
+
+        setDartDraft({ ...dartDraft, apexLocal });
+        return;
+      }
+
+      const thresholdWorld = 14 / stageScale;
+      let best: {
+        shapeId: string;
+        anchorS: number;
+        segmentIndex: number;
+        t: number;
+        snapLocal: { x: number; y: number };
+        snapWorld: { x: number; y: number };
+        dist: number;
+      } | null = null;
+
+      for (const shape of shapes) {
+        if (!isDartEligibleShape(shape)) continue;
+        const local = worldToLocalPoint(shape, pos.x, pos.y);
+        const snap = getDartSnapOnShape(shape, local);
+        if (!snap) continue;
+        if (snap.dist > thresholdWorld) continue;
+        const snapWorld = localToWorldPoint(
+          shape,
+          snap.snapPoint.x,
+          snap.snapPoint.y
+        );
+        if (!best || snap.dist < best.dist) {
+          best = {
+            shapeId: shape.id,
+            anchorS: snap.anchorS,
+            segmentIndex: snap.segmentIndex,
+            t: snap.t,
+            snapLocal: snap.snapPoint,
+            snapWorld,
+            dist: snap.dist,
+          };
+        }
+      }
+
+      setDartHover(
+        best
+          ? {
+              shapeId: best.shapeId,
+              anchorS: best.anchorS,
+              segmentIndex: best.segmentIndex,
+              t: best.t,
+              snapLocal: best.snapLocal,
+              snapWorld: best.snapWorld,
+            }
+          : null
+      );
+      return;
+    }
+
     // Preview snap before starting measure
     if (tool === "measure" && !isMeasuring) {
       const stage = e.target.getStage();
@@ -849,6 +1179,89 @@ export default function Canvas() {
   };
 
   const handleMouseUp = () => {
+    // Finalize dart draft (bake into points)
+    if (tool === "dart" && dartDraft) {
+      const draft = dartDraft;
+      const dartId = crypto.randomUUID();
+
+      const didDrag = dartDragRef.current?.didDrag ?? false;
+      dartDragRef.current = null;
+
+      // Click without drag cancels the gesture (no-op).
+      if (!didDrag) {
+        setDartDraft(null);
+        return;
+      }
+
+      setDartDraft(null);
+
+      setShapes((prev) => {
+        const next = prev.map((shape) => {
+          if (shape.id !== draft.shapeId) return shape;
+
+          const basePoly = getBasePolygonPointsLocal(shape);
+          if (basePoly.length < 3) return shape;
+
+          // Build new points by splitting the target segment and inserting 3 vertices.
+          const n = basePoly.length;
+          const newPoly: Point[] = [];
+          for (let i = 0; i < n; i++) {
+            newPoly.push(basePoly[i]);
+            if (i === draft.segmentIndex) {
+              newPoly.push(
+                { ...draft.baseLeftLocal },
+                { ...draft.apexLocal },
+                { ...draft.baseRightLocal }
+              );
+            }
+          }
+
+          const insertVertexIndex = draft.segmentIndex + 1;
+          const baked = {
+            id: dartId,
+            baseLeftIndex: insertVertexIndex,
+            apexIndex: insertVertexIndex + 1,
+            baseRightIndex: insertVertexIndex + 2,
+          };
+
+          // We inserted 3 vertices at insertVertexIndex; shift existing baked indices after that.
+          const shiftedBaked = (shape.bakedDarts ?? []).map((d) => {
+            const shiftIndex = (idx: number) =>
+              idx >= insertVertexIndex ? idx + 3 : idx;
+            return {
+              ...d,
+              baseLeftIndex: shiftIndex(d.baseLeftIndex),
+              apexIndex: shiftIndex(d.apexIndex),
+              baseRightIndex: shiftIndex(d.baseRightIndex),
+            };
+          });
+
+          const toNumbers = (pts: Point[]) => {
+            const arr: number[] = [];
+            for (const p of pts) arr.push(p.x, p.y);
+            return arr;
+          };
+
+          const updated: Shape = {
+            ...shape,
+            tool: "polygon",
+            width: undefined,
+            height: undefined,
+            radius: undefined,
+            points: toNumbers(newPoly),
+            darts: undefined,
+            dartSourcePoints: undefined,
+            bakedDarts: [...shiftedBaked, baked],
+          };
+
+          return updated;
+        });
+
+        return recomputeSeamsForParent(next, draft.shapeId);
+      }, true);
+      return;
+    }
+
     // Clear measure tool state
     if (isMeasuring) {
       setIsMeasuring(false);
@@ -919,32 +1332,13 @@ export default function Canvas() {
   const handleShapeClick = (id: string) => {
     const parentId = getParentIdForShape(id);
 
-    // If dart tool is active, apply dart to the clicked shape
+    // If dart tool is active, select the clicked shape as target.
     if (tool === "dart") {
       const base = shapes.find((s) => s.id === parentId);
       if (!base) return;
 
       setSelectedShapeId(parentId);
       setDartTargetId(parentId);
-
-      // Apply dart with default parameters
-      const depthPx = dartDepthCm * PX_PER_CM;
-      const openingPx = dartOpeningCm * PX_PER_CM;
-
-      setShapes((prev) => {
-        return prev.map((shape) => {
-          if (shape.id === parentId) {
-            return applyDartToShape(
-              shape,
-              DEFAULT_DART_POSITION_RATIO,
-              depthPx,
-              openingPx,
-              DEFAULT_DART_EDGE_INDEX
-            );
-          }
-          return shape;
-        });
-      });
 
       return;
     }
@@ -1337,9 +1731,14 @@ export default function Canvas() {
     });
   };
 
+
   const cursor =
     tool === "offset"
       ? "pointer"
+      : tool === "dart"
+        ? dartDraft
+          ? "crosshair"
+          : "pointer"
       : tool === "pan" || isSpacePressed || isPanDrag
         ? isPanDrag
           ? "grabbing"
@@ -1615,7 +2014,9 @@ export default function Canvas() {
                 if (!shape.points || shape.points.length === 0) return null;
 
                 const isClosed =
-                  shape.tool === "rectangle" || shape.tool === "circle";
+                  shape.tool === "rectangle" ||
+                  shape.tool === "circle" ||
+                  shape.tool === "polygon";
 
                 return (
                   <Fragment key={shape.id}>
@@ -1721,6 +2122,119 @@ export default function Canvas() {
                 );
               })}
 
+              {/* Dart (pence) overlay: full dashed triangle + dashed centerline */}
+              {shapes.map((shape) => {
+                const baked = shape.bakedDarts ?? [];
+                if (baked.length === 0 || !shape.points) return null;
+
+                const pts = toLocalPoints(shape.points);
+                return (
+                  <Fragment key={`${shape.id}-baked-darts`}>
+                    {baked.map((d) => {
+                      const baseLeft = pts[d.baseLeftIndex];
+                      const apex = pts[d.apexIndex];
+                      const baseRight = pts[d.baseRightIndex];
+                      if (!baseLeft || !apex || !baseRight) return null;
+
+                      const baseLeftW = localToWorldPoint(shape, baseLeft.x, baseLeft.y);
+                      const apexW = localToWorldPoint(shape, apex.x, apex.y);
+                      const baseRightW = localToWorldPoint(shape, baseRight.x, baseRight.y);
+
+                      const mid = {
+                        x: (baseLeftW.x + baseRightW.x) / 2,
+                        y: (baseLeftW.y + baseRightW.y) / 2,
+                      };
+
+                      return (
+                        <Fragment key={`${shape.id}-baked-dart-${d.id}`}>
+                          {/* Triangle edges (all dashed) */}
+                          <Line
+                            points={[
+                              baseLeftW.x,
+                              baseLeftW.y,
+                              apexW.x,
+                              apexW.y,
+                              baseRightW.x,
+                              baseRightW.y,
+                              baseLeftW.x,
+                              baseLeftW.y,
+                            ]}
+                            closed={false}
+                            stroke="#673b45"
+                            strokeWidth={2}
+                            dash={[6, 6]}
+                            listening={false}
+                          />
+
+                          {/* Centerline (dashed) */}
+                          <Line
+                            points={[mid.x, mid.y, apexW.x, apexW.y]}
+                            stroke="#673b45"
+                            strokeWidth={1.5}
+                            dash={[6, 6]}
+                            opacity={0.9}
+                            listening={false}
+                          />
+                        </Fragment>
+                      );
+                    })}
+                  </Fragment>
+                );
+              })}
+
+              {/* Dart draft overlay during click+drag */}
+              {tool === "dart" && dartDraft ? (
+                (() => {
+                  const shape = shapes.find((s) => s.id === dartDraft.shapeId);
+                  if (!shape) return null;
+                  const blW = localToWorldPoint(
+                    shape,
+                    dartDraft.baseLeftLocal.x,
+                    dartDraft.baseLeftLocal.y
+                  );
+                  const brW = localToWorldPoint(
+                    shape,
+                    dartDraft.baseRightLocal.x,
+                    dartDraft.baseRightLocal.y
+                  );
+                  const apW = localToWorldPoint(
+                    shape,
+                    dartDraft.apexLocal.x,
+                    dartDraft.apexLocal.y
+                  );
+                  const mid = { x: (blW.x + brW.x) / 2, y: (blW.y + brW.y) / 2 };
+                  return (
+                    <>
+                      <Line
+                        points={[
+                          blW.x,
+                          blW.y,
+                          apW.x,
+                          apW.y,
+                          brW.x,
+                          brW.y,
+                          blW.x,
+                          blW.y,
+                        ]}
+                        stroke="#673b45"
+                        strokeWidth={2}
+                        dash={[6, 6]}
+                        listening={false}
+                        opacity={0.95}
+                      />
+                      <Line
+                        points={[mid.x, mid.y, apW.x, apW.y]}
+                        stroke="#673b45"
+                        strokeWidth={1.5}
+                        dash={[6, 6]}
+                        listening={false}
+                        opacity={0.9}
+                      />
+                    </>
+                  );
+                })()
+              ) : null}
+
               {/* Snap point indicator - yellow square */}
               {activeSnapPoint && (
                 <KonvaRect
@@ -1742,6 +2256,20 @@ export default function Canvas() {
                   x={measureSnapPreview.x}
                   y={measureSnapPreview.y}
                   radius={3}
+                  fill="#3b82f6"
+                  stroke="#ffffff"
+                  strokeWidth={1}
+                  listening={false}
+                  opacity={0.9}
+                />
+              )}
+
+              {/* Dart snap preview indicator */}
+              {tool === "dart" && dartHover && !dartDraft && (
+                <KonvaCircle
+                  x={dartHover.snapWorld.x}
+                  y={dartHover.snapWorld.y}
+                  radius={4}
                   fill="#3b82f6"
                   stroke="#ffffff"
                   strokeWidth={1}
@@ -1889,102 +2417,6 @@ export default function Canvas() {
               {hasOffsetTarget
                 ? "Clique em outra forma para editar"
                 : "Clique em uma forma para adicionar/editar margem"}
-            </span>
-          </div>
-        </div>
-      )}
-      {/* Dart tool configuration panel */}
-      {tool === "dart" && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                Profundidade:
-              </span>
-              <input
-                type="number"
-                min="0.5"
-                max="20"
-                step="0.1"
-                value={dartDepthCm}
-                onChange={(e) => {
-                  const value = parseFloat(e.target.value);
-                  if (!isNaN(value)) {
-                    const clampedValue = Math.max(0.5, Math.min(20, value));
-                    setDartDepthCm(clampedValue);
-                    
-                    // If editing an existing dart, update it
-                    if (dartTargetId) {
-                      const depthPx = clampedValue * PX_PER_CM;
-                      const openingPx = dartOpeningCm * PX_PER_CM;
-                      setShapes((prev) =>
-                        prev.map((shape) => {
-                          if (shape.id === dartTargetId) {
-                            return applyDartToShape(
-                              shape,
-                              DEFAULT_DART_POSITION_RATIO,
-                              depthPx,
-                              openingPx,
-                              DEFAULT_DART_EDGE_INDEX
-                            );
-                          }
-                          return shape;
-                        })
-                      );
-                    }
-                  }
-                }}
-                className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-              />
-              <span className="text-sm text-gray-500 dark:text-gray-400">cm</span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                Abertura:
-              </span>
-              <input
-                type="number"
-                min="0.5"
-                max="20"
-                step="0.1"
-                value={dartOpeningCm}
-                onChange={(e) => {
-                  const value = parseFloat(e.target.value);
-                  if (!isNaN(value)) {
-                    const clampedValue = Math.max(0.5, Math.min(20, value));
-                    setDartOpeningCm(clampedValue);
-                    
-                    // If editing an existing dart, update it
-                    if (dartTargetId) {
-                      const depthPx = dartDepthCm * PX_PER_CM;
-                      const openingPx = clampedValue * PX_PER_CM;
-                      setShapes((prev) =>
-                        prev.map((shape) => {
-                          if (shape.id === dartTargetId) {
-                            return applyDartToShape(
-                              shape,
-                              DEFAULT_DART_POSITION_RATIO,
-                              depthPx,
-                              openingPx,
-                              DEFAULT_DART_EDGE_INDEX
-                            );
-                          }
-                          return shape;
-                        })
-                      );
-                    }
-                  }
-                }}
-                className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-              />
-              <span className="text-sm text-gray-500 dark:text-gray-400">cm</span>
-            </div>
-
-            <span className="text-xs text-gray-400 dark:text-gray-500 ml-2">
-              {dartTargetId
-                ? "Clique em outra forma para adicionar pence"
-                : "Clique em uma forma para adicionar pence"}
             </span>
           </div>
         </div>
