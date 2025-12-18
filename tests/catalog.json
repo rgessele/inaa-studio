@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "catalogVersion": 1,
+  "features": [
+    {
+      "id": "auth.login",
+      "title": "Login (Magic Link)",
+      "risk": "medium",
+      "e2e": ["tests/example.spec.ts"],
+      "notes": "Smoke da tela de login."
+    },
+    {
+      "id": "editor.boot",
+      "title": "Editor abre e renderiza",
+      "risk": "high",
+      "e2e": ["tests/editor.smoke.spec.ts"],
+      "notes": "Cobre bypass E2E, toolbar e canvas."
+    },
+    {
+      "id": "editor.grid",
+      "title": "Grid + Contraste do Grid",
+      "risk": "medium",
+      "e2e": ["tests/editor.smoke.spec.ts"],
+      "notes": "Preferência global via localStorage."
+    },
+    {
+      "id": "editor.pageGuides",
+      "title": "Limites da página (tile) + watermark",
+      "risk": "high",
+      "e2e": ["tests/editor.smoke.spec.ts", "tests/page-guides.visual.spec.ts"],
+      "notes": "show/hide global; settings por projeto."
+    },
+    {
+      "id": "tool.rectangle",
+      "title": "Ferramenta Retângulo",
+      "risk": "high",
+      "e2e": ["tests/editor.smoke.spec.ts"],
+      "notes": "Desenho básico no canvas + validação por snapshot de estado."
+    },
+    {
+      "id": "history.undoRedo",
+      "title": "Undo/Redo",
+      "risk": "high",
+      "e2e": ["tests/editor.smoke.spec.ts"],
+      "unit": [],
+      "notes": "Valida regressões no fluxo do editor."
+    },
+    {
+      "id": "tool.mirror",
+      "title": "Ferramenta Espelhar",
+      "risk": "medium",
+      "unit": ["components/editor/mirror.test.ts"],
+      "notes": "Cobertura unitária de geometria."
+    },
+    {
+      "id": "tool.unfold",
+      "title": "Ferramenta Desdobrar",
+      "risk": "medium",
+      "unit": ["components/editor/unfold.test.ts"],
+      "notes": "Cobertura unitária de geometria."
+    },
+    {
+      "id": "tool.dart",
+      "title": "Ferramenta Pence (Dart)",
+      "risk": "medium",
+      "unit": ["components/editor/dart.test.ts"],
+      "notes": "Cobertura unitária de geometria."
+    }
+  ]
+}

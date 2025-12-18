@@ -1,4 +1,7 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices } from "@playwright/test";
+
+const e2eToken = process.env.E2E_TOKEN ?? "inaa-e2e-token";
+const e2ePort = Number(process.env.E2E_PORT ?? "3100");
 
 /**
  * Read environment variables from file.
@@ -26,27 +29,30 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('')`. */
-    baseURL: 'http://127.0.0.1:3000',
+    baseURL: `http://127.0.0.1:${e2ePort}`,
+
+    /* E2E auth bypass header (only active when server is started with E2E_TESTS=1). */
+    extraHTTPHeaders: { "x-e2e-token": e2eToken },
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: 'on-first-retry',
+    trace: "on-first-retry",
   },
 
   /* Configure projects for major browsers */
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
     },
 
     {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"] },
     },
 
     {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
+      name: "webkit",
+      use: { ...devices["Desktop Safari"] },
     },
 
     /* Test against mobile viewports. */
@@ -72,9 +78,15 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'npm run dev -- --port 3000',
-    url: 'http://127.0.0.1:3000',
+    command: `npm run dev -- --port ${e2ePort}`,
+    url: `http://127.0.0.1:${e2ePort}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    env: {
+      ...process.env,
+      E2E_TESTS: "1",
+      E2E_TOKEN: e2eToken,
+      NEXT_PUBLIC_E2E_TESTS: "1",
+    },
   },
 });

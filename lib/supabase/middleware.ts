@@ -6,24 +6,35 @@ export async function updateSession(request: NextRequest) {
     request,
   });
 
+  // E2E bypass (Playwright): enabled only when explicitly opted-in.
+  // This keeps production secure while allowing stable editor E2E tests.
+  const e2eEnabled = process.env.E2E_TESTS === "1";
+  const e2eToken = process.env.E2E_TOKEN;
+  const requestToken = request.headers.get("x-e2e-token");
+  if (e2eEnabled && e2eToken && requestToken === e2eToken) {
+    return supabaseResponse;
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  console.log("[MIDDLEWARE] URL:", supabaseUrl);
-
   if (!supabaseUrl || !supabaseAnonKey) {
-    // If Supabase is not configured, just pass through
-    console.log("[MIDDLEWARE] No URL/key, bypassing");
+    // If Supabase is not configured, keep dev usable, but avoid exposing
+    // protected routes in production.
+    const pathname = request.nextUrl.pathname;
+    const isPublic =
+      pathname === "/" ||
+      pathname.startsWith("/login") ||
+      pathname.startsWith("/auth");
+    const isProd = process.env.NODE_ENV === "production";
+    if (!isPublic && isProd) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      return NextResponse.redirect(url);
+    }
     return supabaseResponse;
   }
 
-  // TEMPORARY: Skip auth check for testing (dummy URL bypass)
-  if (supabaseUrl === "http://localhost:54321") {
-    console.log("[MIDDLEWARE] Test URL detected, bypassing auth");
-    return supabaseResponse;
-  }
-
-  console.log("[MIDDLEWARE] Creating Supabase client...");
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll() {

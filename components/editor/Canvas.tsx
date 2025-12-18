@@ -1054,7 +1054,7 @@ export default function Canvas() {
   );
 
   const handlePointerDown = useCallback(
-    (e: Konva.KonvaEventObject<PointerEvent>) => {
+    (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
       const stage = stageRef.current;
       if (!stage) return;
       const pos = stage.getPointerPosition();
@@ -1207,7 +1207,7 @@ export default function Canvas() {
   );
 
   const handlePointerMove = useCallback(
-    (e: Konva.KonvaEventObject<PointerEvent>) => {
+    (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
       void e;
       const stage = stageRef.current;
       if (!stage) return;
@@ -1299,7 +1299,7 @@ export default function Canvas() {
   );
 
   const handleCurvePointerMove = useCallback(
-    (e: Konva.KonvaEventObject<PointerEvent>) => {
+    (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
       void e;
       if (!curveDraft) return;
       const stage = stageRef.current;
@@ -1934,6 +1934,7 @@ export default function Canvas() {
 
       <div
         ref={containerRef}
+        data-testid="editor-stage-container"
         className={showRulers ? "absolute left-6 top-6 right-0 bottom-0" : "absolute inset-0"}
       >
         <Stage
@@ -1954,6 +1955,12 @@ export default function Canvas() {
             handleCurvePointerMove(e);
           }}
           onPointerUp={handlePointerUp}
+          onMouseDown={handlePointerDown}
+          onMouseMove={(e) => {
+            handlePointerMove(e);
+            handleCurvePointerMove(e);
+          }}
+          onMouseUp={handlePointerUp}
         >
           <Layer>
           {/* Background hit target */}

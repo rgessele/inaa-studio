@@ -278,6 +278,77 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     );
   }, [figures, pageGuideSettings]);
 
+  React.useEffect(() => {
+    if (process.env.NEXT_PUBLIC_E2E_TESTS !== "1") return;
+
+    const makeId = (prefix: string): string => {
+      return typeof crypto !== "undefined" && crypto.randomUUID
+        ? `${prefix}_${crypto.randomUUID()}`
+        : `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+    };
+
+    const addTestRectangle = () => {
+      const figId = makeId("fig");
+      const n1 = { id: makeId("n"), x: 0, y: 0, mode: "corner" as const };
+      const n2 = { id: makeId("n"), x: 200, y: 0, mode: "corner" as const };
+      const n3 = { id: makeId("n"), x: 200, y: 120, mode: "corner" as const };
+      const n4 = { id: makeId("n"), x: 0, y: 120, mode: "corner" as const };
+
+      setFigures((prev) => [
+        ...prev,
+        {
+          id: figId,
+          tool: "rectangle",
+          x: 0,
+          y: 0,
+          rotation: 0,
+          closed: true,
+          nodes: [n1, n2, n3, n4],
+          edges: [
+            { id: makeId("e"), from: n1.id, to: n2.id, kind: "line" },
+            { id: makeId("e"), from: n2.id, to: n3.id, kind: "line" },
+            { id: makeId("e"), from: n3.id, to: n4.id, kind: "line" },
+            { id: makeId("e"), from: n4.id, to: n1.id, kind: "line" },
+          ],
+          stroke: "aci7",
+          strokeWidth: 2,
+          fill: "transparent",
+          opacity: 1,
+        },
+      ]);
+      setSelectedFigureId(figId);
+    };
+
+    (window as unknown as { __INAA_DEBUG__?: unknown }).__INAA_DEBUG__ = {
+      getState: () => ({
+        tool,
+        figuresCount: (figures || []).length,
+        selectedFigureId,
+        showGrid,
+        showPageGuides,
+        pageGuideSettings,
+        gridContrast,
+        measureSnapStrengthPx,
+        projectId,
+        projectName,
+      }),
+      addTestRectangle,
+    };
+  }, [
+    figures,
+    gridContrast,
+    measureSnapStrengthPx,
+    pageGuideSettings,
+    projectId,
+    projectName,
+    selectedFigureId,
+    showGrid,
+    showPageGuides,
+    setFigures,
+    setSelectedFigureId,
+    tool,
+  ]);
+
   const deleteSelected = useCallback(() => {
     if (!selectedFigureId) return;
 

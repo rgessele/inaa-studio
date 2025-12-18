@@ -40,6 +40,7 @@ export function ViewMenu() {
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
+        data-testid="view-menu-button"
         className={`hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-primary dark:hover:text-white px-3 py-1.5 rounded transition-colors ${isOpen ? "bg-gray-100 dark:bg-gray-700 text-primary dark:text-white" : "text-text-muted dark:text-text-muted-dark"}`}
       >
         Visualizar
@@ -57,6 +58,7 @@ export function ViewMenu() {
             </label>
             <button
               onClick={() => setShowPageGuides(!showPageGuides)}
+              data-testid="toggle-page-guides"
               className={`w-10 h-5 rounded-full relative transition-colors ${showPageGuides ? "bg-primary" : "bg-gray-300 dark:bg-gray-600"}`}
             >
               <span
@@ -77,6 +79,7 @@ export function ViewMenu() {
                     Tamanho
                   </label>
                   <select
+                    data-testid="page-size-select"
                     value={pageGuideSettings.paperSize}
                     onChange={(e) =>
                       setPageGuideSettings({
@@ -99,6 +102,7 @@ export function ViewMenu() {
                     Orientação
                   </label>
                   <select
+                    data-testid="page-orientation-select"
                     value={pageGuideSettings.orientation}
                     onChange={(e) =>
                       setPageGuideSettings({
@@ -124,6 +128,7 @@ export function ViewMenu() {
                   </span>
                 </div>
                 <input
+                  data-testid="page-margin-slider"
                   type="range"
                   min={0}
                   max={3}

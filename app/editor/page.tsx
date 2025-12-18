@@ -8,11 +8,8 @@ export default async function EditorPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // TEMPORARY: Bypass auth for testing
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const skipAuth = supabaseUrl === "http://localhost:54321";
-
-  if (!user && !skipAuth) {
+  const isE2E = process.env.E2E_TESTS === "1";
+  if (!user && !isE2E) {
     redirect("/login");
   }
 
