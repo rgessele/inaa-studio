@@ -9,22 +9,12 @@ import React, {
   useRef,
 } from "react";
 import Konva from "konva";
-import { Tool } from "./types";
+import { Tool, type PageGuideSettings } from "./types";
 import { DEFAULT_UNIT, DEFAULT_PIXELS_PER_UNIT } from "./constants";
 import { useHistory } from "./useHistory";
-import {
-  createDefaultExportSettings,
-  type PaperOrientation,
-  type PaperSize,
-} from "./exportSettings";
+import { createDefaultExportSettings } from "./exportSettings";
 
 import type { Figure } from "./types";
-
-export interface PageGuideSettings {
-  paperSize: PaperSize;
-  orientation: PaperOrientation;
-  marginCm: number;
-}
 
 interface EditorContextType {
   tool: Tool;
@@ -91,7 +81,8 @@ interface EditorContextType {
   loadProject: (
     figures: Figure[],
     projectId: string,
-    projectName: string
+    projectName: string,
+    pageGuideSettings?: PageGuideSettings
   ) => void;
 }
 
@@ -117,7 +108,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const defaultExportSettings = createDefaultExportSettings();
-  const [showPageGuides, setShowPageGuides] = useState(false);
+  const [showPageGuides, setShowPageGuidesState] = useState(false);
   const [pageGuideSettings, setPageGuideSettings] = useState<PageGuideSettings>(
     {
       paperSize: defaultExportSettings.paperSize,
@@ -125,6 +116,27 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       marginCm: defaultExportSettings.marginCm,
     }
   );
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("inaa:showPageGuides");
+      if (raw == null) return;
+      const normalized = raw.trim().toLowerCase();
+      const parsed = normalized === "1" || normalized === "true";
+      setShowPageGuidesState(parsed);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setShowPageGuides = useCallback((show: boolean) => {
+    setShowPageGuidesState(show);
+    try {
+      localStorage.setItem("inaa:showPageGuides", show ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const MEASURE_SNAP_MIN_PX = 12;
   const [measureSnapStrengthPx, setMeasureSnapStrengthPxState] = useState(
@@ -217,9 +229,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   } = useHistory<Figure[]>([]);
 
   React.useEffect(() => {
-    const current = JSON.stringify(figures || []);
+    const current = JSON.stringify({ figures: figures || [], pageGuideSettings });
     setHasUnsavedChanges(current !== lastSavedSnapshot);
-  }, [figures, lastSavedSnapshot]);
+  }, [figures, lastSavedSnapshot, pageGuideSettings]);
 
   const setFigures = useCallback(
     (
@@ -237,19 +249,34 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
   // Load a project into the editor
   const loadProject = useCallback(
-    (figures: Figure[], projectId: string, projectName: string) => {
+    (
+      figures: Figure[],
+      projectId: string,
+      projectName: string,
+      nextPageGuideSettings?: PageGuideSettings
+    ) => {
       setFiguresState(figures, false); // Load without saving to history
       setProjectId(projectId);
       setProjectName(projectName);
-      setLastSavedSnapshot(JSON.stringify(figures));
+      if (nextPageGuideSettings) {
+        setPageGuideSettings(nextPageGuideSettings);
+      }
+      setLastSavedSnapshot(
+        JSON.stringify({
+          figures,
+          pageGuideSettings: nextPageGuideSettings ?? pageGuideSettings,
+        })
+      );
       setSelectedFigureId(null);
     },
-    [setFiguresState]
+    [pageGuideSettings, setFiguresState]
   );
 
   const markProjectSaved = useCallback(() => {
-    setLastSavedSnapshot(JSON.stringify(figures || []));
-  }, [figures]);
+    setLastSavedSnapshot(
+      JSON.stringify({ figures: figures || [], pageGuideSettings })
+    );
+  }, [figures, pageGuideSettings]);
 
   const deleteSelected = useCallback(() => {
     if (!selectedFigureId) return;

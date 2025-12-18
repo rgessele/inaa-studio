@@ -1,4 +1,13 @@
-export type PaperSize = "A4";
+export type PaperSize =
+  | "A5"
+  | "A4"
+  | "A3"
+  | "A2"
+  | "A1"
+  | "A0"
+  | "Letter"
+  | "Legal"
+  | "Tabloid";
 export type PaperOrientation = "portrait" | "landscape";
 
 export interface ExportSettings {
@@ -11,9 +20,29 @@ export interface ExportSettings {
   toolFilter: Record<"rectangle" | "circle" | "line" | "curve" | "dart", boolean>;
 }
 
-// A4 dimensions in cm
-export const A4_WIDTH_CM = 21.0;
-export const A4_HEIGHT_CM = 29.7;
+export const PAPER_SIZE_LABELS: Record<PaperSize, string> = {
+  A5: "A5",
+  A4: "A4",
+  A3: "A3",
+  A2: "A2",
+  A1: "A1",
+  A0: "A0",
+  Letter: "Carta (Letter)",
+  Legal: "Ofício (Legal)",
+  Tabloid: "Tabloide (11×17)",
+};
+
+export const PAPER_SIZES: PaperSize[] = [
+  "A5",
+  "A4",
+  "A3",
+  "A2",
+  "A1",
+  "A0",
+  "Letter",
+  "Legal",
+  "Tabloid",
+];
 
 export function createDefaultExportSettings(): ExportSettings {
   return {
@@ -51,10 +80,30 @@ export function getPaperDimensionsCm(
   paperSize: PaperSize,
   orientation: PaperOrientation
 ): { widthCm: number; heightCm: number } {
-  const base =
-    paperSize === "A4"
-      ? { widthCm: A4_WIDTH_CM, heightCm: A4_HEIGHT_CM }
-      : { widthCm: A4_WIDTH_CM, heightCm: A4_HEIGHT_CM };
+  const base = (() => {
+    switch (paperSize) {
+      case "A5":
+        return { widthCm: 14.8, heightCm: 21.0 };
+      case "A4":
+        return { widthCm: 21.0, heightCm: 29.7 };
+      case "A3":
+        return { widthCm: 29.7, heightCm: 42.0 };
+      case "A2":
+        return { widthCm: 42.0, heightCm: 59.4 };
+      case "A1":
+        return { widthCm: 59.4, heightCm: 84.1 };
+      case "A0":
+        return { widthCm: 84.1, heightCm: 118.9 };
+      case "Letter":
+        return { widthCm: 21.59, heightCm: 27.94 };
+      case "Legal":
+        return { widthCm: 21.59, heightCm: 35.56 };
+      case "Tabloid":
+        return { widthCm: 27.94, heightCm: 43.18 };
+      default:
+        return { widthCm: 21.0, heightCm: 29.7 };
+    }
+  })();
 
   if (orientation === "landscape") {
     return { widthCm: base.heightCm, heightCm: base.widthCm };

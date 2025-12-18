@@ -2,16 +2,13 @@
 
 import { useEffect } from "react";
 import { useEditor } from "@/components/editor/EditorContext";
-import type { Figure } from "@/components/editor/types";
+import type { DesignDataV2 } from "@/components/editor/types";
 
 interface ProjectLoaderProps {
   project: {
     id: string;
     name: string;
-    design_data: {
-      figures?: Figure[];
-      version?: number;
-    };
+    design_data: Partial<DesignDataV2> | null;
   };
 }
 
@@ -20,11 +17,9 @@ export default function ProjectLoader({ project }: ProjectLoaderProps) {
 
   useEffect(() => {
     // Load the project when the component mounts
-    if (project.design_data?.figures) {
-      loadProject(project.design_data.figures, project.id, project.name);
-    } else {
-      loadProject([], project.id, project.name);
-    }
+    const figures = project.design_data?.figures ?? [];
+    const pageGuideSettings = project.design_data?.pageGuideSettings;
+    loadProject(figures, project.id, project.name, pageGuideSettings);
   }, [project, loadProject]);
 
   return null; // This component only handles loading, no UI

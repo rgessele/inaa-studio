@@ -21,6 +21,7 @@ export function EditorHeader() {
     setProjectId,
     projectName,
     setProjectName,
+    pageGuideSettings,
     hasUnsavedChanges,
     markProjectSaved,
     undo,
@@ -105,7 +106,7 @@ export function EditorHeader() {
     }
 
     setIsSaving(true);
-    const result = await saveProject(projectName, figures, projectId);
+    const result = await saveProject(projectName, figures, pageGuideSettings, projectId);
 
     if (result.success) {
       markProjectSaved();
@@ -123,7 +124,7 @@ export function EditorHeader() {
     }
 
     setIsSaving(false);
-  }, [isSaving, markProjectSaved, projectId, projectName, figures]);
+  }, [isSaving, markProjectSaved, projectId, projectName, figures, pageGuideSettings]);
 
   const handleSaveAsShortcut = useCallback(() => {
     if (isSaving) return;
@@ -177,7 +178,7 @@ export function EditorHeader() {
 
   const handleSave = async (name: string) => {
     setIsSaving(true);
-    const result = await saveProject(name, figures, projectId);
+    const result = await saveProject(name, figures, pageGuideSettings, projectId);
 
     if (result.success && result.projectId) {
       setProjectName(name);
@@ -207,7 +208,7 @@ export function EditorHeader() {
     }
 
     setIsSaving(true);
-    const result = await saveProjectAsCopy(projectId, name, figures);
+    const result = await saveProjectAsCopy(projectId, name, figures, pageGuideSettings);
 
     if (result.success && result.projectId) {
       setProjectName(name);

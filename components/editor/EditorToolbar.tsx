@@ -17,6 +17,7 @@ import {
   generateSVG,
   type ExportSettings,
 } from "./export";
+import { PAPER_SIZES, PAPER_SIZE_LABELS } from "./exportSettings";
 
 export function EditorToolbar() {
   const router = useRouter();
@@ -777,7 +778,11 @@ export function EditorToolbar() {
                   }
                   className="w-full h-10 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-sm text-gray-900 dark:text-white"
                 >
-                  <option value="A4">A4</option>
+                  {PAPER_SIZES.map((size) => (
+                    <option key={size} value={size}>
+                      {PAPER_SIZE_LABELS[size]}
+                    </option>
+                  ))}
                 </select>
               </div>
 

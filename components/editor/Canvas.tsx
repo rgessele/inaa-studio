@@ -1433,29 +1433,86 @@ export default function Canvas() {
     const h = heightCm * PX_PER_CM;
     const margin = pageGuideSettings.marginCm * PX_PER_CM;
 
-    return (
-      <>
-        <Rect
-          x={0}
-          y={0}
-          width={w}
-          height={h}
-          stroke={pageGuideStroke}
-          strokeWidth={1}
-          listening={false}
-        />
-        <Rect
-          x={margin}
-          y={margin}
-          width={Math.max(0, w - 2 * margin)}
-          height={Math.max(0, h - 2 * margin)}
-          stroke={pageGuideInnerStroke}
-          strokeWidth={1}
-          dash={[6, 6]}
-          listening={false}
-        />
-      </>
-    );
+    // Tile pages across the visible viewport, anchored at world (0,0).
+    const ix0 = Math.floor(viewportWorld.x0 / w) - 1;
+    const ix1 = Math.ceil(viewportWorld.x1 / w) + 1;
+    const iy0 = Math.floor(viewportWorld.y0 / h) - 1;
+    const iy1 = Math.ceil(viewportWorld.y1 / h) + 1;
+
+    const tilesX = Math.max(0, ix1 - ix0 + 1);
+    const tilesY = Math.max(0, iy1 - iy0 + 1);
+    const totalTiles = tilesX * tilesY;
+
+    // Safety: when zoomed very far out, drawing every page can be too heavy.
+    const MAX_TILES = 600;
+    const stride = totalTiles > MAX_TILES ? Math.ceil(Math.sqrt(totalTiles / MAX_TILES)) : 1;
+
+    const showWatermark = stride === 1;
+    const watermarkText = pageGuideSettings.paperSize;
+    const watermarkFill = isDark ? "#ffffff" : "#000000";
+    const watermarkOpacity = isDark ? 0.06 : 0.05;
+    const watermarkFontSize = Math.max(8, Math.min(w, h) * 0.18);
+
+    const innerW = Math.max(0, w - 2 * margin);
+    const innerH = Math.max(0, h - 2 * margin);
+
+    const nodes: React.ReactNode[] = [];
+    for (let iy = iy0; iy <= iy1; iy += stride) {
+      for (let ix = ix0; ix <= ix1; ix += stride) {
+        const x = ix * w;
+        const y = iy * h;
+        const key = `${ix}:${iy}`;
+
+        nodes.push(
+          <Rect
+            key={`pg:${key}`}
+            x={x}
+            y={y}
+            width={w}
+            height={h}
+            stroke={pageGuideStroke}
+            strokeWidth={1}
+            listening={false}
+          />
+        );
+
+        if (innerW > 0 && innerH > 0) {
+          nodes.push(
+            <Rect
+              key={`pgin:${key}`}
+              x={x + margin}
+              y={y + margin}
+              width={innerW}
+              height={innerH}
+              stroke={pageGuideInnerStroke}
+              strokeWidth={1}
+              dash={[6, 6]}
+              listening={false}
+            />
+          );
+        }
+
+        if (showWatermark) {
+          nodes.push(
+            <Text
+              key={`pgwm:${key}`}
+              x={x}
+              y={y + h / 2 - watermarkFontSize / 2}
+              width={w}
+              text={watermarkText}
+              align="center"
+              fontSize={watermarkFontSize}
+              fontStyle="bold"
+              fill={watermarkFill}
+              opacity={watermarkOpacity}
+              listening={false}
+            />
+          );
+        }
+      }
+    }
+
+    return <>{nodes}</>;
   }, [
     pageGuideInnerStroke,
     pageGuideSettings.marginCm,
@@ -1463,6 +1520,8 @@ export default function Canvas() {
     pageGuideSettings.paperSize,
     pageGuideStroke,
     showPageGuides,
+    viewportWorld,
+    isDark,
   ]);
 
   const draftPreview = useMemo(() => {

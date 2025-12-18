@@ -8,6 +8,7 @@ import { NewProjectButton } from "@/components/dashboard/NewProjectButton";
 import { createClient } from "@/lib/supabase/client";
 import type { Project } from "@/lib/projects";
 import { saveProjectAsCopy } from "@/lib/projects";
+import { createDefaultExportSettings } from "@/components/editor/exportSettings";
 
 type SortOption = "recent" | "old" | "name";
 type ViewMode = "grid" | "list";
@@ -98,10 +99,16 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
 
     setIsWorking(true);
     try {
+      const defaults = createDefaultExportSettings();
       const result = await saveProjectAsCopy(
         project.id,
         newName.trim(),
-        project.design_data?.figures ?? []
+        project.design_data?.figures ?? [],
+        project.design_data?.pageGuideSettings ?? {
+          paperSize: defaults.paperSize,
+          orientation: defaults.orientation,
+          marginCm: defaults.marginCm,
+        }
       );
 
       if (!result.success || !result.projectId) {

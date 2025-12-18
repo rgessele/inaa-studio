@@ -9,6 +9,8 @@ export type Tool =
   | "mirror"
   | "unfold";
 
+import type { PaperOrientation, PaperSize } from "./exportSettings";
+
 // =====================
 // Figure-based model (v2)
 // =====================
@@ -62,9 +64,16 @@ export interface Figure {
   closed: boolean;
 }
 
+export interface PageGuideSettings {
+  paperSize: PaperSize;
+  orientation: PaperOrientation;
+  marginCm: number;
+}
+
 export interface DesignDataV2 {
   version: 2;
   figures: Figure[];
+  pageGuideSettings?: PageGuideSettings;
   meta?: {
     fabric?: string | null;
     notes?: string | null;
