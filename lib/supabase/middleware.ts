@@ -9,9 +9,10 @@ export async function updateSession(request: NextRequest) {
   // E2E bypass (Playwright): enabled only when explicitly opted-in.
   // This keeps production secure while allowing stable editor E2E tests.
   const e2eEnabled = process.env.E2E_TESTS === "1";
+  const isProd = process.env.NODE_ENV === "production";
   const e2eToken = process.env.E2E_TOKEN;
   const requestToken = request.headers.get("x-e2e-token");
-  if (e2eEnabled && e2eToken && requestToken === e2eToken) {
+  if (!isProd && e2eEnabled && e2eToken && requestToken === e2eToken) {
     return supabaseResponse;
   }
 
@@ -26,7 +27,6 @@ export async function updateSession(request: NextRequest) {
       pathname === "/" ||
       pathname.startsWith("/login") ||
       pathname.startsWith("/auth");
-    const isProd = process.env.NODE_ENV === "production";
     if (!isPublic && isProd) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";

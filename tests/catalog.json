@@ -20,14 +20,18 @@
       "id": "editor.grid",
       "title": "Grid + Contraste do Grid",
       "risk": "medium",
-      "e2e": ["tests/editor.smoke.spec.ts"],
+      "e2e": ["tests/editor.smoke.spec.ts", "tests/prefs.persistence.spec.ts"],
       "notes": "Preferência global via localStorage."
     },
     {
       "id": "editor.pageGuides",
       "title": "Limites da página (tile) + watermark",
       "risk": "high",
-      "e2e": ["tests/editor.smoke.spec.ts", "tests/page-guides.visual.spec.ts"],
+      "e2e": [
+        "tests/editor.smoke.spec.ts",
+        "tests/page-guides.visual.spec.ts",
+        "tests/prefs.persistence.spec.ts"
+      ],
       "notes": "show/hide global; settings por projeto."
     },
     {

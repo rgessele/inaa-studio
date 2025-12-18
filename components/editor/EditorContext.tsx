@@ -319,6 +319,21 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       setSelectedFigureId(figId);
     };
 
+    const loadTestProject = (opts?: {
+      figures?: Figure[];
+      pageGuideSettings?: PageGuideSettings;
+      projectId?: string;
+      projectName?: string;
+    }) => {
+      const safe = opts ?? {};
+      loadProject(
+        safe.figures ?? [],
+        safe.projectId ?? "e2e-project",
+        safe.projectName ?? "Projeto E2E",
+        safe.pageGuideSettings
+      );
+    };
+
     (window as unknown as { __INAA_DEBUG__?: unknown }).__INAA_DEBUG__ = {
       getState: () => ({
         tool,
@@ -333,6 +348,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         projectName,
       }),
       addTestRectangle,
+      loadTestProject,
     };
   }, [
     figures,
@@ -344,6 +360,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     selectedFigureId,
     showGrid,
     showPageGuides,
+    loadProject,
     setFigures,
     setSelectedFigureId,
     tool,

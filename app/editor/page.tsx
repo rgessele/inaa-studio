@@ -9,7 +9,8 @@ export default async function EditorPage() {
   } = await supabase.auth.getUser();
 
   const isE2E = process.env.E2E_TESTS === "1";
-  if (!user && !isE2E) {
+  const isProd = process.env.NODE_ENV === "production";
+  if (!user && (!isE2E || isProd)) {
     redirect("/login");
   }
 

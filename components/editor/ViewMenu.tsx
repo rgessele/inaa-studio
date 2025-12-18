@@ -158,6 +158,7 @@ export function ViewMenu() {
               </span>
             </div>
             <input
+              data-testid="grid-contrast-slider"
               type="range"
               min={0}
               max={100}

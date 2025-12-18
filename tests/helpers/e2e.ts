@@ -4,9 +4,15 @@ export async function initE2EState(page: Page) {
   await page.addInitScript(() => {
     try {
       // Keep runs deterministic.
-      localStorage.setItem("inaa:gridContrast", "0.5");
-      localStorage.setItem("inaa:measureSnapStrengthPx", "12");
-      localStorage.setItem("inaa:showPageGuides", "0");
+      if (localStorage.getItem("inaa:gridContrast") === null) {
+        localStorage.setItem("inaa:gridContrast", "0.5");
+      }
+      if (localStorage.getItem("inaa:measureSnapStrengthPx") === null) {
+        localStorage.setItem("inaa:measureSnapStrengthPx", "12");
+      }
+      if (localStorage.getItem("inaa:showPageGuides") === null) {
+        localStorage.setItem("inaa:showPageGuides", "0");
+      }
       // If the app uses theme persistence elsewhere, we keep default.
     } catch {
       // ignore
@@ -39,6 +45,16 @@ declare global {
         projectName: string;
       };
       addTestRectangle?: () => void;
+      loadTestProject?: (opts?: {
+        figures?: unknown[];
+        pageGuideSettings?: {
+          paperSize: string;
+          orientation: string;
+          marginCm: number;
+        };
+        projectId?: string;
+        projectName?: string;
+      }) => void;
     };
   }
 }
