@@ -16,11 +16,51 @@ export default async function DashboardPage() {
   }
 
   // Fetch user's projects
-  const { data: projects, error } = await supabase
-    .from("projects")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("updated_at", { ascending: false });
+  let projects: unknown[] | null = null;
+  let error: { message: string } | null = null;
+
+  // Prefer embedding tags via FK relationships, but gracefully fall back if
+  // migrations weren't applied yet (relationship missing from schema cache).
+  {
+    const response = await supabase
+      .from("projects")
+      .select(
+        "*, project_tags!project_tags_project_id_fkey(tag_id, tags!project_tags_tag_id_fkey(id, name, color))"
+      )
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false });
+
+    projects = response.data as unknown[] | null;
+    error = response.error;
+  }
+
+  if (error?.message?.includes("color")) {
+    const withoutColor = await supabase
+      .from("projects")
+      .select(
+        "*, project_tags!project_tags_project_id_fkey(tag_id, tags!project_tags_tag_id_fkey(id, name))"
+      )
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false });
+
+    projects = withoutColor.data as unknown[] | null;
+    error = withoutColor.error;
+  }
+
+  if (
+    error?.message?.includes(
+      "Could not find a relationship between 'projects' and 'project_tags'"
+    )
+  ) {
+    const fallback = await supabase
+      .from("projects")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false });
+
+    projects = fallback.data as unknown[] | null;
+    error = fallback.error;
+  }
 
   const handleSignOut = async () => {
     "use server";

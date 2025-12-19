@@ -13,12 +13,103 @@ import { createDefaultExportSettings } from "@/components/editor/exportSettings"
 type SortOption = "recent" | "old" | "name";
 type ViewMode = "grid" | "list";
 
+type DashboardTag = {
+  id: string;
+  name: string;
+  color: string;
+};
+
+const DEFAULT_TAG_COLOR = "#F2C94C";
+
+function normalizeHexColor(input: string): string | null {
+  const raw = input.trim();
+  if (!raw) return null;
+
+  const prefixed = raw.startsWith("#") ? raw : `#${raw}`;
+  const match = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/.exec(prefixed);
+  if (!match) return null;
+
+  const value = match[1] ?? "";
+  const expanded =
+    value.length === 3
+      ? `${value[0]}${value[0]}${value[1]}${value[1]}${value[2]}${value[2]}`
+      : value;
+
+  return `#${expanded.toUpperCase()}`;
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const normalized = normalizeHexColor(hex);
+  if (!normalized) return null;
+  const value = normalized.slice(1);
+  const r = Number.parseInt(value.slice(0, 2), 16);
+  const g = Number.parseInt(value.slice(2, 4), 16);
+  const b = Number.parseInt(value.slice(4, 6), 16);
+  if ([r, g, b].some((n) => Number.isNaN(n))) return null;
+  return { r, g, b };
+}
+
+function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }): number {
+  const toLinear = (channel: number) => {
+    const s = channel / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  const R = toLinear(r);
+  const G = toLinear(g);
+  const B = toLinear(b);
+  return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+}
+
+function tagBadgeStyles(hex: string): {
+  badgeStyle: React.CSSProperties;
+  dotStyle: React.CSSProperties;
+} {
+  const rgb = hexToRgb(hex) ?? { r: 242, g: 201, b: 76 };
+  const normalizedHex = normalizeHexColor(hex) ?? DEFAULT_TAG_COLOR;
+
+  return {
+    badgeStyle: {
+      backgroundColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.16)`,
+      borderColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.32)`,
+      color: normalizedHex,
+    },
+    dotStyle: {
+      backgroundColor: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
+    },
+  };
+}
+
+type ProjectTagRow = {
+  tag_id: string;
+  tags: DashboardTag | null;
+};
+
+type DashboardProject = Project & {
+  project_tags?: ProjectTagRow[];
+};
+
 function formatDatePtBr(value: string) {
   return new Date(value).toLocaleDateString("pt-BR");
 }
 
-function getCoverUrl(project: Project): string | null {
+function getCoverUrl(project: DashboardProject): string | null {
   return project.design_data?.meta?.coverUrl ?? null;
+}
+
+function getProjectTags(project: DashboardProject): DashboardTag[] {
+  const rows = project.project_tags ?? [];
+  return rows
+    .map((row) => row.tags)
+    .filter((value): value is DashboardTag => Boolean(value))
+    .map((tag) => ({
+      ...tag,
+      color: normalizeHexColor((tag as { color?: string | null }).color ?? "") ??
+        DEFAULT_TAG_COLOR,
+    }));
+}
+
+function getProjectTagIds(project: DashboardProject): string[] {
+  return (project.project_tags ?? []).map((row) => row.tag_id);
 }
 
 export function DashboardClient({ projects }: { projects: Project[] }) {
@@ -26,7 +117,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortOption>("recent");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [items, setItems] = useState<Project[]>(projects);
+  const [items, setItems] = useState<DashboardProject[]>(
+    projects as DashboardProject[]
+  );
   const [isClient, setIsClient] = useState(false);
   const [openMenuForProjectId, setOpenMenuForProjectId] = useState<
     string | null
@@ -34,6 +127,19 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   const [printProjectId, setPrintProjectId] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<Project | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [tags, setTags] = useState<DashboardTag[]>([]);
+  const [tagsError, setTagsError] = useState<string | null>(null);
+  const [isTagsModalOpen, setIsTagsModalOpen] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState<string>(DEFAULT_TAG_COLOR);
+  const [tagColorDrafts, setTagColorDrafts] = useState<Record<string, string>>({});
+  const [openTagFilter, setOpenTagFilter] = useState(false);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [includeUntagged, setIncludeUntagged] = useState(false);
+  const [tagEditorProject, setTagEditorProject] = useState<
+    DashboardProject | null
+  >(null);
+  const [tagEditorError, setTagEditorError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingBannerProjectIdRef = useRef<string | null>(null);
@@ -41,6 +147,78 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+
+    const loadTags = async () => {
+      setTagsError(null);
+      try {
+        const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) return;
+
+        const withColor = await supabase
+          .from("tags")
+          .select("id, name, color")
+          .order("name", { ascending: true });
+
+        if (withColor.error?.message?.includes("color")) {
+          const withoutColor = await supabase
+            .from("tags")
+            .select("id, name")
+            .order("name", { ascending: true });
+
+          if (withoutColor.error) {
+            setTagsError(withoutColor.error.message);
+            return;
+          }
+
+          const normalized = (withoutColor.data ?? []).map((tag) => {
+            const row = tag as { id: string; name: string };
+            return { ...row, color: DEFAULT_TAG_COLOR };
+          });
+          setTags(normalized);
+          return;
+        }
+
+        if (withColor.error) {
+          setTagsError(withColor.error.message);
+          return;
+        }
+
+        const normalized = (withColor.data ?? []).map((tag) => {
+          const row = tag as { id: string; name: string; color?: string | null };
+          return {
+            id: row.id,
+            name: row.name,
+            color: normalizeHexColor(row.color ?? "") ?? DEFAULT_TAG_COLOR,
+          };
+        });
+
+        setTags(normalized);
+      } catch {
+        setTagsError("Erro inesperado ao carregar tags.");
+      }
+    };
+
+    void loadTags();
+  }, [isClient]);
+
+  useEffect(() => {
+    setTagColorDrafts((prev) => {
+      const next = { ...prev };
+      for (const tag of tags) {
+        if (next[tag.id] === undefined) {
+          next[tag.id] = tag.color;
+        }
+      }
+      return next;
+    });
+  }, [tags]);
 
   useEffect(() => {
     if (!printProjectId) return;
@@ -67,7 +245,29 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   }, [deleteCandidate]);
 
   useEffect(() => {
-    setItems(projects);
+    if (!isTagsModalOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isTagsModalOpen]);
+
+  useEffect(() => {
+    if (!tagEditorProject) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [tagEditorProject]);
+
+  useEffect(() => {
+    setItems(projects as DashboardProject[]);
   }, [projects]);
 
   useEffect(() => {
@@ -94,8 +294,12 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       if (target?.closest?.("[data-project-menu='true']")) {
         return;
       }
+      if (target?.closest?.("[data-tag-filter='true']")) {
+        return;
+      }
 
       setOpenMenuForProjectId(null);
+      setOpenTagFilter(false);
     };
 
     document.addEventListener("pointerdown", onDocumentPointerDown);
@@ -131,18 +335,49 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       }
 
       const supabase = createClient();
-      const { data: created, error } = await supabase
+      const withTags = await supabase
         .from("projects")
-        .select("*")
+        .select(
+          "*, project_tags!project_tags_project_id_fkey(tag_id, tags!project_tags_tag_id_fkey(id, name, color))"
+        )
         .eq("id", result.projectId)
         .single();
+
+      const withTagsWithoutColor =
+        withTags.error?.message?.includes("color")
+          ? await supabase
+              .from("projects")
+              .select(
+                "*, project_tags!project_tags_project_id_fkey(tag_id, tags!project_tags_tag_id_fkey(id, name))"
+              )
+              .eq("id", result.projectId)
+              .single()
+          : null;
+
+      const relationshipMissing =
+        (withTagsWithoutColor?.error ?? withTags.error)?.message?.includes(
+          "Could not find a relationship between 'projects' and 'project_tags'"
+        ) ?? false;
+
+      const withoutTags = relationshipMissing
+        ? await supabase
+            .from("projects")
+            .select("*")
+            .eq("id", result.projectId)
+            .single()
+        : null;
+
+      const created =
+        (withoutTags?.data ?? withTagsWithoutColor?.data ?? withTags.data) as unknown;
+      const error =
+        withoutTags?.error ?? withTagsWithoutColor?.error ?? withTags.error;
 
       if (error || !created) {
         router.refresh();
         return;
       }
 
-      setItems((prev) => [created as Project, ...prev]);
+      setItems((prev) => [created as DashboardProject, ...prev]);
       setOpenMenuForProjectId(null);
     } finally {
       setIsWorking(false);
@@ -290,6 +525,283 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
     }
   };
 
+  const openTagEditor = (project: DashboardProject) => {
+    setTagEditorError(null);
+    setTagEditorProject(project);
+    setOpenMenuForProjectId(null);
+  };
+
+  const toggleTagForProject = async (projectId: string, tagId: string) => {
+    setIsWorking(true);
+    setTagEditorError(null);
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        setTagEditorError("Usuário não autenticado");
+        return;
+      }
+
+      const project = items.find((p) => p.id === projectId);
+      if (!project) return;
+
+      const current = new Set(getProjectTagIds(project));
+      const willAdd = !current.has(tagId);
+
+      if (willAdd) {
+        const { error } = await supabase
+          .from("project_tags")
+          .insert([{ project_id: projectId, tag_id: tagId }]);
+        if (error) {
+          setTagEditorError(error.message);
+          return;
+        }
+      } else {
+        const { error } = await supabase
+          .from("project_tags")
+          .delete()
+          .eq("project_id", projectId)
+          .eq("tag_id", tagId);
+        if (error) {
+          setTagEditorError(error.message);
+          return;
+        }
+      }
+
+      const tag = tags.find((t) => t.id === tagId) ?? null;
+
+      const applyToProject = (p: DashboardProject): DashboardProject => {
+        const rows = p.project_tags ?? [];
+        if (willAdd) {
+          const nextRows: ProjectTagRow[] = tag
+            ? [...rows, { tag_id: tagId, tags: tag }]
+            : [...rows, { tag_id: tagId, tags: null }];
+          return { ...p, project_tags: nextRows };
+        }
+        return { ...p, project_tags: rows.filter((row) => row.tag_id !== tagId) };
+      };
+
+      setItems((prev) => prev.map((p) => (p.id === projectId ? applyToProject(p) : p)));
+      setTagEditorProject((prev) =>
+        prev && prev.id === projectId ? applyToProject(prev) : prev
+      );
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
+  const handleCreateTag = async () => {
+    const name = newTagName.trim();
+    if (!name || isWorking) return;
+
+    const normalizedColor = normalizeHexColor(newTagColor);
+    if (!normalizedColor) {
+      setTagsError("Cor inválida. Use o formato #RRGGBB.");
+      return;
+    }
+
+    setIsWorking(true);
+    setTagsError(null);
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        setTagsError("Usuário não autenticado");
+        return;
+      }
+
+      const withColor = await supabase
+        .from("tags")
+        .insert([{ user_id: user.id, name, color: normalizedColor }])
+        .select("id, name, color")
+        .single();
+
+      const withoutColor = withColor.error?.message?.includes("color")
+        ? await supabase
+            .from("tags")
+            .insert([{ user_id: user.id, name }])
+            .select("id, name")
+            .single()
+        : null;
+
+      const data =
+        (withoutColor?.data
+          ? {
+              ...(withoutColor.data as { id: string; name: string }),
+              color: DEFAULT_TAG_COLOR,
+            }
+          : (withColor.data as unknown)) ?? null;
+
+      const error = withoutColor?.error ?? withColor.error;
+
+      if (error || !data) {
+        if (error?.message?.includes("tags_color_check")) {
+          setTagsError(
+            "Atualize o banco de dados para suportar cores hex (#RRGGBB)."
+          );
+          return;
+        }
+        setTagsError(error?.message ?? "Erro ao criar tag.");
+        return;
+      }
+
+      const createdRow = data as { id: string; name: string; color?: string | null };
+      const created: DashboardTag = {
+        id: createdRow.id,
+        name: createdRow.name,
+        color: normalizeHexColor(createdRow.color ?? "") ?? normalizedColor,
+      };
+
+      setTags((prev) =>
+        [...prev, created].sort((a, b) =>
+          a.name.localeCompare(b.name, "pt-BR")
+        )
+      );
+      setTagColorDrafts((prev) => ({ ...prev, [created.id]: created.color }));
+      setNewTagName("");
+      setNewTagColor(DEFAULT_TAG_COLOR);
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
+  const handleUpdateTagColor = async (tagId: string, color: string) => {
+    if (isWorking) return;
+
+    const normalizedColor = normalizeHexColor(color);
+    if (!normalizedColor) {
+      setTagsError("Cor inválida. Use o formato #RRGGBB.");
+      return;
+    }
+
+    setIsWorking(true);
+    setTagsError(null);
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        setTagsError("Usuário não autenticado");
+        return;
+      }
+
+      const { error } = await supabase
+        .from("tags")
+        .update({ color: normalizedColor })
+        .eq("id", tagId)
+        .eq("user_id", user.id);
+
+      if (error) {
+        if (error.message.includes("tags_color_check")) {
+          setTagsError(
+            "Atualize o banco de dados para suportar cores hex (#RRGGBB)."
+          );
+          return;
+        }
+        setTagsError(error.message);
+        return;
+      }
+
+      setTags((prev) =>
+        prev.map((t) => (t.id === tagId ? { ...t, color: normalizedColor } : t))
+      );
+      setTagColorDrafts((prev) => ({ ...prev, [tagId]: normalizedColor }));
+
+      // Keep any open tag editor consistent
+      setItems((prev) =>
+        prev.map((p) => ({
+          ...p,
+          project_tags: (p.project_tags ?? []).map((row) =>
+            row.tags?.id === tagId && row.tags
+              ? { ...row, tags: { ...row.tags, color: normalizedColor } }
+              : row
+          ),
+        }))
+      );
+      setTagEditorProject((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          project_tags: (prev.project_tags ?? []).map((row) =>
+            row.tags?.id === tagId && row.tags
+              ? { ...row, tags: { ...row.tags, color: normalizedColor } }
+              : row
+          ),
+        };
+      });
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
+  const handleDeleteTag = async (tagId: string) => {
+    if (isWorking) return;
+
+    setIsWorking(true);
+    setTagsError(null);
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        setTagsError("Usuário não autenticado");
+        return;
+      }
+
+      const { error } = await supabase
+        .from("tags")
+        .delete()
+        .eq("id", tagId)
+        .eq("user_id", user.id);
+
+      if (error) {
+        setTagsError(error.message);
+        return;
+      }
+
+      setTags((prev) => prev.filter((t) => t.id !== tagId));
+      setSelectedTagIds((prev) => prev.filter((id) => id !== tagId));
+      setItems((prev) =>
+        prev.map((p) => ({
+          ...p,
+          project_tags: (p.project_tags ?? []).filter((row) => row.tag_id !== tagId),
+        }))
+      );
+      setTagEditorProject((prev) =>
+        prev
+          ? {
+              ...prev,
+              project_tags: (prev.project_tags ?? []).filter(
+                (row) => row.tag_id !== tagId
+              ),
+            }
+          : prev
+      );
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
+  const toggleSelectedTag = (tagId: string) => {
+    setSelectedTagIds((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
+    );
+  };
+
   const openBannerPicker = (projectId: string) => {
     pendingBannerProjectIdRef.current = projectId;
     fileInputRef.current?.click();
@@ -405,7 +917,21 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
         })
       : items;
 
-    const sorted = [...base];
+    const tagIdSet = new Set(selectedTagIds);
+    const filteredByTags =
+      tagIdSet.size === 0 && !includeUntagged
+        ? base
+        : base.filter((project) => {
+            const tagIds = getProjectTagIds(project as DashboardProject);
+            const isUntaggedProject = tagIds.length === 0;
+            const hasSelected = tagIds.some((id) => tagIdSet.has(id));
+            return (
+              (includeUntagged && isUntaggedProject) ||
+              (tagIdSet.size > 0 && hasSelected)
+            );
+          });
+
+    const sorted = [...filteredByTags];
 
     if (sort === "recent") {
       sorted.sort(
@@ -426,7 +952,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
     }
 
     return sorted;
-  }, [items, query, sort]);
+  }, [includeUntagged, items, query, selectedTagIds, sort]);
 
   return (
     <>
@@ -523,7 +1049,288 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
           )
         : null}
 
-      <div className="flex flex-col sm:flex-row gap-4 mb-8">
+      {isClient && isTagsModalOpen
+        ? createPortal(
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center">
+              <div
+                className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                onClick={() => (!isWorking ? setIsTagsModalOpen(false) : null)}
+              />
+
+              <div className="relative w-[92vw] max-w-lg rounded-2xl bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 shadow-floating overflow-hidden">
+                <button
+                  type="button"
+                  aria-label="Fechar"
+                  onClick={() => (!isWorking ? setIsTagsModalOpen(false) : null)}
+                  className="absolute right-4 top-4 text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+
+                <div className="p-8">
+                  <h2 className="text-2xl font-semibold text-gray-900 dark:text-text-main-dark">
+                    Tags
+                  </h2>
+                  <p className="mt-2 text-sm text-gray-600 dark:text-text-muted-dark">
+                    Crie e exclua tags para organizar seus projetos.
+                  </p>
+
+                  <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                    <input
+                      value={newTagName}
+                      onChange={(e) => setNewTagName(e.target.value)}
+                      placeholder="Nome da tag"
+                      className="flex-1 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 bg-surface-light dark:bg-surface-dark text-gray-900 dark:text-text-main-dark placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                    />
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        aria-label="Escolher cor"
+                        value={normalizeHexColor(newTagColor) ?? DEFAULT_TAG_COLOR}
+                        onChange={(e) => setNewTagColor(e.target.value)}
+                        className="h-10 w-10 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark"
+                      />
+                      <input
+                        value={newTagColor}
+                        onChange={(e) => setNewTagColor(e.target.value)}
+                        onBlur={() => {
+                          const normalized = normalizeHexColor(newTagColor);
+                          if (normalized) setNewTagColor(normalized);
+                        }}
+                        placeholder="#RRGGBB"
+                        inputMode="text"
+                        autoCapitalize="characters"
+                        className="w-28 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 bg-surface-light dark:bg-surface-dark text-gray-900 dark:text-text-main-dark placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={isWorking || newTagName.trim().length === 0}
+                      onClick={() => void handleCreateTag()}
+                      className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                    >
+                      {isWorking ? "Criando..." : "Criar"}
+                    </button>
+                  </div>
+
+                  {tagsError ? (
+                    <div className="mt-4 rounded-lg bg-red-50 dark:bg-red-950/20 p-3 border border-red-200 dark:border-red-900/30">
+                      <p className="text-sm text-red-800 dark:text-red-200">
+                        {tagsError}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-6 max-h-[45vh] overflow-auto rounded-xl border border-gray-200 dark:border-gray-700">
+                    {tags.length === 0 ? (
+                      <div className="p-6 text-sm text-gray-600 dark:text-text-muted-dark">
+                        Nenhuma tag criada ainda.
+                      </div>
+                    ) : (
+                      <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {tags.map((tag) => {
+                          const draft = tagColorDrafts[tag.id] ?? tag.color;
+                          const normalizedDraft =
+                            normalizeHexColor(draft) ?? DEFAULT_TAG_COLOR;
+                          const normalizedSaved =
+                            normalizeHexColor(tag.color) ?? DEFAULT_TAG_COLOR;
+                          const styles = tagBadgeStyles(normalizedSaved);
+
+                          const maybeSaveDraft = async () => {
+                            const normalized = normalizeHexColor(draft);
+                            if (!normalized) {
+                              setTagColorDrafts((prev) => ({
+                                ...prev,
+                                [tag.id]: normalizedSaved,
+                              }));
+                              return;
+                            }
+                            setTagColorDrafts((prev) => ({
+                              ...prev,
+                              [tag.id]: normalized,
+                            }));
+                            if (normalized !== normalizedSaved) {
+                              await handleUpdateTagColor(tag.id, normalized);
+                            }
+                          };
+
+                          return (
+                          <li
+                            key={tag.id}
+                            className="flex items-center justify-between gap-4 px-5 py-3"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="material-symbols-outlined text-[18px] text-gray-400">
+                                sell
+                              </span>
+                              <span
+                                className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border"
+                                style={styles.badgeStyle}
+                              >
+                                <span
+                                  className="mr-1.5 h-2 w-2 rounded-full"
+                                  style={styles.dotStyle}
+                                />
+                                {tag.name}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                disabled={isWorking}
+                                aria-label={`Cor da tag ${tag.name}`}
+                                value={normalizedDraft}
+                                onChange={(e) => {
+                                  setTagColorDrafts((prev) => ({
+                                    ...prev,
+                                    [tag.id]: e.target.value,
+                                  }));
+                                  void handleUpdateTagColor(tag.id, e.target.value);
+                                }}
+                                className="h-9 w-9 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark disabled:opacity-60 disabled:pointer-events-none"
+                              />
+
+                              <input
+                                value={draft}
+                                disabled={isWorking}
+                                onChange={(e) =>
+                                  setTagColorDrafts((prev) => ({
+                                    ...prev,
+                                    [tag.id]: e.target.value,
+                                  }))
+                                }
+                                onBlur={() => {
+                                  void maybeSaveDraft();
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    void maybeSaveDraft();
+                                  }
+                                }}
+                                placeholder="#RRGGBB"
+                                inputMode="text"
+                                autoCapitalize="characters"
+                                className="w-28 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 bg-surface-light dark:bg-surface-dark text-gray-900 dark:text-text-main-dark placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary disabled:opacity-60 disabled:pointer-events-none"
+                              />
+
+                              <button
+                                type="button"
+                                disabled={isWorking}
+                                onClick={() => void handleDeleteTag(tag.id)}
+                                className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-accent-rose hover:bg-accent-rose/10 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                              >
+                                <span className="material-symbols-outlined text-[18px]">
+                                  delete
+                                </span>
+                                Excluir
+                              </button>
+                            </div>
+                          </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
+      {isClient && tagEditorProject
+        ? createPortal(
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center">
+              <div
+                className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                onClick={() => (!isWorking ? setTagEditorProject(null) : null)}
+              />
+
+              <div className="relative w-[92vw] max-w-lg rounded-2xl bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 shadow-floating overflow-hidden">
+                <button
+                  type="button"
+                  aria-label="Fechar"
+                  onClick={() => (!isWorking ? setTagEditorProject(null) : null)}
+                  className="absolute right-4 top-4 text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+
+                <div className="p-8">
+                  <h2 className="text-2xl font-semibold text-gray-900 dark:text-text-main-dark">
+                    Tags do projeto
+                  </h2>
+                  <p className="mt-2 text-sm text-gray-600 dark:text-text-muted-dark">
+                    Selecione as tags para o projeto{" "}
+                    <span className="font-medium text-gray-900 dark:text-text-main-dark">
+                      “{tagEditorProject.name}”
+                    </span>
+                    .
+                  </p>
+
+                  {tagEditorError ? (
+                    <div className="mt-4 rounded-lg bg-red-50 dark:bg-red-950/20 p-3 border border-red-200 dark:border-red-900/30">
+                      <p className="text-sm text-red-800 dark:text-red-200">
+                        {tagEditorError}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-6 max-h-[45vh] overflow-auto rounded-xl border border-gray-200 dark:border-gray-700">
+                    {tags.length === 0 ? (
+                      <div className="p-6 text-sm text-gray-600 dark:text-text-muted-dark">
+                        Nenhuma tag criada ainda.
+                      </div>
+                    ) : (
+                      <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {tags.map((tag) => {
+                          const checked = getProjectTagIds(tagEditorProject).includes(tag.id);
+                          return (
+                            <li
+                              key={tag.id}
+                              className="flex items-center justify-between gap-4 px-5 py-3"
+                            >
+                              <label className="flex items-center gap-3 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={isWorking}
+                                  onChange={() => void toggleTagForProject(tagEditorProject.id, tag.id)}
+                                  className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                />
+                                <span className="text-sm font-medium text-gray-900 dark:text-text-main-dark">
+                                  {tag.name}
+                                </span>
+                              </label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="mt-8 flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      disabled={isWorking}
+                      onClick={() => setTagEditorProject(null)}
+                      className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
+      <div className="relative z-40 flex flex-col sm:flex-row gap-4 mb-8">
         <div className="relative flex-grow max-w-md">
           <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <span className="material-symbols-outlined text-[20px] text-gray-400">
@@ -531,7 +1338,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
             </span>
           </span>
           <input
-            className="block w-full pl-10 pr-3 py-2 border border-gray-200 dark:border-gray-700 rounded-md leading-5 bg-surface-light dark:bg-surface-dark placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm text-gray-900 dark:text-text-main-dark shadow-subtle"
+            className="block w-full h-10 pl-10 pr-3 py-0 border border-gray-200 dark:border-gray-700 rounded-md bg-surface-light dark:bg-surface-dark placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm text-gray-900 dark:text-text-main-dark shadow-subtle"
             placeholder="Buscar projetos..."
             type="text"
             value={query}
@@ -540,8 +1347,113 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
         </div>
 
         <div className="flex gap-2 items-center">
+          <div className="relative z-50" data-tag-filter="true">
+            <button
+              type="button"
+              disabled={isWorking}
+              onClick={() => setOpenTagFilter((prev) => !prev)}
+              className="inline-flex items-center justify-center h-10 px-3 gap-2 rounded-md border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors shadow-subtle disabled:opacity-60 disabled:pointer-events-none"
+              aria-label="Filtrar por tags"
+              title="Filtrar por tags"
+            >
+              <span className="material-symbols-outlined text-[20px]">sell</span>
+              <span className="hidden sm:inline text-sm">Tags</span>
+            </button>
+
+            {openTagFilter ? (
+              <div
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                className="absolute z-50 left-0 sm:right-0 sm:left-auto mt-2 w-72 rounded-xl border border-gray-200/60 dark:border-gray-700/60 bg-surface-light/95 dark:bg-surface-dark/95 backdrop-blur shadow-floating overflow-hidden"
+              >
+                <div className="px-4 py-3 border-b border-gray-200/60 dark:border-gray-700/60">
+                  <p className="text-sm font-medium text-gray-900 dark:text-text-main-dark">
+                    Filtrar por tags
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-text-muted-dark mt-1">
+                    Selecione uma ou mais tags.
+                  </p>
+                </div>
+
+                <div className="max-h-64 overflow-auto">
+                  <label className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100/80 dark:hover:bg-gray-700/60 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={includeUntagged}
+                      onChange={() => setIncludeUntagged((prev) => !prev)}
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <span className="text-sm text-gray-800 dark:text-gray-100">
+                      Sem tag
+                    </span>
+                  </label>
+                  <div className="h-px bg-gray-200/60 dark:bg-gray-700/60" />
+
+                  {tags.length === 0 ? (
+                    <div className="px-4 py-3 text-sm text-gray-600 dark:text-text-muted-dark">
+                      Nenhuma tag criada ainda.
+                    </div>
+                  ) : (
+                    tags.map((tag) => (
+                      <label
+                        key={tag.id}
+                        className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100/80 dark:hover:bg-gray-700/60 cursor-pointer select-none"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedTagIds.includes(tag.id)}
+                          onChange={() => toggleSelectedTag(tag.id)}
+                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                        <span
+                          className="h-2.5 w-2.5 rounded-full border border-gray-200 dark:border-gray-700"
+                          style={{
+                            backgroundColor:
+                              normalizeHexColor(tag.color) ?? DEFAULT_TAG_COLOR,
+                          }}
+                          aria-hidden="true"
+                        />
+                        <span className="text-sm text-gray-800 dark:text-gray-100">
+                          {tag.name}
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+
+                <div className="px-4 py-3 border-t border-gray-200/60 dark:border-gray-700/60 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    disabled={isWorking}
+                    onClick={() => {
+                      setSelectedTagIds([]);
+                      setIncludeUntagged(false);
+                    }}
+                    className="text-sm font-medium text-gray-700 dark:text-gray-200 hover:text-primary transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                  >
+                    Limpar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isWorking}
+                    onClick={() => {
+                      setIsTagsModalOpen(true);
+                      setOpenTagFilter(false);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">settings</span>
+                    Gerenciar
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
           <select
-            className="block w-full pl-3 pr-10 py-2 text-base border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md bg-surface-light dark:bg-surface-dark text-gray-900 dark:text-text-main-dark shadow-subtle"
+            className="block w-full h-10 pl-3 pr-10 py-0 text-base border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md bg-surface-light dark:bg-surface-dark text-gray-900 dark:text-text-main-dark shadow-subtle"
             value={sort}
             onChange={(e) => setSort(e.target.value as SortOption)}
           >
@@ -613,6 +1525,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
 
         {filtered.map((project) => {
           const coverUrl = getCoverUrl(project) || "/no-banner.png";
+          const projectTags = getProjectTags(project);
 
           return (
             <Link
@@ -705,6 +1618,12 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                             setPrintProjectId(project.id);
                             setOpenMenuForProjectId(null);
                           }}
+                        />
+                        <MenuItem
+                          label="Tags"
+                          icon="sell"
+                          disabled={isWorking}
+                          onClick={() => openTagEditor(project)}
                         />
                         <div className="h-px bg-gray-200/60 dark:bg-gray-700/60" />
                         <MenuItem
@@ -821,6 +1740,23 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
 
                       <button
                         type="button"
+                        title="Tags"
+                        aria-label="Tags"
+                        disabled={isWorking}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openTagEditor(project);
+                        }}
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-md text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">
+                          sell
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
                         title="Excluir"
                         aria-label="Excluir"
                         disabled={isWorking}
@@ -843,8 +1779,8 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                   <p
                     className={
                       viewMode === "grid"
-                        ? "text-sm text-gray-500 dark:text-text-muted-dark mb-4 line-clamp-2"
-                        : "text-sm text-gray-500 dark:text-text-muted-dark mb-3 line-clamp-1"
+                        ? "text-sm text-gray-500 dark:text-text-muted-dark mb-2 line-clamp-2"
+                        : "text-sm text-gray-500 dark:text-text-muted-dark mb-2 line-clamp-1"
                     }
                   >
                     {project.description}
@@ -853,14 +1789,43 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                   <p
                     className={
                       viewMode === "grid"
-                        ? "text-sm text-gray-500 dark:text-text-muted-dark mb-4 line-clamp-2"
-                        : "text-sm text-gray-500 dark:text-text-muted-dark mb-3 line-clamp-1"
+                        ? "text-sm text-gray-500 dark:text-text-muted-dark mb-2 line-clamp-2"
+                        : "text-sm text-gray-500 dark:text-text-muted-dark mb-2 line-clamp-1"
                     }
                   >
                     {project.design_data?.meta?.notes ||
                       "Gerencie e edite seu molde digital."}
                   </p>
                 )}
+
+                {projectTags.length > 0 ? (
+                  <div
+                    className={
+                      viewMode === "grid"
+                        ? "mb-4 flex flex-wrap gap-1"
+                        : "mb-3 flex flex-wrap gap-1"
+                    }
+                  >
+                    {projectTags.map((tag) => {
+                      const normalized =
+                        normalizeHexColor(tag.color ?? "") ?? DEFAULT_TAG_COLOR;
+                      const styles = tagBadgeStyles(normalized);
+                      return (
+                        <span
+                          key={tag.id}
+                          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border"
+                          style={styles.badgeStyle}
+                        >
+                          <span
+                            className="mr-1.5 h-2 w-2 rounded-full"
+                            style={styles.dotStyle}
+                          />
+                          {tag.name}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : null}
 
                 <div className="mt-auto pt-3 border-t border-gray-200 dark:border-gray-700">
                   <div className="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500">
