@@ -218,6 +218,37 @@ function polylineLength(points: Vec2[]): number {
   return sum;
 }
 
+function polylinePointAtDistance(
+  points: Vec2[],
+  distancePx: number
+): { point: Vec2; tangent: Vec2 } | null {
+  if (points.length < 2) return null;
+  const total = polylineLength(points);
+  if (total <= 1e-9) {
+    const t = sub(points[points.length - 1], points[0]);
+    return { point: points[0], tangent: t };
+  }
+
+  const d = clamp(distancePx, 0, total);
+  let cum = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const segLen = dist(a, b);
+    if (segLen <= 1e-9) continue;
+
+    if (cum + segLen >= d) {
+      const t = (d - cum) / segLen;
+      return { point: lerp(a, b, t), tangent: sub(b, a) };
+    }
+    cum += segLen;
+  }
+
+  const lastA = points[points.length - 2];
+  const lastB = points[points.length - 1];
+  return { point: lastB, tangent: sub(lastB, lastA) };
+}
+
 function splitPolylineAtPoint(
   points: Vec2[],
   p: Vec2
@@ -2428,6 +2459,72 @@ export default function Canvas() {
       );
     };
 
+    const renderSelectedEdgeAnchorMarkers = (fig: Figure) => {
+      if (!selectedEdge) return null;
+      if (selectedEdge.figureId !== fig.id) return null;
+      const edge = fig.edges.find((e) => e.id === selectedEdge.edgeId);
+      if (!edge) return null;
+
+      const pts = edgeLocalPoints(fig, edge, edge.kind === "line" ? 1 : 60);
+      if (pts.length < 2) return null;
+
+      const a = pts[0];
+      const b = pts[pts.length - 1];
+
+      const endRadius = 3 / scale;
+      const anchorRadius = 4 / scale;
+      const sw = 1.5 / scale;
+      const o = 0.95;
+
+      const isStart = selectedEdge.anchor === "start";
+      const isEnd = selectedEdge.anchor === "end";
+      const isMid = selectedEdge.anchor === "mid";
+
+      let mid: Vec2 | null = null;
+      if (isMid) {
+        const total = polylineLength(pts);
+        mid = polylinePointAtDistance(pts, total / 2)?.point ?? lerp(a, b, 0.5);
+      }
+
+      return (
+        <React.Fragment key={`manchor:${fig.id}:${edge.id}:${selectedEdge.anchor}`}
+        >
+          <Circle
+            x={a.x}
+            y={a.y}
+            radius={isStart ? anchorRadius : endRadius}
+            stroke={highlightStroke}
+            strokeWidth={sw}
+            fill={isStart ? highlightStroke : undefined}
+            opacity={o}
+            listening={false}
+          />
+          <Circle
+            x={b.x}
+            y={b.y}
+            radius={isEnd ? anchorRadius : endRadius}
+            stroke={highlightStroke}
+            strokeWidth={sw}
+            fill={isEnd ? highlightStroke : undefined}
+            opacity={o}
+            listening={false}
+          />
+          {isMid && mid ? (
+            <Circle
+              x={mid.x}
+              y={mid.y}
+              radius={anchorRadius}
+              stroke={highlightStroke}
+              strokeWidth={sw}
+              fill={highlightStroke}
+              opacity={o}
+              listening={false}
+            />
+          ) : null}
+        </React.Fragment>
+      );
+    };
+
     const renderHoveredEdgeHighlight = (fig: Figure) => {
       if (!hoveredMeasureEdge) return null;
       if (hoveredMeasureEdge.figureId !== fig.id) return null;
@@ -2619,6 +2716,7 @@ export default function Canvas() {
       return (
         <>
           {renderSelectedEdgeHighlight(fig)}
+          {renderSelectedEdgeAnchorMarkers(fig)}
           {renderHoveredEdgeHighlight(fig)}
           {fig.edges.map((edge) => renderEdgeLabel(fig, edge))}
         </>
