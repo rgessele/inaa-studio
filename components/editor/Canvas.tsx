@@ -61,6 +61,14 @@ type MeasureDraft =
     }
   | null;
 
+type MarqueeDraft =
+  | {
+      startWorld: Vec2;
+      currentWorld: Vec2;
+      additive: boolean;
+    }
+  | null;
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -976,8 +984,11 @@ export default function Canvas() {
     tool,
     figures,
     setFigures,
+    selectedFigureIds,
     selectedFigureId,
     setSelectedFigureId,
+    setSelectedFigureIds,
+    toggleSelectedFigureId,
     offsetValueCm,
     setOffsetTargetId,
     mirrorAxis,
@@ -1039,12 +1050,22 @@ export default function Canvas() {
   const [hoveredFigureId, setHoveredFigureId] = useState<string | null>(null);
   const [dartDraft, setDartDraft] = useState<DartDraft>(null);
   const [measureDraft, setMeasureDraft] = useState<MeasureDraft>(null);
+  const [marqueeDraft, setMarqueeDraft] = useState<MarqueeDraft>(null);
   const [magnetSnap, setMagnetSnap] = useState<
     { pointWorld: Vec2; kind: "node" | "edge" } | null
   >(null);
   const [isPanning, setIsPanning] = useState(false);
   const lastPointerRef = useRef<Vec2 | null>(null);
   const lastPointerDownAtRef = useRef<number>(0);
+
+  const selectionDragSyncRef = useRef<
+    | {
+        anchorFigureId: string;
+        affectedIds: string[];
+        startPositions: Map<string, Vec2>;
+      }
+    | null
+  >(null);
 
   const dragNodeRef = useRef<
     | {
@@ -1093,6 +1114,10 @@ export default function Canvas() {
   const selectedFigure = useMemo(() => {
     return selectedFigureId ? figures.find((f) => f.id === selectedFigureId) : null;
   }, [figures, selectedFigureId]);
+
+  const selectedIdsSet = useMemo(() => {
+    return new Set<string>(selectedFigureIds);
+  }, [selectedFigureIds]);
 
   const getSnappedWorldForTool = useCallback(
     (
@@ -1225,8 +1250,7 @@ export default function Canvas() {
     [position.x, position.y, scale, setPosition, setScale]
   );
 
-  const handlePointerDown = useCallback(
-    (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
+  const handlePointerDown = (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
       // Konva/React can fire both Pointer and Mouse events for the same click.
       // When that happens, our handlers run twice and tools like Curve can degrade to straight/duplicated segments.
       const evt = e.evt;
@@ -1248,11 +1272,6 @@ export default function Canvas() {
       const pos = stage.getPointerPosition();
       if (!pos) return;
 
-      // Background click clears selection
-      if (e.target === stage) {
-        setSelectedFigureId(null);
-      }
-
       // Pan tool or middle mouse
       if (tool === "pan" || e.evt.button === 1) {
         setIsPanning(true);
@@ -1264,6 +1283,38 @@ export default function Canvas() {
         x: (pos.x - position.x) / scale,
         y: (pos.y - position.y) / scale,
       };
+
+      const isBackground = e.target === stage;
+      const isLeftClick = e.evt.button === 0;
+
+      // Select tool: allow forgiving click selection (hit slop) and marquee selection.
+      if (tool === "select" && isBackground && isLeftClick) {
+        const HIT_SLOP_PX = 10;
+        const thresholdWorld = HIT_SLOP_PX / scale;
+        const hitId = findHoveredFigureId(figures, world, thresholdWorld);
+
+        if (hitId) {
+          if (e.evt.shiftKey) {
+            toggleSelectedFigureId(hitId);
+          } else {
+            setSelectedFigureIds([hitId]);
+          }
+          setMarqueeDraft(null);
+          return;
+        }
+
+        setMarqueeDraft({
+          startWorld: world,
+          currentWorld: world,
+          additive: e.evt.shiftKey,
+        });
+        return;
+      }
+
+      // Background click clears selection (all other tools)
+      if (isBackground) {
+        setSelectedFigureIds([]);
+      }
 
       const resolvedDown = getSnappedWorldForTool(world, "down");
       const worldForTool = resolvedDown.world;
@@ -1418,28 +1469,9 @@ export default function Canvas() {
       if (tool === "line" || tool === "rectangle" || tool === "circle") {
         setDraft({ tool, startWorld: worldForTool, currentWorld: worldForTool });
       }
-    },
-    [
-      curveDraft,
-      dartDraft,
-      getSnappedWorldForTool,
-      hoveredNodeId,
-      magnetEnabled,
-      magnetSnap,
-      position.x,
-      position.y,
-      scale,
-      setFigures,
-      setSelectedFigureId,
-      hoveredEdge,
-      selectedFigureId,
-      selectedFigure,
-      tool,
-    ]
-  );
+  };
 
-  const handlePointerMove = useCallback(
-    (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
+  const handlePointerMove = (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
       void e;
       const stage = stageRef.current;
       if (!stage) return;
@@ -1460,6 +1492,13 @@ export default function Canvas() {
         x: (pos.x - position.x) / scale,
         y: (pos.y - position.y) / scale,
       };
+
+      if (tool === "select" && marqueeDraft) {
+        setMarqueeDraft((prev) =>
+          prev ? { ...prev, currentWorld: world } : prev
+        );
+        return;
+      }
 
       const resolvedMove = getSnappedWorldForTool(world, "move");
       const worldForTool = resolvedMove.world;
@@ -1536,29 +1575,7 @@ export default function Canvas() {
       if (!draft) return;
 
       setDraft({ ...draft, currentWorld: worldForTool });
-    },
-    [
-      draft,
-      figures,
-      getSnappedWorldForTool,
-      hoveredFigureId,
-      hoveredEdge,
-      hoveredNodeId,
-      isPanning,
-      measureDraft,
-      measureDisplayMode,
-      nodesDisplayMode,
-      magnetEnabled,
-      magnetSnap,
-      measureSnapStrengthPx,
-      position.x,
-      position.y,
-      scale,
-      selectedFigure,
-      setPosition,
-      tool,
-    ]
-  );
+  };
 
   const handleCurvePointerMove = useCallback(
     (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
@@ -1580,10 +1597,67 @@ export default function Canvas() {
     [curveDraft, getSnappedWorldForTool, position.x, position.y, scale]
   );
 
-  const handlePointerUp = useCallback(() => {
+  const handlePointerUp = () => {
     if (isPanning) {
       setIsPanning(false);
       lastPointerRef.current = null;
+      return;
+    }
+
+    if (tool === "select" && marqueeDraft) {
+      const a = marqueeDraft.startWorld;
+      const b = marqueeDraft.currentWorld;
+      const x0 = Math.min(a.x, b.x);
+      const y0 = Math.min(a.y, b.y);
+      const x1 = Math.max(a.x, b.x);
+      const y1 = Math.max(a.y, b.y);
+      const w = x1 - x0;
+      const h = y1 - y0;
+
+      const MIN_DRAG_PX = 4;
+      const minDragWorld = MIN_DRAG_PX / scale;
+
+      // Treat a tiny marquee as a background click.
+      if (w < minDragWorld && h < minDragWorld) {
+        if (!marqueeDraft.additive) {
+          setSelectedFigureIds([]);
+        }
+        setMarqueeDraft(null);
+        return;
+      }
+
+      const intersects = (bb: { x: number; y: number; width: number; height: number }) => {
+        return !(
+          bb.x + bb.width < x0 ||
+          bb.x > x1 ||
+          bb.y + bb.height < y0 ||
+          bb.y > y1
+        );
+      };
+
+      const hitIds = new Set<string>();
+      for (const fig of figures) {
+        const bb = figureWorldBoundingBox(fig);
+        if (!bb) continue;
+        if (!intersects(bb)) continue;
+        const baseId = fig.kind === "seam" && fig.parentId ? fig.parentId : fig.id;
+        hitIds.add(baseId);
+      }
+
+      if (marqueeDraft.additive) {
+        const next = [...selectedFigureIds];
+        const seen = new Set<string>(next);
+        for (const id of hitIds) {
+          if (seen.has(id)) continue;
+          seen.add(id);
+          next.push(id);
+        }
+        setSelectedFigureIds(next);
+      } else {
+        setSelectedFigureIds(Array.from(hitIds));
+      }
+
+      setMarqueeDraft(null);
       return;
     }
 
@@ -1615,7 +1689,7 @@ export default function Canvas() {
     });
 
     setDraft(null);
-  }, [draft, isPanning, setFigures, tool]);
+  };
 
   const measureOverlay = useMemo(() => {
     if (tool !== "measure" || !measureDraft) return null;
@@ -2568,9 +2642,9 @@ export default function Canvas() {
 
           {figures.map((fig) => {
             const pts = figureLocalPolyline(fig, 60);
-            const isSelected = fig.id === selectedFigureId;
-
             const isSeam = fig.kind === "seam" && !!fig.parentId;
+            const baseId = isSeam ? fig.parentId! : fig.id;
+            const isSelected = selectedIdsSet.has(baseId);
             const stroke = isSelected
               ? "#2563eb"
               : resolveStrokeColor(fig.stroke, isDark);
@@ -2581,24 +2655,85 @@ export default function Canvas() {
             return (
               <Group
                 key={fig.id}
+                name={`fig_${fig.id}`}
                 x={fig.x}
                 y={fig.y}
                 rotation={fig.rotation || 0}
-                draggable={tool === "select" && isSelected}
+                draggable={tool === "select" && !isSeam && selectedIdsSet.has(fig.id)}
+                onDragStart={() => {
+                  if (tool !== "select") return;
+                  if (isSeam) return;
+                  if (!selectedIdsSet.has(fig.id)) return;
+
+                  const stage = stageRef.current;
+                  if (!stage) return;
+
+                  const affectedIds = figures
+                    .filter(
+                      (f) =>
+                        selectedIdsSet.has(f.id) ||
+                        (f.kind === "seam" && f.parentId && selectedIdsSet.has(f.parentId))
+                    )
+                    .map((f) => f.id);
+
+                  const startPositions = new Map<string, Vec2>();
+                  for (const id of affectedIds) {
+                    const node = stage.findOne(`.fig_${id}`);
+                    if (!node) continue;
+                    startPositions.set(id, { x: node.x(), y: node.y() });
+                  }
+
+                  selectionDragSyncRef.current = {
+                    anchorFigureId: fig.id,
+                    affectedIds,
+                    startPositions,
+                  };
+                }}
+                onDragMove={(e) => {
+                  const sync = selectionDragSyncRef.current;
+                  if (!sync) return;
+                  if (sync.anchorFigureId !== fig.id) return;
+
+                  const stage = stageRef.current;
+                  if (!stage) return;
+
+                  const anchorStart = sync.startPositions.get(sync.anchorFigureId);
+                  if (!anchorStart) return;
+
+                  const dx = e.target.x() - anchorStart.x;
+                  const dy = e.target.y() - anchorStart.y;
+
+                  for (const id of sync.affectedIds) {
+                    if (id === sync.anchorFigureId) continue;
+                    const start = sync.startPositions.get(id);
+                    if (!start) continue;
+                    const node = stage.findOne(`.fig_${id}`);
+                    if (!node) continue;
+                    node.position({ x: start.x + dx, y: start.y + dy });
+                  }
+
+                  // Draw at most once per frame-ish.
+                  stage.batchDraw();
+                }}
                 onDragEnd={(e) => {
-                  const nx = e.target.x();
-                  const ny = e.target.y();
-                  setFigures((prev) => {
-                    const dx = nx - fig.x;
-                    const dy = ny - fig.y;
-                    return prev.map((f) => {
-                      if (f.id === fig.id) return { ...f, x: nx, y: ny };
-                      if (f.kind === "seam" && f.parentId === fig.id) {
-                        return { ...f, x: f.x + dx, y: f.y + dy };
-                      }
-                      return f;
-                    });
-                  });
+                  const sync = selectionDragSyncRef.current;
+                  selectionDragSyncRef.current = null;
+                  if (!sync || sync.anchorFigureId !== fig.id) return;
+
+                  const anchorStart = sync.startPositions.get(sync.anchorFigureId);
+                  if (!anchorStart) return;
+
+                  const dx = e.target.x() - anchorStart.x;
+                  const dy = e.target.y() - anchorStart.y;
+
+                  if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return;
+
+                  const affected = new Set(sync.affectedIds);
+                  setFigures((prev) =>
+                    prev.map((f) =>
+                      affected.has(f.id) ? { ...f, x: f.x + dx, y: f.y + dy } : f
+                    )
+                  );
                 }}
               >
                 <Line
@@ -2613,10 +2748,38 @@ export default function Canvas() {
                   onPointerDown={(e) => {
                     e.cancelBubble = true;
 
-                    const baseId = isSeam ? fig.parentId! : fig.id;
                     const base = figures.find((f) => f.id === baseId);
                     if (!base) {
-                      setSelectedFigureId(baseId);
+                      if (tool === "select") {
+                        if (e.evt.shiftKey) {
+                          toggleSelectedFigureId(baseId);
+                        } else if (selectedIdsSet.has(baseId)) {
+                          // Keep multi-selection; just make this the primary selection.
+                          setSelectedFigureIds([
+                            baseId,
+                            ...selectedFigureIds.filter((id) => id !== baseId),
+                          ]);
+                        } else {
+                          setSelectedFigureIds([baseId]);
+                        }
+                      } else {
+                        setSelectedFigureId(baseId);
+                      }
+                      return;
+                    }
+
+                    if (tool === "select") {
+                      if (e.evt.shiftKey) {
+                        toggleSelectedFigureId(baseId);
+                      } else if (selectedIdsSet.has(baseId)) {
+                        // Keep multi-selection; just make this the primary selection.
+                        setSelectedFigureIds([
+                          baseId,
+                          ...selectedFigureIds.filter((id) => id !== baseId),
+                        ]);
+                      } else {
+                        setSelectedFigureIds([baseId]);
+                      }
                       return;
                     }
 
@@ -2699,6 +2862,20 @@ export default function Canvas() {
           {measureOverlay}
 
           {magnetOverlay}
+
+          {marqueeDraft ? (
+            <Rect
+              x={Math.min(marqueeDraft.startWorld.x, marqueeDraft.currentWorld.x)}
+              y={Math.min(marqueeDraft.startWorld.y, marqueeDraft.currentWorld.y)}
+              width={Math.abs(marqueeDraft.currentWorld.x - marqueeDraft.startWorld.x)}
+              height={Math.abs(marqueeDraft.currentWorld.y - marqueeDraft.startWorld.y)}
+              stroke="#2563eb"
+              strokeWidth={1 / scale}
+              dash={[6 / scale, 4 / scale]}
+              fill="transparent"
+              listening={false}
+            />
+          ) : null}
 
           {nodeOverlay}
           </Layer>

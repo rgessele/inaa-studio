@@ -6,6 +6,7 @@ import React, {
   useState,
   ReactNode,
   useCallback,
+  useMemo,
   useRef,
 } from "react";
 import Konva from "konva";
@@ -30,6 +31,9 @@ interface EditorContextType {
     figures: Figure[] | ((prev: Figure[]) => Figure[]),
     saveHistory?: boolean
   ) => void;
+  selectedFigureIds: string[];
+  setSelectedFigureIds: (ids: string[]) => void;
+  toggleSelectedFigureId: (id: string) => void;
   selectedFigureId: string | null;
   setSelectedFigureId: (id: string | null) => void;
   deleteSelected: () => void;
@@ -105,7 +109,7 @@ const EditorContext = createContext<EditorContextType | undefined>(undefined);
 
 export function EditorProvider({ children }: { children: ReactNode }) {
   const [tool, setTool] = useState<Tool>("select");
-  const [selectedFigureId, setSelectedFigureId] = useState<string | null>(null);
+  const [selectedFigureIds, setSelectedFigureIdsState] = useState<string[]>([]);
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [unit, setUnit] = useState(DEFAULT_UNIT);
@@ -342,6 +346,33 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     [setFiguresState]
   );
 
+  const selectedFigureId = useMemo(() => {
+    return selectedFigureIds.length ? selectedFigureIds[0] : null;
+  }, [selectedFigureIds]);
+
+  const setSelectedFigureIds = useCallback((ids: string[]) => {
+    const deduped: string[] = [];
+    const seen = new Set<string>();
+    for (const id of ids) {
+      if (!id) continue;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      deduped.push(id);
+    }
+    setSelectedFigureIdsState(deduped);
+  }, []);
+
+  const setSelectedFigureId = useCallback((id: string | null) => {
+    setSelectedFigureIdsState(id ? [id] : []);
+  }, []);
+
+  const toggleSelectedFigureId = useCallback((id: string) => {
+    if (!id) return;
+    setSelectedFigureIdsState((prev) => {
+      return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+    });
+  }, []);
+
   // Load a project into the editor
   const loadProject = useCallback(
     (
@@ -362,7 +393,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           pageGuideSettings: nextPageGuideSettings ?? pageGuideSettings,
         })
       );
-      setSelectedFigureId(null);
+      setSelectedFigureIdsState([]);
     },
     [pageGuideSettings, setFigures]
   );
@@ -434,6 +465,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         tool,
         figuresCount: (figures || []).length,
         selectedFigureId,
+        selectedFigureIds,
         showGrid,
         showPageGuides,
         pageGuideSettings,
@@ -488,6 +520,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     projectId,
     projectName,
     selectedFigureId,
+    selectedFigureIds,
     showGrid,
     showPageGuides,
     loadProject,
@@ -497,27 +530,34 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   ]);
 
   const deleteSelected = useCallback(() => {
-    if (!selectedFigureId) return;
+    if (selectedFigureIds.length === 0) return;
+
+    const idsToDelete = new Set<string>(selectedFigureIds);
 
     setFigures((prev) => {
-      const selected = prev.find((f) => f.id === selectedFigureId);
-      if (!selected) return prev;
+      // If only derived seams are selected, delete only those seams.
+      const seamsOnly = selectedFigureIds.every((id) => {
+        const f = prev.find((x) => x.id === id);
+        return !!f && f.kind === "seam";
+      });
 
-      // If a derived seam is somehow selected, delete only that seam.
-      if (selected.kind === "seam") {
-        return prev.filter((f) => f.id !== selectedFigureId);
+      if (seamsOnly) {
+        return prev.filter((f) => !idsToDelete.has(f.id));
       }
 
-      // Deleting a base figure also deletes its derived seams.
-      return prev.filter(
-        (f) => f.id !== selectedFigureId && !(f.kind === "seam" && f.parentId === selectedFigureId)
-      );
+      // Deleting base figures also deletes derived seams.
+      return prev.filter((f) => {
+        if (idsToDelete.has(f.id)) return false;
+        if (f.kind === "seam" && f.parentId && idsToDelete.has(f.parentId)) return false;
+        return true;
+      });
     });
-    setSelectedFigureId(null);
+
+    setSelectedFigureIdsState([]);
 
     // Tool state cleanup
-    setOffsetTargetId((prev) => (prev === selectedFigureId ? null : prev));
-  }, [selectedFigureId, setFigures, setOffsetTargetId]);
+    setOffsetTargetId((prev) => (prev && idsToDelete.has(prev) ? null : prev));
+  }, [selectedFigureIds, setFigures, setOffsetTargetId]);
 
   return (
     <EditorContext.Provider
@@ -526,6 +566,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setTool,
         figures: figures || [],
         setFigures,
+        selectedFigureIds,
+        setSelectedFigureIds,
+        toggleSelectedFigureId,
         selectedFigureId,
         setSelectedFigureId,
         deleteSelected,
