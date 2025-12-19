@@ -199,6 +199,15 @@ function pointToSegmentDistance(p: Vec2, a: Vec2, b: Vec2): { d: number; t: numb
   return { d: dist(p, proj), t };
 }
 
+function normalizeUprightAngleDeg(angleDeg: number): number {
+  // Keep text readable by avoiding upside-down rotations.
+  // Normalize to [-180, 180), then flip into [-90, 90].
+  let a = ((angleDeg + 180) % 360) - 180;
+  if (a > 90) a -= 180;
+  if (a < -90) a += 180;
+  return a;
+}
+
 function nearestOnPolylineWorld(pWorld: Vec2, poly: number[]): { d: number; point: Vec2 } | null {
   if (poly.length < 4) return null;
   let bestD = Number.POSITIVE_INFINITY;
@@ -2225,8 +2234,20 @@ export default function Canvas() {
       const centroid = figureCentroidLocal(fig);
       const n = norm(perp(mt.tangent));
 
-      const p1 = add(mt.mid, mul(n, offset));
-      const p2 = add(mt.mid, mul(n, -offset));
+      // Align label with the edge direction.
+      const rawAngleDeg = (Math.atan2(mt.tangent.y, mt.tangent.x) * 180) / Math.PI;
+      const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
+
+      // Use a leader line when the edge is short on screen.
+      const chordLenLocal = dist(pts[0], pts[pts.length - 1]);
+      const chordLenScreenPx = chordLenLocal * scale;
+      const SHORT_EDGE_THRESHOLD_PX = 42;
+      const isShortEdge = chordLenScreenPx < SHORT_EDGE_THRESHOLD_PX;
+
+      const extra = isShortEdge ? 18 / scale : 0;
+
+      const p1 = add(mt.mid, mul(n, offset + extra));
+      const p2 = add(mt.mid, mul(n, -(offset + extra)));
       const p = dist(p1, centroid) >= dist(p2, centroid) ? p1 : p2;
 
       const isHovered =
@@ -2234,21 +2255,44 @@ export default function Canvas() {
         hoveredMeasureEdge.edgeId === edge.id;
 
       const label = formatCm(pxToCm(hit.lengthPx), 2);
-      return (
-        <Text
-          key={`m:${fig.id}:${edge.id}`}
-          x={p.x - textWidth / 2}
-          y={p.y - fontSize / 2}
-          width={textWidth}
-          align="center"
-          text={label}
-          fontSize={fontSize}
-          fill={isHovered ? highlightStroke : fill}
-          opacity={isHovered ? 1 : opacity}
-          fontStyle={isHovered ? "bold" : "normal"}
+
+      const textFill = isHovered ? highlightStroke : fill;
+      const textOpacity = isHovered ? 1 : opacity;
+
+      const leader = isShortEdge ? (
+        <Line
+          key={`mlead:${fig.id}:${edge.id}`}
+          points={[mt.mid.x, mt.mid.y, p.x, p.y]}
+          stroke={textFill}
+          strokeWidth={1 / scale}
+          dash={[4 / scale, 4 / scale]}
+          opacity={isHovered ? 0.95 : 0.5}
           listening={false}
-          name="inaa-measure-label"
+          lineCap="round"
         />
+      ) : null;
+
+      return (
+        <>
+          {leader}
+          <Text
+            key={`m:${fig.id}:${edge.id}`}
+            x={p.x}
+            y={p.y}
+            offsetX={textWidth / 2}
+            offsetY={fontSize / 2}
+            rotation={angleDeg}
+            width={textWidth}
+            align="center"
+            text={label}
+            fontSize={fontSize}
+            fill={textFill}
+            opacity={textOpacity}
+            fontStyle={isHovered ? "bold" : "normal"}
+            listening={false}
+            name="inaa-measure-label"
+          />
+        </>
       );
     };
 
