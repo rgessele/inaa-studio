@@ -32,6 +32,8 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
     string | null
   >(null);
   const [printProjectId, setPrintProjectId] = useState<string | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<Project | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingBannerProjectIdRef = useRef<string | null>(null);
@@ -51,6 +53,18 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       document.body.style.overflow = previousOverflow;
     };
   }, [printProjectId]);
+
+  useEffect(() => {
+    if (!deleteCandidate) return;
+    setOpenMenuForProjectId(null);
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [deleteCandidate]);
 
   useEffect(() => {
     setItems(projects);
@@ -234,6 +248,48 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
     }
   };
 
+  const handleRequestDelete = (project: Project) => {
+    setDeleteError(null);
+    setDeleteCandidate(project);
+    setOpenMenuForProjectId(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteCandidate) return;
+
+    setIsWorking(true);
+    setDeleteError(null);
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        setDeleteError("Usuário não autenticado");
+        return;
+      }
+
+      const { error } = await supabase
+        .from("projects")
+        .delete()
+        .eq("id", deleteCandidate.id)
+        .eq("user_id", user.id);
+
+      if (error) {
+        setDeleteError(error.message);
+        return;
+      }
+
+      setItems((prev) => prev.filter((p) => p.id !== deleteCandidate.id));
+      setDeleteCandidate(null);
+      router.refresh();
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
   const openBannerPicker = (projectId: string) => {
     pendingBannerProjectIdRef.current = projectId;
     fileInputRef.current?.click();
@@ -388,6 +444,79 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                   className="w-full h-full"
                   src={`/editor/${printProjectId}?export=pdf&embedded=1`}
                 />
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
+      {isClient && deleteCandidate
+        ? createPortal(
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center">
+              <div
+                className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                onClick={() => (!isWorking ? setDeleteCandidate(null) : null)}
+              />
+
+              <div className="relative w-[92vw] max-w-lg rounded-2xl bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 shadow-floating overflow-hidden">
+                <button
+                  type="button"
+                  aria-label="Fechar"
+                  onClick={() => (!isWorking ? setDeleteCandidate(null) : null)}
+                  className="absolute right-4 top-4 text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+
+                <div className="p-8">
+                  <div className="flex items-start gap-4">
+                    <div className="h-12 w-12 rounded-full bg-accent-rose/15 flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-[24px] text-accent-rose">
+                        delete
+                      </span>
+                    </div>
+
+                    <div className="flex-1">
+                      <h2 className="text-2xl font-semibold text-gray-900 dark:text-text-main-dark">
+                        Excluir projeto
+                      </h2>
+                      <p className="mt-2 text-sm text-gray-600 dark:text-text-muted-dark">
+                        Tem certeza que deseja excluir o projeto{" "}
+                        <span className="font-medium text-gray-900 dark:text-text-main-dark">
+                          “{deleteCandidate.name}”
+                        </span>
+                        ? Esta ação não pode ser desfeita.
+                      </p>
+
+                      {deleteError ? (
+                        <div className="mt-4 rounded-lg bg-red-50 dark:bg-red-950/20 p-3 border border-red-200 dark:border-red-900/30">
+                          <p className="text-sm text-red-800 dark:text-red-200">
+                            {deleteError}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-8 flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      disabled={isWorking}
+                      onClick={() => setDeleteCandidate(null)}
+                      className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isWorking}
+                      onClick={() => void handleConfirmDelete()}
+                      className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium bg-accent-rose text-white hover:bg-accent-rose/90 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                    >
+                      {isWorking ? "Excluindo..." : "Excluir"}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>,
             document.body
@@ -577,6 +706,14 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                             setOpenMenuForProjectId(null);
                           }}
                         />
+                        <div className="h-px bg-gray-200/60 dark:bg-gray-700/60" />
+                        <MenuItem
+                          label="Excluir"
+                          icon="delete"
+                          variant="danger"
+                          disabled={isWorking}
+                          onClick={() => handleRequestDelete(project)}
+                        />
                       </div>
                     ) : null}
                   </div>
@@ -681,6 +818,23 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                           print
                         </span>
                       </button>
+
+                      <button
+                        type="button"
+                        title="Excluir"
+                        aria-label="Excluir"
+                        disabled={isWorking}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleRequestDelete(project);
+                        }}
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-md text-accent-rose hover:bg-accent-rose/10 dark:text-accent-rose dark:hover:bg-accent-rose/10 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">
+                          delete
+                        </span>
+                      </button>
                     </div>
                   ) : null}
                 </div>
@@ -764,11 +918,13 @@ function MenuItem({
   icon,
   onClick,
   disabled,
+  variant = "default",
 }: {
   label: string;
   icon: string;
   onClick: () => void;
   disabled?: boolean;
+  variant?: "default" | "danger";
 }) {
   return (
     <button
@@ -779,9 +935,21 @@ function MenuItem({
         e.stopPropagation();
         onClick();
       }}
-      className="w-full px-4 py-2.5 text-sm text-left flex items-center gap-3 text-gray-800 dark:text-gray-100 hover:bg-gray-100/80 dark:hover:bg-gray-700/60 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+      className={
+        "w-full px-4 py-2.5 text-sm text-left flex items-center gap-3 hover:bg-gray-100/80 dark:hover:bg-gray-700/60 transition-colors disabled:opacity-60 disabled:pointer-events-none " +
+        (variant === "danger"
+          ? "text-accent-rose dark:text-accent-rose"
+          : "text-gray-800 dark:text-gray-100")
+      }
     >
-      <span className="material-symbols-outlined text-[18px] text-gray-500 dark:text-gray-300">
+      <span
+        className={
+          "material-symbols-outlined text-[18px] " +
+          (variant === "danger"
+            ? "text-accent-rose"
+            : "text-gray-500 dark:text-gray-300")
+        }
+      >
         {icon}
       </span>
       <span>{label}</span>
