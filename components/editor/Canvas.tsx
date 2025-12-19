@@ -208,6 +208,71 @@ function normalizeUprightAngleDeg(angleDeg: number): number {
   return a;
 }
 
+function polylineLength(points: Vec2[]): number {
+  if (points.length < 2) return 0;
+  let sum = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    sum += dist(points[i], points[i + 1]);
+  }
+  return sum;
+}
+
+function splitPolylineAtPoint(
+  points: Vec2[],
+  p: Vec2
+): {
+  left: Vec2[];
+  right: Vec2[];
+  cutPoint: Vec2;
+  leftLengthPx: number;
+  totalLengthPx: number;
+} | null {
+  if (points.length < 2) return null;
+
+  let totalLength = 0;
+  const segLens: number[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const l = dist(points[i], points[i + 1]);
+    segLens.push(l);
+    totalLength += l;
+  }
+
+  let bestD = Number.POSITIVE_INFINITY;
+  let bestSeg = 0;
+  let bestT = 0;
+  let bestCumToA = 0;
+
+  let cum = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const hit = pointToSegmentDistance(p, a, b);
+    if (hit.d < bestD) {
+      bestD = hit.d;
+      bestSeg = i;
+      bestT = hit.t;
+      bestCumToA = cum;
+    }
+    cum += segLens[i];
+  }
+
+  const a = points[bestSeg];
+  const b = points[bestSeg + 1];
+  const cutPoint = lerp(a, b, bestT);
+  const segLen = segLens[bestSeg] ?? dist(a, b);
+  const leftLen = bestCumToA + bestT * segLen;
+
+  const left = [...points.slice(0, bestSeg + 1), cutPoint];
+  const right = [cutPoint, ...points.slice(bestSeg + 1)];
+  return {
+    left,
+    right,
+    cutPoint,
+    leftLengthPx: leftLen,
+    totalLengthPx: totalLength,
+  };
+}
+
 function nearestOnPolylineWorld(pWorld: Vec2, poly: number[]): { d: number; point: Vec2 } | null {
   if (poly.length < 4) return null;
   let bestD = Number.POSITIVE_INFINITY;
@@ -2833,6 +2898,116 @@ export default function Canvas() {
     );
   }, [hoveredEdge, scale, selectedFigure, tool]);
 
+  const nodeSplitMeasuresPreviewOverlay = useMemo(() => {
+    if (tool !== "node" || !selectedFigure || !hoveredEdge) return null;
+    if (hoveredEdge.figureId !== selectedFigure.id) return null;
+
+    const edge = selectedFigure.edges.find((e) => e.id === hoveredEdge.edgeId);
+    if (!edge) return null;
+
+    // Use a denser sampling for a stable arc-length preview on curves.
+    const pts = edgeLocalPoints(selectedFigure, edge, edge.kind === "line" ? 1 : 120);
+    if (pts.length < 2) return null;
+
+    const split = splitPolylineAtPoint(pts, hoveredEdge.pointLocal);
+    if (!split) return null;
+
+    const rightLengthPx = Math.max(0, split.totalLengthPx - split.leftLengthPx);
+    const leftLengthPx = Math.max(0, split.leftLengthPx);
+
+    const centroid = figureCentroidLocal(selectedFigure);
+
+    const fontSize = 11 / scale;
+    const textWidth = 120 / scale;
+    const offset = 12 / scale;
+
+    const previewStroke = "#2563eb";
+    const previewOpacity = 0.95;
+
+    const renderSegmentLabel = (
+      key: string,
+      segmentPts: Vec2[],
+      lengthPx: number
+    ) => {
+      if (segmentPts.length < 2) return null;
+      if (!Number.isFinite(lengthPx)) return null;
+
+      const mt = midAndTangent(segmentPts);
+      if (!mt) return null;
+
+      const n = norm(perp(mt.tangent));
+      const p1 = add(mt.mid, mul(n, offset));
+      const p2 = add(mt.mid, mul(n, -offset));
+      const p = dist(p1, centroid) >= dist(p2, centroid) ? p1 : p2;
+
+      const rawAngleDeg = (Math.atan2(mt.tangent.y, mt.tangent.x) * 180) / Math.PI;
+      const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
+
+      const label = formatCm(pxToCm(lengthPx), 2);
+
+      const chordLenLocal = dist(segmentPts[0], segmentPts[segmentPts.length - 1]);
+      const chordLenScreenPx = chordLenLocal * scale;
+      const SHORT_EDGE_THRESHOLD_PX = 42;
+      const isShort = chordLenScreenPx < SHORT_EDGE_THRESHOLD_PX;
+
+      const leader = isShort ? (
+        <Line
+          key={`${key}:leader`}
+          points={[mt.mid.x, mt.mid.y, p.x, p.y]}
+          stroke={previewStroke}
+          strokeWidth={1 / scale}
+          dash={[4 / scale, 4 / scale]}
+          opacity={0.6}
+          listening={false}
+          lineCap="round"
+        />
+      ) : null;
+
+      return (
+        <>
+          {leader}
+          <Text
+            key={key}
+            x={p.x}
+            y={p.y}
+            offsetX={textWidth / 2}
+            offsetY={fontSize / 2}
+            rotation={angleDeg}
+            width={textWidth}
+            align="center"
+            text={label}
+            fontSize={fontSize}
+            fill={previewStroke}
+            opacity={previewOpacity}
+            fontStyle="bold"
+            listening={false}
+            name="inaa-measure-preview"
+          />
+        </>
+      );
+    };
+
+    return (
+      <Group
+        x={selectedFigure.x}
+        y={selectedFigure.y}
+        rotation={selectedFigure.rotation || 0}
+        listening={false}
+      >
+        {renderSegmentLabel(
+          `msplit:${selectedFigure.id}:${edge.id}:a`,
+          split.left,
+          leftLengthPx
+        )}
+        {renderSegmentLabel(
+          `msplit:${selectedFigure.id}:${edge.id}:b`,
+          split.right,
+          rightLengthPx
+        )}
+      </Group>
+    );
+  }, [hoveredEdge, scale, selectedFigure, tool]);
+
   const dartOverlay = useMemo(() => {
     if (tool !== "dart" || !selectedFigure || !dartDraft) return null;
     if (dartDraft.figureId !== selectedFigure.id) return null;
@@ -3181,6 +3356,8 @@ export default function Canvas() {
           {measuresLabelsOverlay}
 
           {edgeHoverOverlay}
+
+          {nodeSplitMeasuresPreviewOverlay}
 
           {dartOverlay}
 
