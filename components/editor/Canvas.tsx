@@ -1025,6 +1025,14 @@ export default function Canvas() {
 
   const isDark = useIsDarkMode();
   const aci7 = useMemo(() => resolveAci7(isDark), [isDark]);
+
+  const handleAccentStroke = useMemo(() => {
+    if (typeof window === "undefined") return "#776a3e";
+    const v = getComputedStyle(document.documentElement)
+      .getPropertyValue("--color-accent-gold")
+      .trim();
+    return v || "#776a3e";
+  }, []);
   const gridStroke = useMemo(
     () => {
       const t = clamp(gridContrast, 0, 1);
@@ -2297,7 +2305,7 @@ export default function Canvas() {
     if (tool !== "node" || !selectedFigure) return null;
 
     const rNode = 6 / scale;
-    const rHandle = 4 / scale;
+    const rHandle = 3.5 / scale;
     const rNodeHit = 12 / scale;
 
     return (
@@ -2319,16 +2327,18 @@ export default function Canvas() {
               {inH ? (
                 <Line
                   points={[n.x, n.y, inH.x, inH.y]}
-                  stroke="rgba(37, 99, 235, 0.5)"
+                  stroke={handleAccentStroke}
                   strokeWidth={1 / scale}
+                  opacity={0.5}
                   listening={false}
                 />
               ) : null}
               {outH ? (
                 <Line
                   points={[n.x, n.y, outH.x, outH.y]}
-                  stroke="rgba(37, 99, 235, 0.5)"
+                  stroke={handleAccentStroke}
                   strokeWidth={1 / scale}
+                  opacity={0.5}
                   listening={false}
                 />
               ) : null}
@@ -2434,8 +2444,8 @@ export default function Canvas() {
                   x={inH.x}
                   y={inH.y}
                   radius={rHandle}
-                  fill="#ffffff"
-                  stroke="#2563eb"
+                  fill={handleAccentStroke}
+                  stroke={aci7}
                   strokeWidth={1 / scale}
                   draggable
                   onDragStart={() => {
@@ -2487,8 +2497,8 @@ export default function Canvas() {
                   x={outH.x}
                   y={outH.y}
                   radius={rHandle}
-                  fill="#ffffff"
-                  stroke="#2563eb"
+                  fill={handleAccentStroke}
+                  stroke={aci7}
                   strokeWidth={1 / scale}
                   draggable
                   onDragStart={() => {
@@ -2539,7 +2549,7 @@ export default function Canvas() {
         })}
       </Group>
     );
-  }, [nodeSelection, scale, selectedFigure, setFigures, tool]);
+  }, [aci7, handleAccentStroke, nodeSelection, scale, selectedFigure, setFigures, tool]);
 
   const nodesPointsOverlay = useMemo(() => {
     if (nodesDisplayMode === "never") return null;
