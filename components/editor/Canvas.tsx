@@ -10,6 +10,7 @@ import { getPaperDimensionsCm } from "./exportSettings";
 import { circleAsCubics, len, sampleCubic, sub } from "./figureGeometry";
 import { withComputedFigureMeasures } from "./figureMeasures";
 import { formatCm, pxToCm } from "./measureUnits";
+import { setEdgeTargetLengthPx } from "./edgeEdit";
 import {
   figureLocalPolyline,
   figureLocalToWorld,
@@ -1077,6 +1078,8 @@ export default function Canvas() {
     setSelectedFigureId,
     setSelectedFigureIds,
     toggleSelectedFigureId,
+    selectedEdge,
+    setSelectedEdge,
     offsetValueCm,
     setOffsetTargetId,
     mirrorAxis,
@@ -1138,6 +1141,34 @@ export default function Canvas() {
   const [size, setSize] = useState({ width: 0, height: 0 });
 
   const stageRef = useRef<Konva.Stage | null>(null);
+
+  type EdgeEditDraft =
+    | {
+        figureId: string;
+        edgeId: string;
+        anchor: "start" | "end" | "mid";
+        value: string;
+        x: number;
+        y: number;
+      }
+    | null;
+
+  const [edgeEditDraft, setEdgeEditDraft] = useState<EdgeEditDraft>(null);
+  const edgeEditInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!edgeEditDraft) return;
+    const id = requestAnimationFrame(() => {
+      edgeEditInputRef.current?.focus();
+      edgeEditInputRef.current?.select();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [edgeEditDraft]);
+
+  useEffect(() => {
+    if (tool === "select") return;
+    if (selectedEdge) setSelectedEdge(null);
+  }, [selectedEdge, setSelectedEdge, tool]);
   const backgroundRef = useRef<Konva.Rect | null>(null);
   const [draft, setDraft] = useState<Draft>(null);
   const [curveDraft, setCurveDraft] = useState<CurveDraft>(null);
@@ -1439,6 +1470,115 @@ export default function Canvas() {
       setPosition(nextPosition);
     },
     [position.x, position.y, scale, setPosition, setScale]
+  );
+
+  const parseCmInput = useCallback((raw: string): number | null => {
+    const normalized = raw.trim().replace(",", ".");
+    const v = Number(normalized);
+    if (!Number.isFinite(v)) return null;
+    return Math.max(0.01, v);
+  }, []);
+
+  const openInlineEdgeEdit = useCallback(
+    (opts: { figureId: string; edgeId: string; anchor: "start" | "end" | "mid"; clientX: number; clientY: number }) => {
+      const fig = figures.find((f) => f.id === opts.figureId);
+      if (!fig) return;
+      const hit = fig.measures?.perEdge?.find((m) => m.edgeId === opts.edgeId);
+      if (!hit) return;
+
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const cm = pxToCm(hit.lengthPx);
+      setEdgeEditDraft({
+        figureId: opts.figureId,
+        edgeId: opts.edgeId,
+        anchor: opts.anchor,
+        value: cm.toFixed(2),
+        x: opts.clientX - rect.left,
+        y: opts.clientY - rect.top,
+      });
+    },
+    [figures]
+  );
+
+  const applyEdgeLengthEdit = useCallback(
+    (draft: { figureId: string; edgeId: string; anchor: "start" | "end" | "mid" }, rawCm: string) => {
+      const cm = parseCmInput(rawCm);
+      if (cm == null) return;
+
+      const targetPx = cm * PX_PER_CM;
+      setFigures((prev) =>
+        prev.map((f) => {
+          if (f.id !== draft.figureId) return f;
+          if (f.kind === "seam") return f;
+          const updated = setEdgeTargetLengthPx({
+            figure: f,
+            edgeId: draft.edgeId,
+            targetLengthPx: targetPx,
+            anchor: draft.anchor,
+          });
+          return updated ?? f;
+        })
+      );
+    },
+    [parseCmInput, setFigures]
+  );
+
+  const handleStageDblClick = useCallback(
+    (e: Konva.KonvaEventObject<MouseEvent>) => {
+      if (tool !== "select") return;
+      const stage = stageRef.current;
+      if (!stage) return;
+      stage.setPointersPositions(e.evt);
+      const pos = stage.getPointerPosition();
+      if (!pos) return;
+
+      const world = {
+        x: (pos.x - position.x) / scale,
+        y: (pos.y - position.y) / scale,
+      };
+
+      const thresholdWorld = 10 / scale;
+      const figId = findHoveredFigureId(figures, world, thresholdWorld);
+      if (!figId) return;
+      const fig = figures.find((f) => f.id === figId);
+      if (!fig || fig.kind === "seam") return;
+
+      const local = worldToFigureLocal(fig, world);
+      const hit = findNearestEdge(fig, local);
+      if (!hit.best || hit.bestDist > thresholdWorld) return;
+
+      const edge = fig.edges.find((ed) => ed.id === hit.best!.edgeId);
+      if (!edge) return;
+      const nFrom = fig.nodes.find((n) => n.id === edge.from);
+      const nTo = fig.nodes.find((n) => n.id === edge.to);
+      if (!nFrom || !nTo) return;
+      const dFrom = dist(local, { x: nFrom.x, y: nFrom.y });
+      const dTo = dist(local, { x: nTo.x, y: nTo.y });
+      const anchor = dFrom <= dTo ? "start" : "end";
+
+      setSelectedFigureIds([fig.id]);
+      setSelectedEdge({ figureId: fig.id, edgeId: edge.id, anchor });
+
+      openInlineEdgeEdit({
+        figureId: fig.id,
+        edgeId: edge.id,
+        anchor,
+        clientX: e.evt.clientX,
+        clientY: e.evt.clientY,
+      });
+    },
+    [
+      figures,
+      openInlineEdgeEdit,
+      position.x,
+      position.y,
+      scale,
+      setSelectedEdge,
+      setSelectedFigureIds,
+      tool,
+    ]
   );
 
   const handlePointerDown = (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
@@ -2263,6 +2403,31 @@ export default function Canvas() {
 
     const highlightStroke = "#2563eb";
 
+    const renderSelectedEdgeHighlight = (fig: Figure) => {
+      if (!selectedEdge) return null;
+      if (selectedEdge.figureId !== fig.id) return null;
+      const edge = fig.edges.find((e) => e.id === selectedEdge.edgeId);
+      if (!edge) return null;
+
+      const pts = edgeLocalPoints(fig, edge, edge.kind === "line" ? 1 : 60);
+      if (pts.length < 2) return null;
+      const flat: number[] = [];
+      for (const p of pts) flat.push(p.x, p.y);
+
+      return (
+        <Line
+          key={`msel:${fig.id}:${edge.id}`}
+          points={flat}
+          stroke={highlightStroke}
+          strokeWidth={3 / scale}
+          opacity={0.9}
+          listening={false}
+          lineCap="round"
+          lineJoin="round"
+        />
+      );
+    };
+
     const renderHoveredEdgeHighlight = (fig: Figure) => {
       if (!hoveredMeasureEdge) return null;
       if (hoveredMeasureEdge.figureId !== fig.id) return null;
@@ -2338,10 +2503,10 @@ export default function Canvas() {
       ) : null;
 
       return (
-        <>
+        <React.Fragment key={`m:${fig.id}:${edge.id}`}
+        >
           {leader}
           <Text
-            key={`m:${fig.id}:${edge.id}`}
             x={p.x}
             y={p.y}
             offsetX={textWidth / 2}
@@ -2357,7 +2522,7 @@ export default function Canvas() {
             listening={false}
             name="inaa-measure-label"
           />
-        </>
+        </React.Fragment>
       );
     };
 
@@ -2453,6 +2618,7 @@ export default function Canvas() {
       // Default: per-edge labels
       return (
         <>
+          {renderSelectedEdgeHighlight(fig)}
           {renderHoveredEdgeHighlight(fig)}
           {fig.edges.map((edge) => renderEdgeLabel(fig, edge))}
         </>
@@ -2531,6 +2697,7 @@ export default function Canvas() {
     isDark,
     measureDisplayMode,
     scale,
+    selectedEdge,
     selectedFigureId,
   ]);
 
@@ -3073,8 +3240,52 @@ export default function Canvas() {
       <div
         ref={containerRef}
         data-testid="editor-stage-container"
-        className={showRulers ? "absolute left-6 top-6 right-0 bottom-0" : "absolute inset-0"}
+        className={
+          showRulers
+            ? "absolute left-6 top-6 right-0 bottom-0"
+            : "absolute inset-0"
+        }
       >
+        {edgeEditDraft ? (
+          <div
+            className="absolute z-50"
+            style={{ left: edgeEditDraft.x, top: edgeEditDraft.y }}
+          >
+            <div className="flex items-center gap-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-subtle px-2 py-1">
+              <input
+                ref={(node) => {
+                  edgeEditInputRef.current = node;
+                }}
+                className="w-24 bg-transparent text-xs text-gray-900 dark:text-gray-100 outline-none text-right"
+                inputMode="decimal"
+                value={edgeEditDraft.value}
+                onChange={(evt) => {
+                  const next = evt.target.value;
+                  setEdgeEditDraft((prev) => (prev ? { ...prev, value: next } : prev));
+                }}
+                onKeyDown={(evt) => {
+                  if (evt.key === "Escape") {
+                    evt.preventDefault();
+                    setEdgeEditDraft(null);
+                  }
+                  if (evt.key === "Enter") {
+                    evt.preventDefault();
+                    applyEdgeLengthEdit(edgeEditDraft, edgeEditDraft.value);
+                    setEdgeEditDraft(null);
+                  }
+                }}
+                onBlur={() => {
+                  applyEdgeLengthEdit(edgeEditDraft, edgeEditDraft.value);
+                  setEdgeEditDraft(null);
+                }}
+              />
+              <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400">
+                cm
+              </span>
+            </div>
+          </div>
+        ) : null}
+
         <Stage
           ref={(node) => {
             stageRef.current = node;
@@ -3086,6 +3297,7 @@ export default function Canvas() {
           scaleY={scale}
           x={position.x}
           y={position.y}
+          onDblClick={handleStageDblClick}
           onWheel={handleWheel}
           onPointerDown={handlePointerDown}
           onPointerMove={(e) => {
@@ -3137,7 +3349,10 @@ export default function Canvas() {
             const stroke = isSelected
               ? "#2563eb"
               : resolveStrokeColor(fig.stroke, isDark);
-            const opacity = (fig.opacity ?? 1) * (isSeam ? 0.7 : 1);
+            const hasSelectedEdge =
+              !!selectedEdge && selectedEdge.figureId === baseId;
+            const dimFactor = hasSelectedEdge ? (isSeam ? 0.5 : 0.25) : 1;
+            const opacity = (fig.opacity ?? 1) * (isSeam ? 0.7 : 1) * dimFactor;
             const strokeWidth = (fig.strokeWidth || 1) / scale;
             const dash = fig.dash ? fig.dash.map((d) => d / scale) : undefined;
 
@@ -3268,6 +3483,41 @@ export default function Canvas() {
                       return;
                     }
 
+                    // Select tool: Option/Alt + click selects a single edge (sub-selection).
+                    if (tool === "select" && e.evt.altKey) {
+                      const stage = stageRef.current;
+                      if (!stage) return;
+                      stage.setPointersPositions(e.evt);
+                      const pos = stage.getPointerPosition();
+                      if (!pos) return;
+
+                      const world = {
+                        x: (pos.x - position.x) / scale,
+                        y: (pos.y - position.y) / scale,
+                      };
+
+                      const local = worldToFigureLocal(base, world);
+                      const hit = findNearestEdge(base, local);
+                      const thresholdWorld = 10 / scale;
+                      if (!hit.best || hit.bestDist > thresholdWorld) {
+                        return;
+                      }
+
+                      const edge = base.edges.find((ed) => ed.id === hit.best!.edgeId);
+                      if (!edge) return;
+                      const nFrom = base.nodes.find((n) => n.id === edge.from);
+                      const nTo = base.nodes.find((n) => n.id === edge.to);
+                      if (!nFrom || !nTo) return;
+                      const dFrom = dist(local, { x: nFrom.x, y: nFrom.y });
+                      const dTo = dist(local, { x: nTo.x, y: nTo.y });
+                      const anchor = dFrom <= dTo ? "start" : "end";
+
+                      // Keep figure selected for context, but also track the selected edge.
+                      setSelectedFigureIds([baseId]);
+                      setSelectedEdge({ figureId: baseId, edgeId: edge.id, anchor });
+                      return;
+                    }
+
                     if (tool === "select") {
                       if (e.evt.shiftKey) {
                         toggleSelectedFigureId(baseId);
@@ -3381,7 +3631,7 @@ export default function Canvas() {
 
           {nodeOverlay}
           </Layer>
-        </Stage>
+          </Stage>
       </div>
     </div>
   );

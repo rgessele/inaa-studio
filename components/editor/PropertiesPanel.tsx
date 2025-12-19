@@ -4,12 +4,17 @@ import React, { useState } from "react";
 import { useEditor } from "./EditorContext";
 import { figureWorldBoundingBox } from "./figurePath";
 import { pxToCm } from "./measureUnits";
+import { PX_PER_CM } from "./constants";
+import { setEdgeTargetLengthPx } from "./edgeEdit";
 
 export function PropertiesPanel() {
   const {
     tool,
     selectedFigureId,
     figures,
+    setFigures,
+    selectedEdge,
+    setSelectedEdge,
     offsetValueCm,
     setOffsetValueCm,
     mirrorAxis,
@@ -18,11 +23,58 @@ export function PropertiesPanel() {
     setUnfoldAxis,
   } = useEditor();
   const selectedFigure = figures.find((f) => f.id === selectedFigureId);
+
+  const selectedEdgeInfo =
+    selectedEdge && selectedFigure && selectedEdge.figureId === selectedFigure.id
+      ? (() => {
+          const edge = selectedFigure.edges.find((e) => e.id === selectedEdge.edgeId);
+          if (!edge) return null;
+          const measure = selectedFigure.measures?.perEdge?.find(
+            (m) => m.edgeId === selectedEdge.edgeId
+          );
+          if (!measure) return null;
+          return {
+            edge,
+            lengthCm: pxToCm(measure.lengthPx),
+          };
+        })()
+      : null;
   const selectedBounds = selectedFigure
     ? figureWorldBoundingBox(selectedFigure)
     : null;
 
   const [collapsed, setCollapsed] = useState(false);
+  const [edgeLengthDraft, setEdgeLengthDraft] = useState<string>("");
+
+  React.useEffect(() => {
+    if (!selectedEdgeInfo) {
+      setEdgeLengthDraft("");
+      return;
+    }
+    setEdgeLengthDraft(selectedEdgeInfo.lengthCm.toFixed(2));
+  }, [selectedEdgeInfo?.edge.id, selectedEdgeInfo?.lengthCm]);
+
+  const applyEdgeLength = (raw: string) => {
+    if (!selectedEdge || !selectedFigure) return;
+    const normalized = raw.trim().replace(",", ".");
+    const cm = Number(normalized);
+    if (!Number.isFinite(cm)) return;
+    const safeCm = Math.max(0.01, cm);
+
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id !== selectedEdge.figureId) return f;
+        if (f.kind === "seam") return f;
+        const updated = setEdgeTargetLengthPx({
+          figure: f,
+          edgeId: selectedEdge.edgeId,
+          targetLengthPx: safeCm * PX_PER_CM,
+          anchor: selectedEdge.anchor,
+        });
+        return updated ?? f;
+      })
+    );
+  };
 
   // Show tool properties when no shape is selected but a tool is active
   const showToolProperties =
@@ -77,6 +129,84 @@ export function PropertiesPanel() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+              {selectedEdgeInfo ? (
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px]">
+                        straighten
+                      </span>{" "}
+                      Aresta
+                    </span>
+                  </label>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        className="w-24 px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
+                        type="text"
+                        inputMode="decimal"
+                        value={edgeLengthDraft}
+                        onChange={(e) => setEdgeLengthDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            applyEdgeLength(edgeLengthDraft);
+                          }
+                        }}
+                        onBlur={() => applyEdgeLength(edgeLengthDraft)}
+                      />
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        cm
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">
+                        Âncora
+                      </span>
+                      <div className="ml-auto inline-flex rounded border border-gray-300 dark:border-gray-600 overflow-hidden">
+                        {([
+                          { key: "start", label: "Início" },
+                          { key: "mid", label: "Meio" },
+                          { key: "end", label: "Fim" },
+                        ] as const).map((opt) => {
+                          const active = (selectedEdge?.anchor ?? "end") === opt.key;
+                          return (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              onClick={() =>
+                                selectedEdge
+                                  ? setSelectedEdge({
+                                      ...selectedEdge,
+                                      anchor: opt.key,
+                                    })
+                                  : null
+                              }
+                              className={
+                                "px-2 py-1 text-[11px] font-bold transition-colors " +
+                                (active
+                                  ? "bg-primary text-white"
+                                  : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700")
+                              }
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Dica: Use Option/Alt + clique na aresta, ou dê duplo clique na medida.
+                    </p>
+                  </div>
+
+                  <div className="h-px bg-gray-200 dark:bg-gray-700 mt-6"></div>
+                </div>
+              ) : null}
+
               <div>
                 <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 flex items-center justify-between">
                   <span className="flex items-center gap-2">

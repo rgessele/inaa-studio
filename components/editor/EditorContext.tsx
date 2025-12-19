@@ -23,6 +23,14 @@ import { withComputedFigureMeasures } from "./figureMeasures";
 
 import type { Figure } from "./types";
 
+export type EdgeAnchor = "start" | "end" | "mid";
+
+export type SelectedEdge = {
+  figureId: string;
+  edgeId: string;
+  anchor: EdgeAnchor;
+} | null;
+
 interface EditorContextType {
   tool: Tool;
   setTool: (tool: Tool) => void;
@@ -36,6 +44,9 @@ interface EditorContextType {
   toggleSelectedFigureId: (id: string) => void;
   selectedFigureId: string | null;
   setSelectedFigureId: (id: string | null) => void;
+
+  selectedEdge: SelectedEdge;
+  setSelectedEdge: (edge: SelectedEdge) => void;
   deleteSelected: () => void;
   scale: number;
   setScale: (scale: number) => void;
@@ -110,6 +121,7 @@ const EditorContext = createContext<EditorContextType | undefined>(undefined);
 export function EditorProvider({ children }: { children: ReactNode }) {
   const [tool, setTool] = useState<Tool>("select");
   const [selectedFigureIds, setSelectedFigureIdsState] = useState<string[]>([]);
+  const [selectedEdge, setSelectedEdge] = useState<SelectedEdge>(null);
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [unit, setUnit] = useState(DEFAULT_UNIT);
@@ -360,10 +372,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       deduped.push(id);
     }
     setSelectedFigureIdsState(deduped);
+    setSelectedEdge(null);
   }, []);
 
   const setSelectedFigureId = useCallback((id: string | null) => {
     setSelectedFigureIdsState(id ? [id] : []);
+    setSelectedEdge(null);
   }, []);
 
   const toggleSelectedFigureId = useCallback((id: string) => {
@@ -371,6 +385,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setSelectedFigureIdsState((prev) => {
       return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
     });
+    setSelectedEdge(null);
   }, []);
 
   // Load a project into the editor
@@ -394,6 +409,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         })
       );
       setSelectedFigureIdsState([]);
+      setSelectedEdge(null);
     },
     [pageGuideSettings, setFigures]
   );
@@ -554,6 +570,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     });
 
     setSelectedFigureIdsState([]);
+    setSelectedEdge(null);
 
     // Tool state cleanup
     setOffsetTargetId((prev) => (prev && idsToDelete.has(prev) ? null : prev));
@@ -571,6 +588,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         toggleSelectedFigureId,
         selectedFigureId,
         setSelectedFigureId,
+
+        selectedEdge,
+        setSelectedEdge,
         deleteSelected,
         scale,
         setScale,
