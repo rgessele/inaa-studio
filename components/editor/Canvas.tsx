@@ -906,6 +906,7 @@ export default function Canvas() {
     unfoldAxis,
     measureSnapStrengthPx,
     measureDisplayMode,
+    nodesDisplayMode,
     showRulers,
     pixelsPerUnit,
     scale,
@@ -955,6 +956,7 @@ export default function Canvas() {
   const [curveDraft, setCurveDraft] = useState<CurveDraft>(null);
   const [nodeSelection, setNodeSelection] = useState<NodeSelection>(null);
   const [hoveredEdge, setHoveredEdge] = useState<EdgeHover>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredFigureId, setHoveredFigureId] = useState<string | null>(null);
   const [dartDraft, setDartDraft] = useState<DartDraft>(null);
   const [measureDraft, setMeasureDraft] = useState<MeasureDraft>(null);
@@ -988,6 +990,7 @@ export default function Canvas() {
     if (tool !== "node") {
       setNodeSelection(null);
       setHoveredEdge(null);
+      setHoveredNodeId(null);
     }
 
     // When leaving curve tool, clear unfinished multi-click curve.
@@ -1217,6 +1220,22 @@ export default function Canvas() {
 
       if (
         tool === "node" &&
+        hoveredNodeId &&
+        selectedFigureId &&
+        selectedFigure &&
+        selectedFigure.id === selectedFigureId
+      ) {
+        setNodeSelection({
+          figureId: selectedFigureId,
+          nodeId: hoveredNodeId,
+          handle: null,
+        });
+        setHoveredEdge(null);
+        return;
+      }
+
+      if (
+        tool === "node" &&
         hoveredEdge &&
         selectedFigureId &&
         hoveredEdge.figureId === selectedFigureId
@@ -1276,6 +1295,7 @@ export default function Canvas() {
     [
       curveDraft,
       dartDraft,
+      hoveredNodeId,
       position.x,
       position.y,
       scale,
@@ -1314,6 +1334,9 @@ export default function Canvas() {
       if (measureDisplayMode === "hover") {
         const thresholdWorld = 10 / scale;
         setHoveredFigureId(findHoveredFigureId(figures, world, thresholdWorld));
+      } else if (nodesDisplayMode === "hover") {
+        const thresholdWorld = 10 / scale;
+        setHoveredFigureId(findHoveredFigureId(figures, world, thresholdWorld));
       } else if (hoveredFigureId) {
         setHoveredFigureId(null);
       }
@@ -1323,6 +1346,28 @@ export default function Canvas() {
 
         if (tool === "dart") {
           setDartDraft((prev) => (prev ? { ...prev, currentWorld: world } : prev));
+        }
+
+        // In node tool: if we're near an existing node, prioritize it over edge splitting.
+        if (tool === "node") {
+          const threshold = 10 / scale;
+          let bestId: string | null = null;
+          let bestD = Number.POSITIVE_INFINITY;
+          for (const n of selectedFigure.nodes) {
+            const d = dist(local, { x: n.x, y: n.y });
+            if (d < bestD) {
+              bestD = d;
+              bestId = n.id;
+            }
+          }
+
+          if (bestId && bestD <= threshold) {
+            if (hoveredNodeId !== bestId) setHoveredNodeId(bestId);
+            if (hoveredEdge) setHoveredEdge(null);
+            return;
+          }
+
+          if (hoveredNodeId) setHoveredNodeId(null);
         }
 
         const hit = findNearestEdge(selectedFigure, local);
@@ -1367,9 +1412,12 @@ export default function Canvas() {
       draft,
       figures,
       hoveredFigureId,
+      hoveredEdge,
+      hoveredNodeId,
       isPanning,
       measureDraft,
       measureDisplayMode,
+      nodesDisplayMode,
       measureSnapStrengthPx,
       position.x,
       position.y,
@@ -1902,6 +1950,7 @@ export default function Canvas() {
 
     const rNode = 6 / scale;
     const rHandle = 4 / scale;
+    const rNodeHit = 12 / scale;
 
     return (
       <Group
@@ -1936,13 +1985,13 @@ export default function Canvas() {
                 />
               ) : null}
 
+              {/* Bigger hit target (invisible) to make selecting/dragging nodes reliable */}
               <Circle
                 x={n.x}
                 y={n.y}
-                radius={rNode}
-                fill={isSelectedNode ? "#2563eb" : "#ffffff"}
-                stroke="#2563eb"
-                strokeWidth={1 / scale}
+                radius={rNodeHit}
+                fill="#000000"
+                opacity={0.001}
                 draggable
                 onDragStart={() => {
                   dragNodeRef.current = {
@@ -2019,6 +2068,17 @@ export default function Canvas() {
                     handle: null,
                   });
                 }}
+              />
+
+              {/* Visual node */}
+              <Circle
+                x={n.x}
+                y={n.y}
+                radius={rNode}
+                fill={isSelectedNode ? "#2563eb" : "#ffffff"}
+                stroke="#2563eb"
+                strokeWidth={1 / scale}
+                listening={false}
               />
 
               {inH ? (
@@ -2132,6 +2192,67 @@ export default function Canvas() {
       </Group>
     );
   }, [nodeSelection, scale, selectedFigure, setFigures, tool]);
+
+  const nodesPointsOverlay = useMemo(() => {
+    if (nodesDisplayMode === "never") return null;
+
+    const visibleIds = new Set<string>();
+
+    if (nodesDisplayMode === "always") {
+      for (const fig of figures) {
+        if (fig.kind === "seam") continue;
+        visibleIds.add(fig.id);
+      }
+    } else {
+      // hover
+      if (selectedFigureId) visibleIds.add(selectedFigureId);
+      if (hoveredFigureId) visibleIds.add(hoveredFigureId);
+    }
+
+    if (visibleIds.size === 0) return null;
+
+    const r = 3 / scale;
+    const strokeWidth = 1 / scale;
+    const fill = "transparent";
+
+    const nodes: React.ReactNode[] = [];
+
+    for (const fig of figures) {
+      if (!visibleIds.has(fig.id)) continue;
+      if (fig.kind === "seam") continue;
+
+      const isSelected = fig.id === selectedFigureId;
+      const stroke = isSelected ? "#2563eb" : resolveStrokeColor(fig.stroke, isDark);
+      const opacity = (fig.opacity ?? 1) * 0.85;
+
+      nodes.push(
+        <Group
+          key={`npts:${fig.id}`}
+          x={fig.x}
+          y={fig.y}
+          rotation={fig.rotation || 0}
+          listening={false}
+        >
+          {fig.nodes.map((n) => (
+            <Circle
+              key={n.id}
+              x={n.x}
+              y={n.y}
+              radius={r}
+              fill={fill}
+              stroke={stroke}
+              strokeWidth={strokeWidth}
+              opacity={opacity}
+              listening={false}
+              name="inaa-node-point"
+            />
+          ))}
+        </Group>
+      );
+    }
+
+    return nodes.length ? <>{nodes}</> : null;
+  }, [figures, hoveredFigureId, isDark, nodesDisplayMode, scale, selectedFigureId]);
 
   const edgeHoverOverlay = useMemo(() => {
     if ((tool !== "node" && tool !== "dart") || !selectedFigure || !hoveredEdge)
@@ -2409,6 +2530,8 @@ export default function Canvas() {
               </Group>
             );
           })}
+
+          {nodesPointsOverlay}
 
           {draftPreview}
 

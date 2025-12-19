@@ -11,6 +11,8 @@ export type Tool =
 
 export type MeasureDisplayMode = "never" | "always" | "hover";
 
+export type NodesDisplayMode = "never" | "always" | "hover";
+
 import type { PaperOrientation, PaperSize } from "./exportSettings";
 
 // =====================

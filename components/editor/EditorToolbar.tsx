@@ -37,6 +37,8 @@ export function EditorToolbar() {
     setPageGuideSettings,
     measureDisplayMode,
     setMeasureDisplayMode,
+    nodesDisplayMode,
+    setNodesDisplayMode,
     selectedFigureId,
     deleteSelected,
   } = useEditor();
@@ -211,6 +213,67 @@ export function EditorToolbar() {
       </svg>
     );
   }, [measureDisplayMode]);
+
+  const nodesModeIcon = useMemo(() => {
+    const base = "w-5 h-5 stroke-current";
+
+    if (nodesDisplayMode === "never") {
+      // Dots with slash (off)
+      return (
+        <svg
+          className={base}
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.5"
+          viewBox="0 0 24 24"
+        >
+          <path d="M5 19 L19 5" />
+          <circle cx="7" cy="7" r="1.5" />
+          <circle cx="12" cy="12" r="1.5" />
+          <circle cx="17" cy="17" r="1.5" />
+        </svg>
+      );
+    }
+
+    if (nodesDisplayMode === "always") {
+      // Dots (always)
+      return (
+        <svg
+          className={base}
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.5"
+          viewBox="0 0 24 24"
+        >
+          <circle cx="7" cy="7" r="1.8" />
+          <circle cx="12" cy="12" r="1.8" />
+          <circle cx="17" cy="17" r="1.8" />
+        </svg>
+      );
+    }
+
+    // Hover: dots + small pointer
+    return (
+      <svg
+        className={base}
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+        viewBox="0 0 24 24"
+      >
+        <circle cx="7" cy="7" r="1.8" />
+        <circle cx="12" cy="12" r="1.8" />
+        <circle cx="17" cy="17" r="1.8" />
+        <path d="M20 20 l-3 -1 1 3 1 -2 1 0 z" />
+      </svg>
+    );
+  }, [nodesDisplayMode]);
 
   const isMac = useSyncExternalStore(
     () => () => {
@@ -591,6 +654,29 @@ export function EditorToolbar() {
             ]}
             customIcon={measuresModeIcon}
             dataTestId="measures-mode-button"
+          />
+
+          <ToolButton
+            active={nodesDisplayMode !== "never"}
+            onClick={() => {
+              const next =
+                nodesDisplayMode === "never"
+                  ? "always"
+                  : nodesDisplayMode === "always"
+                    ? "hover"
+                    : "never";
+              setNodesDisplayMode(next);
+            }}
+            icon="trip_origin"
+            isMac={isMac}
+            title={`Nós (${nodesDisplayMode === "never" ? "Nunca" : nodesDisplayMode === "always" ? "Sempre" : "Hover"})`}
+            details={[
+              "Exibe pontinhos (nós) das figuras no canvas.",
+              "Clique para alternar: Nunca → Sempre → Hover.",
+              "No modo Hover: mostra a figura em hover e a selecionada.",
+            ]}
+            customIcon={nodesModeIcon}
+            dataTestId="nodes-mode-button"
           />
 
           <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>

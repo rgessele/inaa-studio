@@ -42,11 +42,25 @@
       "notes": "Render Konva (Text) com tamanho estável no zoom e exclusão de seam por padrão."
     },
     {
+      "id": "editor.nodesOverlay",
+      "title": "Nós (pontinhos): modos never/always/hover",
+      "risk": "low",
+      "e2e": ["tests/nodes.overlay.spec.ts"],
+      "notes": "Overlay neutro de pontos (somente nós) com preferência global em localStorage."
+    },
+    {
       "id": "tool.rectangle",
       "title": "Ferramenta Retângulo",
       "risk": "high",
       "e2e": ["tests/editor.smoke.spec.ts"],
       "notes": "Desenho básico no canvas + validação por snapshot de estado."
+    },
+    {
+      "id": "tool.node",
+      "title": "Ferramenta Nó (editar nós): arrasto sem split acidental",
+      "risk": "medium",
+      "e2e": ["tests/node-tool.drag.spec.ts"],
+      "notes": "Garante que arrastar um nó existente não cria ponto extra (split)."
     },
     {
       "id": "history.undoRedo",

@@ -9,7 +9,12 @@ import React, {
   useRef,
 } from "react";
 import Konva from "konva";
-import { Tool, type MeasureDisplayMode, type PageGuideSettings } from "./types";
+import {
+  Tool,
+  type MeasureDisplayMode,
+  type NodesDisplayMode,
+  type PageGuideSettings,
+} from "./types";
 import { DEFAULT_UNIT, DEFAULT_PIXELS_PER_UNIT } from "./constants";
 import { useHistory } from "./useHistory";
 import { createDefaultExportSettings } from "./exportSettings";
@@ -57,6 +62,9 @@ interface EditorContextType {
 
   measureDisplayMode: MeasureDisplayMode;
   setMeasureDisplayMode: (mode: MeasureDisplayMode) => void;
+
+  nodesDisplayMode: NodesDisplayMode;
+  setNodesDisplayMode: (mode: NodesDisplayMode) => void;
 
   measureSnapStrengthPx: number;
   setMeasureSnapStrengthPx: (strengthPx: number) => void;
@@ -125,6 +133,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     "never"
   );
 
+  const [nodesDisplayMode, setNodesDisplayModeState] = useState<NodesDisplayMode>(
+    "never"
+  );
+
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem("inaa:measureDisplayMode");
@@ -142,6 +154,28 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setMeasureDisplayModeState(mode);
     try {
       localStorage.setItem("inaa:measureDisplayMode", mode);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("inaa:nodesDisplayMode");
+      if (!raw) return;
+      const normalized = raw.trim().toLowerCase();
+      if (normalized === "never" || normalized === "always" || normalized === "hover") {
+        setNodesDisplayModeState(normalized);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setNodesDisplayMode = useCallback((mode: NodesDisplayMode) => {
+    setNodesDisplayModeState(mode);
+    try {
+      localStorage.setItem("inaa:nodesDisplayMode", mode);
     } catch {
       // ignore
     }
@@ -380,9 +414,17 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         gridContrast,
         measureSnapStrengthPx,
         measureDisplayMode,
+        nodesDisplayMode,
         projectId,
         projectName,
       }),
+      getSelectedFigureStats: () => {
+        const id = selectedFigureId;
+        if (!id) return null;
+        const fig = (figures || []).find((f) => f.id === id);
+        if (!fig) return null;
+        return { nodesCount: fig.nodes.length, edgesCount: fig.edges.length };
+      },
       countStageNodesByName: (name: string) => {
         const stage = stageRef.current;
         if (!stage) return 0;
@@ -399,6 +441,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     figures,
     gridContrast,
     measureDisplayMode,
+    nodesDisplayMode,
     measureSnapStrengthPx,
     pageGuideSettings,
     projectId,
@@ -473,6 +516,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
         measureDisplayMode,
         setMeasureDisplayMode,
+
+        nodesDisplayMode,
+        setNodesDisplayMode,
 
         measureSnapStrengthPx,
         setMeasureSnapStrengthPx,
