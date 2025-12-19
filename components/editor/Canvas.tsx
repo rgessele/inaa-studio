@@ -1151,11 +1151,15 @@ export default function Canvas() {
     const stage = stageRef.current;
     if (!stage) return;
     const el = stage.container();
-    if (tool === "pan") {
-      el.style.cursor = isPanning ? "grabbing" : "grab";
-    } else {
-      el.style.cursor = "";
+    if (isPanning) {
+      el.style.cursor = "grabbing";
+      return;
     }
+    if (tool === "pan") {
+      el.style.cursor = "grab";
+      return;
+    }
+    el.style.cursor = "";
   }, [isPanning, tool]);
 
   const selectionDragSyncRef = useRef<
@@ -2877,9 +2881,8 @@ export default function Canvas() {
           }}
           onMouseUp={handlePointerUp}
           onContextMenu={(e) => {
-            if (tool === "curve") {
-              e.evt.preventDefault();
-            }
+            // Disable browser context menu inside the canvas.
+            e.evt.preventDefault();
           }}
         >
           <Layer>
