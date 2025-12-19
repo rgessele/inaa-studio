@@ -108,12 +108,24 @@ function perp(v: Vec2): Vec2 {
 
 function midAndTangent(points: Vec2[]): { mid: Vec2; tangent: Vec2 } | null {
   if (points.length < 2) return null;
+  if (points.length === 2) {
+    const a = points[0];
+    const b = points[1];
+    return { mid: lerp(a, b, 0.5), tangent: sub(b, a) };
+  }
   const midIndex = Math.floor((points.length - 1) / 2);
   const prev = points[Math.max(0, midIndex - 1)];
   const curr = points[midIndex];
   const next = points[Math.min(points.length - 1, midIndex + 1)];
   return { mid: curr, tangent: sub(next, prev) };
 }
+
+type MeasureEdgeHover =
+  | {
+      figureId: string;
+      edgeId: string;
+    }
+  | null;
 
 function figureCentroidLocal(figure: Figure): Vec2 {
   if (!figure.nodes.length) return { x: 0, y: 0 };
@@ -1051,6 +1063,7 @@ export default function Canvas() {
   const [dartDraft, setDartDraft] = useState<DartDraft>(null);
   const [measureDraft, setMeasureDraft] = useState<MeasureDraft>(null);
   const [marqueeDraft, setMarqueeDraft] = useState<MarqueeDraft>(null);
+  const [hoveredMeasureEdge, setHoveredMeasureEdge] = useState<MeasureEdgeHover>(null);
   const [magnetSnap, setMagnetSnap] = useState<
     { pointWorld: Vec2; kind: "node" | "edge" } | null
   >(null);
@@ -1492,6 +1505,26 @@ export default function Canvas() {
         x: (pos.x - position.x) / scale,
         y: (pos.y - position.y) / scale,
       };
+
+      if (measureDisplayMode !== "never") {
+        const thresholdWorld = 10 / scale;
+        const figId = findHoveredFigureId(figures, world, thresholdWorld);
+        const fig = figId ? figures.find((f) => f.id === figId) : null;
+
+        if (fig) {
+          const local = worldToFigureLocal(fig, world);
+          const hit = findNearestEdge(fig, local);
+          setHoveredMeasureEdge(
+            hit.best && hit.bestDist <= thresholdWorld
+              ? { figureId: fig.id, edgeId: hit.best.edgeId }
+              : null
+          );
+        } else if (hoveredMeasureEdge) {
+          setHoveredMeasureEdge(null);
+        }
+      } else if (hoveredMeasureEdge) {
+        setHoveredMeasureEdge(null);
+      }
 
       if (tool === "select" && marqueeDraft) {
         setMarqueeDraft((prev) =>
@@ -1972,6 +2005,33 @@ export default function Canvas() {
     const fill = resolveAci7(isDark);
     const opacity = 0.75;
 
+    const highlightStroke = "#2563eb";
+
+    const renderHoveredEdgeHighlight = (fig: Figure) => {
+      if (!hoveredMeasureEdge) return null;
+      if (hoveredMeasureEdge.figureId !== fig.id) return null;
+      const edge = fig.edges.find((e) => e.id === hoveredMeasureEdge.edgeId);
+      if (!edge) return null;
+
+      const pts = edgeLocalPoints(fig, edge, edge.kind === "line" ? 1 : 60);
+      if (pts.length < 2) return null;
+      const flat: number[] = [];
+      for (const p of pts) flat.push(p.x, p.y);
+
+      return (
+        <Line
+          key={`mhover:${fig.id}:${edge.id}`}
+          points={flat}
+          stroke={highlightStroke}
+          strokeWidth={2 / scale}
+          opacity={0.85}
+          listening={false}
+          lineCap="round"
+          lineJoin="round"
+        />
+      );
+    };
+
     const renderEdgeLabel = (fig: Figure, edge: FigureEdge) => {
       const hit = fig.measures?.perEdge?.find((m) => m.edgeId === edge.id);
       if (!hit) return null;
@@ -1987,6 +2047,10 @@ export default function Canvas() {
       const p2 = add(mt.mid, mul(n, -offset));
       const p = dist(p1, centroid) >= dist(p2, centroid) ? p1 : p2;
 
+      const isHovered =
+        hoveredMeasureEdge?.figureId === fig.id &&
+        hoveredMeasureEdge.edgeId === edge.id;
+
       const label = formatCm(pxToCm(hit.lengthPx), 2);
       return (
         <Text
@@ -1997,8 +2061,9 @@ export default function Canvas() {
           align="center"
           text={label}
           fontSize={fontSize}
-          fill={fill}
-          opacity={opacity}
+          fill={isHovered ? highlightStroke : fill}
+          opacity={isHovered ? 1 : opacity}
+          fontStyle={isHovered ? "bold" : "normal"}
           listening={false}
           name="inaa-measure-label"
         />
@@ -2095,7 +2160,12 @@ export default function Canvas() {
       }
 
       // Default: per-edge labels
-      return <>{fig.edges.map((edge) => renderEdgeLabel(fig, edge))}</>;
+      return (
+        <>
+          {renderHoveredEdgeHighlight(fig)}
+          {fig.edges.map((edge) => renderEdgeLabel(fig, edge))}
+        </>
+      );
     };
 
     const nodes: React.ReactNode[] = [];
@@ -2166,6 +2236,7 @@ export default function Canvas() {
     draft,
     figures,
     hoveredFigureId,
+    hoveredMeasureEdge,
     isDark,
     measureDisplayMode,
     scale,
