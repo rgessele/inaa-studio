@@ -61,6 +61,28 @@
   }
 }
 
+    /* Clean circular color swatch (Manage Tags modal) */
+    input[type="color"].color-swatch {
+      -webkit-appearance: none;
+      appearance: none;
+      border: none;
+      padding: 0;
+    }
+
+    input[type="color"].color-swatch::-webkit-color-swatch-wrapper {
+      padding: 0;
+    }
+
+    input[type="color"].color-swatch::-webkit-color-swatch {
+      border: none;
+      border-radius: 9999px;
+    }
+
+    input[type="color"].color-swatch::-moz-color-swatch {
+      border: none;
+      border-radius: 9999px;
+    }
+
 @keyframes slide-up {
   from {
     transform: translateY(100%);

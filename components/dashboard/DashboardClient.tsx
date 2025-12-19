@@ -20,6 +20,7 @@ type DashboardTag = {
 };
 
 const DEFAULT_TAG_COLOR = "#F2C94C";
+const TAGS_PAGE_SIZE = 10;
 
 function normalizeHexColor(input: string): string | null {
   const raw = input.trim();
@@ -133,6 +134,8 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   const [newTagName, setNewTagName] = useState("");
   const [newTagColor, setNewTagColor] = useState<string>(DEFAULT_TAG_COLOR);
   const [tagColorDrafts, setTagColorDrafts] = useState<Record<string, string>>({});
+  const [tagsPage, setTagsPage] = useState(1);
+  const [isCreatingTag, setIsCreatingTag] = useState(false);
   const [openTagFilter, setOpenTagFilter] = useState(false);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [includeUntagged, setIncludeUntagged] = useState(false);
@@ -246,6 +249,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
 
   useEffect(() => {
     if (!isTagsModalOpen) return;
+    setTagsPage(1);
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -254,6 +258,23 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       document.body.style.overflow = previousOverflow;
     };
   }, [isTagsModalOpen]);
+
+  const tagsPageCount = useMemo(() => {
+    return Math.max(1, Math.ceil(tags.length / TAGS_PAGE_SIZE));
+  }, [tags.length]);
+
+  useEffect(() => {
+    setTagsPage((prev) => {
+      if (prev < 1) return 1;
+      if (prev > tagsPageCount) return tagsPageCount;
+      return prev;
+    });
+  }, [tagsPageCount]);
+
+  const pagedTags = useMemo(() => {
+    const start = (tagsPage - 1) * TAGS_PAGE_SIZE;
+    return tags.slice(start, start + TAGS_PAGE_SIZE);
+  }, [tags, tagsPage]);
 
   useEffect(() => {
     if (!tagEditorProject) return;
@@ -269,6 +290,16 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   useEffect(() => {
     setItems(projects as DashboardProject[]);
   }, [projects]);
+
+  const isTagFilterActive = includeUntagged || selectedTagIds.length > 0;
+  const tagFilterCount =
+    selectedTagIds.length + (includeUntagged ? 1 : 0);
+  const selectedTagsForChips = useMemo(() => {
+    const byId = new Map(tags.map((t) => [t.id, t] as const));
+    return selectedTagIds
+      .map((id) => byId.get(id))
+      .filter((value): value is DashboardTag => Boolean(value));
+  }, [selectedTagIds, tags]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -598,6 +629,14 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
     const name = newTagName.trim();
     if (!name || isWorking) return;
 
+    const alreadyExists = tags.some(
+      (t) => t.name.trim().toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR")
+    );
+    if (alreadyExists) {
+      setTagsError("Já existe uma tag com esse nome.");
+      return;
+    }
+
     const normalizedColor = normalizeHexColor(newTagColor);
     if (!normalizedColor) {
       setTagsError("Cor inválida. Use o formato #RRGGBB.");
@@ -605,6 +644,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
     }
 
     setIsWorking(true);
+    setIsCreatingTag(true);
     setTagsError(null);
     try {
       const supabase = createClient();
@@ -643,6 +683,15 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       const error = withoutColor?.error ?? withColor.error;
 
       if (error || !data) {
+        const code = (error as unknown as { code?: string } | null)?.code;
+        if (
+          code === "23505" ||
+          error?.message?.includes("tags_user_name_unique") ||
+          error?.message?.toLowerCase()?.includes("duplicate key")
+        ) {
+          setTagsError("Já existe uma tag com esse nome.");
+          return;
+        }
         if (error?.message?.includes("tags_color_check")) {
           setTagsError(
             "Atualize o banco de dados para suportar cores hex (#RRGGBB)."
@@ -660,16 +709,21 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
         color: normalizeHexColor(createdRow.color ?? "") ?? normalizedColor,
       };
 
-      setTags((prev) =>
-        [...prev, created].sort((a, b) =>
+      setTags((prev) => {
+        const next = [...prev, created].sort((a, b) =>
           a.name.localeCompare(b.name, "pt-BR")
-        )
-      );
+        );
+        const index = next.findIndex((t) => t.id === created.id);
+        const page = Math.floor(Math.max(0, index) / TAGS_PAGE_SIZE) + 1;
+        setTagsPage(page);
+        return next;
+      });
       setTagColorDrafts((prev) => ({ ...prev, [created.id]: created.color }));
       setNewTagName("");
       setNewTagColor(DEFAULT_TAG_COLOR);
     } finally {
       setIsWorking(false);
+      setIsCreatingTag(false);
     }
   };
 
@@ -984,7 +1038,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                 onClick={() => (!isWorking ? setDeleteCandidate(null) : null)}
               />
 
-              <div className="relative w-[92vw] max-w-lg rounded-2xl bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 shadow-floating overflow-hidden">
+              <div className="relative w-[92vw] max-w-lg max-h-[85vh] rounded-2xl bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 shadow-floating overflow-hidden flex flex-col">
                 <button
                   type="button"
                   aria-label="Fechar"
@@ -1067,7 +1121,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                   <span className="material-symbols-outlined">close</span>
                 </button>
 
-                <div className="p-8">
+                <div className="p-6 sm:p-8 flex flex-col min-h-0">
                   <h2 className="text-2xl font-semibold text-gray-900 dark:text-text-main-dark">
                     Tags
                   </h2>
@@ -1075,25 +1129,37 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                     Crie e exclua tags para organizar seus projetos.
                   </p>
 
-                  <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                  <div className="mt-6 grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2 sm:gap-3 items-center">
                     <input
                       value={newTagName}
                       onChange={(e) => setNewTagName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void handleCreateTag();
+                        }
+                      }}
                       placeholder="Nome da tag"
-                      className="flex-1 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 bg-surface-light dark:bg-surface-dark text-gray-900 dark:text-text-main-dark placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                      className="min-w-0 h-9 border border-gray-200 dark:border-gray-700 rounded-lg px-3 bg-surface-light dark:bg-surface-dark text-sm text-gray-900 dark:text-text-main-dark placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
                     />
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 justify-self-start sm:justify-self-auto">
                       <input
                         type="color"
                         aria-label="Escolher cor"
                         value={normalizeHexColor(newTagColor) ?? DEFAULT_TAG_COLOR}
                         onChange={(e) => setNewTagColor(e.target.value)}
-                        className="h-10 w-10 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark"
+                        className="color-swatch h-9 w-9 rounded-full overflow-hidden cursor-pointer bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-surface-light dark:focus:ring-offset-surface-dark"
                       />
                       <input
                         value={newTagColor}
                         onChange={(e) => setNewTagColor(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void handleCreateTag();
+                          }
+                        }}
                         onBlur={() => {
                           const normalized = normalizeHexColor(newTagColor);
                           if (normalized) setNewTagColor(normalized);
@@ -1101,7 +1167,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                         placeholder="#RRGGBB"
                         inputMode="text"
                         autoCapitalize="characters"
-                        className="w-28 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 bg-surface-light dark:bg-surface-dark text-gray-900 dark:text-text-main-dark placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                        className="w-24 h-9 border border-gray-200 dark:border-gray-700 rounded-lg px-3 bg-surface-light dark:bg-surface-dark text-xs font-mono text-gray-900 dark:text-text-main-dark placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
                       />
                     </div>
 
@@ -1109,9 +1175,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                       type="button"
                       disabled={isWorking || newTagName.trim().length === 0}
                       onClick={() => void handleCreateTag()}
-                      className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                      className="h-9 min-w-[92px] inline-flex items-center justify-center rounded-lg px-4 text-sm font-medium bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-60 disabled:pointer-events-none"
                     >
-                      {isWorking ? "Criando..." : "Criar"}
+                      {isCreatingTag ? "Criando..." : "Criar"}
                     </button>
                   </div>
 
@@ -1123,14 +1189,14 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                     </div>
                   ) : null}
 
-                  <div className="mt-6 max-h-[45vh] overflow-auto rounded-xl border border-gray-200 dark:border-gray-700">
+                  <div className="mt-5 flex-1 min-h-0 overflow-y-auto overflow-x-hidden rounded-xl border border-gray-200 dark:border-gray-700">
                     {tags.length === 0 ? (
                       <div className="p-6 text-sm text-gray-600 dark:text-text-muted-dark">
                         Nenhuma tag criada ainda.
                       </div>
                     ) : (
                       <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {tags.map((tag) => {
+                        {pagedTags.map((tag) => {
                           const draft = tagColorDrafts[tag.id] ?? tag.color;
                           const normalizedDraft =
                             normalizeHexColor(draft) ?? DEFAULT_TAG_COLOR;
@@ -1157,84 +1223,113 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                           };
 
                           return (
-                          <li
-                            key={tag.id}
-                            className="flex items-center justify-between gap-4 px-5 py-3"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="material-symbols-outlined text-[18px] text-gray-400">
-                                sell
-                              </span>
-                              <span
-                                className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border"
-                                style={styles.badgeStyle}
-                              >
-                                <span
-                                  className="mr-1.5 h-2 w-2 rounded-full"
-                                  style={styles.dotStyle}
+                            <li
+                              key={tag.id}
+                              className="px-4 py-2"
+                            >
+                              <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2 sm:gap-3 items-center">
+                                <div className="min-w-0 flex items-center gap-2">
+                                  <span className="material-symbols-outlined text-[18px] text-gray-400">
+                                    sell
+                                  </span>
+                                  <span
+                                    className="min-w-0 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border"
+                                    style={styles.badgeStyle}
+                                  >
+                                    <span
+                                      className="mr-1.5 h-2 w-2 rounded-full"
+                                      style={styles.dotStyle}
+                                    />
+                                    <span className="truncate">{tag.name}</span>
+                                  </span>
+                                </div>
+
+                                <input
+                                  type="color"
+                                  disabled={isWorking}
+                                  aria-label={`Cor da tag ${tag.name}`}
+                                  value={normalizedDraft}
+                                  onChange={(e) => {
+                                    setTagColorDrafts((prev) => ({
+                                      ...prev,
+                                      [tag.id]: e.target.value,
+                                    }));
+                                    void handleUpdateTagColor(tag.id, e.target.value);
+                                  }}
+                                  className="color-swatch h-9 w-9 rounded-full overflow-hidden cursor-pointer bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-surface-light dark:focus:ring-offset-surface-dark disabled:opacity-60 disabled:pointer-events-none"
                                 />
-                                {tag.name}
-                              </span>
-                            </div>
 
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="color"
-                                disabled={isWorking}
-                                aria-label={`Cor da tag ${tag.name}`}
-                                value={normalizedDraft}
-                                onChange={(e) => {
-                                  setTagColorDrafts((prev) => ({
-                                    ...prev,
-                                    [tag.id]: e.target.value,
-                                  }));
-                                  void handleUpdateTagColor(tag.id, e.target.value);
-                                }}
-                                className="h-9 w-9 rounded-lg border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark disabled:opacity-60 disabled:pointer-events-none"
-                              />
-
-                              <input
-                                value={draft}
-                                disabled={isWorking}
-                                onChange={(e) =>
-                                  setTagColorDrafts((prev) => ({
-                                    ...prev,
-                                    [tag.id]: e.target.value,
-                                  }))
-                                }
-                                onBlur={() => {
-                                  void maybeSaveDraft();
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    void maybeSaveDraft();
+                                <input
+                                  value={draft}
+                                  disabled={isWorking}
+                                  onChange={(e) =>
+                                    setTagColorDrafts((prev) => ({
+                                      ...prev,
+                                      [tag.id]: e.target.value,
+                                    }))
                                   }
-                                }}
-                                placeholder="#RRGGBB"
-                                inputMode="text"
-                                autoCapitalize="characters"
-                                className="w-28 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 bg-surface-light dark:bg-surface-dark text-gray-900 dark:text-text-main-dark placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary disabled:opacity-60 disabled:pointer-events-none"
-                              />
+                                  onBlur={() => {
+                                    void maybeSaveDraft();
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      void maybeSaveDraft();
+                                    }
+                                  }}
+                                  placeholder="#RRGGBB"
+                                  inputMode="text"
+                                  autoCapitalize="characters"
+                                  className="w-24 h-9 border border-gray-200 dark:border-gray-700 rounded-lg px-3 bg-surface-light dark:bg-surface-dark text-xs font-mono text-gray-900 dark:text-text-main-dark placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary disabled:opacity-60 disabled:pointer-events-none"
+                                />
 
-                              <button
-                                type="button"
-                                disabled={isWorking}
-                                onClick={() => void handleDeleteTag(tag.id)}
-                                className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-accent-rose hover:bg-accent-rose/10 transition-colors disabled:opacity-60 disabled:pointer-events-none"
-                              >
-                                <span className="material-symbols-outlined text-[18px]">
-                                  delete
-                                </span>
-                                Excluir
-                              </button>
-                            </div>
-                          </li>
+                                <button
+                                  type="button"
+                                  disabled={isWorking}
+                                  onClick={() => void handleDeleteTag(tag.id)}
+                                  className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-accent-rose hover:bg-accent-rose/10 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                                  aria-label={`Excluir tag ${tag.name}`}
+                                  title="Excluir"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">
+                                    delete
+                                  </span>
+                                </button>
+                              </div>
+                            </li>
                           );
                         })}
                       </ul>
                     )}
                   </div>
+
+                  {tagsPageCount > 1 ? (
+                    <div className="mt-3 flex items-center justify-between">
+                      <button
+                        type="button"
+                        disabled={isWorking || tagsPage <= 1}
+                        onClick={() => setTagsPage((p) => Math.max(1, p - 1))}
+                        className="h-9 inline-flex items-center justify-center rounded-lg px-3 text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                      >
+                        Anterior
+                      </button>
+
+                      <span className="text-xs text-gray-500 dark:text-text-muted-dark">
+                        Página {tagsPage} de {tagsPageCount}
+                      </span>
+
+                      <button
+                        type="button"
+                        disabled={isWorking || tagsPage >= tagsPageCount}
+                        onClick={() =>
+                          setTagsPage((p) => Math.min(tagsPageCount, p + 1))
+                        }
+                        className="h-9 inline-flex items-center justify-center rounded-lg px-3 text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                      >
+                        Próxima
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>,
@@ -1352,18 +1447,27 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
               type="button"
               disabled={isWorking}
               onClick={() => setOpenTagFilter((prev) => !prev)}
-              className="inline-flex items-center justify-center h-10 px-3 gap-2 rounded-md border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors shadow-subtle disabled:opacity-60 disabled:pointer-events-none"
+              className={
+                "inline-flex items-center justify-center h-10 px-3 gap-2 rounded-md border bg-surface-light dark:bg-surface-dark text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors shadow-subtle disabled:opacity-60 disabled:pointer-events-none " +
+                (isTagFilterActive
+                  ? "border-primary ring-1 ring-primary/40"
+                  : "border-gray-200 dark:border-gray-700")
+              }
               aria-label="Filtrar por tags"
               title="Filtrar por tags"
             >
               <span className="material-symbols-outlined text-[20px]">sell</span>
               <span className="hidden sm:inline text-sm">Tags</span>
+              {isTagFilterActive ? (
+                <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-xs font-medium bg-primary/15 text-primary dark:text-primary">
+                  {tagFilterCount}
+                </span>
+              ) : null}
             </button>
 
             {openTagFilter ? (
               <div
                 onClick={(e) => {
-                  e.preventDefault();
                   e.stopPropagation();
                 }}
                 className="absolute z-50 left-0 sm:right-0 sm:left-auto mt-2 w-72 rounded-xl border border-gray-200/60 dark:border-gray-700/60 bg-surface-light/95 dark:bg-surface-dark/95 backdrop-blur shadow-floating overflow-hidden"
@@ -1485,6 +1589,55 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
           </button>
         </div>
       </div>
+
+      {isTagFilterActive ? (
+        <div className="-mt-5 mb-8 flex flex-wrap items-center gap-2">
+          {includeUntagged ? (
+            <button
+              type="button"
+              onClick={() => setIncludeUntagged(false)}
+              className="inline-flex items-center gap-2 h-8 px-3 rounded-full border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              title="Remover filtro: Sem tag"
+            >
+              <span className="text-xs">Sem tag</span>
+              <span className="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          ) : null}
+
+          {selectedTagsForChips.map((tag) => (
+            <button
+              key={tag.id}
+              type="button"
+              onClick={() => toggleSelectedTag(tag.id)}
+              className="inline-flex items-center gap-2 h-8 px-3 rounded-full border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              title={`Remover filtro: ${tag.name}`}
+            >
+              <span
+                className="h-2.5 w-2.5 rounded-full border border-gray-200 dark:border-gray-700"
+                style={{
+                  backgroundColor:
+                    normalizeHexColor(tag.color) ?? DEFAULT_TAG_COLOR,
+                }}
+                aria-hidden="true"
+              />
+              <span className="text-xs">{tag.name}</span>
+              <span className="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          ))}
+
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedTagIds([]);
+              setIncludeUntagged(false);
+            }}
+            className="ml-auto inline-flex items-center gap-2 h-8 px-3 rounded-full border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            title="Limpar filtros de tags"
+          >
+            <span className="text-xs">Limpar filtros</span>
+          </button>
+        </div>
+      ) : null}
 
       <div
         className={
