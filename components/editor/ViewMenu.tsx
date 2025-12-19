@@ -176,7 +176,7 @@ export function ViewMenu() {
           <div className="mt-4">
             <div className="flex items-center justify-between">
               <label className="text-xs text-gray-600 dark:text-gray-300">
-                Força do magnetismo (Medir)
+                Força do magnetismo
               </label>
               <span className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">
                 {Math.max(12, measureSnapStrengthPx)}px
@@ -192,7 +192,7 @@ export function ViewMenu() {
               className="mt-2 w-full"
             />
             <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-2">
-              Aumente para facilitar o snap; mínimo 12px.
+              Aumente para facilitar o snap (Medir e Imã); mínimo 12px.
             </p>
           </div>
         </div>

@@ -66,6 +66,9 @@ interface EditorContextType {
   nodesDisplayMode: NodesDisplayMode;
   setNodesDisplayMode: (mode: NodesDisplayMode) => void;
 
+  magnetEnabled: boolean;
+  setMagnetEnabled: (enabled: boolean) => void;
+
   measureSnapStrengthPx: number;
   setMeasureSnapStrengthPx: (strengthPx: number) => void;
 
@@ -137,6 +140,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     "never"
   );
 
+  const [magnetEnabled, setMagnetEnabledState] = useState(false);
+
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem("inaa:measureDisplayMode");
@@ -176,6 +181,27 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setNodesDisplayModeState(mode);
     try {
       localStorage.setItem("inaa:nodesDisplayMode", mode);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("inaa:magnetEnabled");
+      if (raw == null) return;
+      const normalized = raw.trim().toLowerCase();
+      const parsed = normalized === "1" || normalized === "true";
+      setMagnetEnabledState(parsed);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setMagnetEnabled = useCallback((enabled: boolean) => {
+    setMagnetEnabledState(enabled);
+    try {
+      localStorage.setItem("inaa:magnetEnabled", enabled ? "1" : "0");
     } catch {
       // ignore
     }
@@ -415,9 +441,23 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         measureSnapStrengthPx,
         measureDisplayMode,
         nodesDisplayMode,
+        magnetEnabled,
         projectId,
         projectName,
       }),
+      getFiguresSnapshot: () => {
+        return (figures || []).map((f) => ({
+          id: f.id,
+          tool: f.tool,
+          kind: f.kind,
+          parentId: f.parentId,
+          x: f.x,
+          y: f.y,
+          rotation: f.rotation || 0,
+          nodes: f.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y })),
+          edges: f.edges.map((e) => ({ id: e.id, from: e.from, to: e.to, kind: e.kind })),
+        }));
+      },
       getSelectedFigureStats: () => {
         const id = selectedFigureId;
         if (!id) return null;
@@ -440,6 +480,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   }, [
     figures,
     gridContrast,
+    magnetEnabled,
     measureDisplayMode,
     nodesDisplayMode,
     measureSnapStrengthPx,
@@ -519,6 +560,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
         nodesDisplayMode,
         setNodesDisplayMode,
+
+        magnetEnabled,
+        setMagnetEnabled,
 
         measureSnapStrengthPx,
         setMeasureSnapStrengthPx,

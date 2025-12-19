@@ -193,6 +193,84 @@ function nearestOnPolylineWorld(pWorld: Vec2, poly: number[]): { d: number; poin
   return { d: bestD, point: bestPoint };
 }
 
+type SnapResult =
+  | {
+      isSnapped: true;
+      pointWorld: Vec2;
+      kind: "node" | "edge";
+      figureId: string;
+    }
+  | {
+      isSnapped: false;
+    };
+
+function snapWorldPoint(
+  pWorld: Vec2,
+  figures: Figure[],
+  opts: {
+    thresholdWorld: number;
+    excludeSeams?: boolean;
+    includeNodes?: boolean;
+    excludeFigureIds?: Set<string>;
+  }
+): SnapResult {
+  const threshold = Math.max(0, opts.thresholdWorld);
+  if (!Number.isFinite(threshold) || threshold <= 0) return { isSnapped: false };
+
+  const excludeSeams = opts.excludeSeams !== false;
+  const includeNodes = opts.includeNodes !== false;
+  const excludeFigureIds = opts.excludeFigureIds;
+
+  // 1) Nodes (priority)
+  if (includeNodes) {
+    let bestD = Number.POSITIVE_INFINITY;
+    let bestPoint: Vec2 | null = null;
+    let bestFigureId: string | null = null;
+
+    for (const fig of figures) {
+      if (excludeSeams && fig.kind === "seam") continue;
+      if (excludeFigureIds && excludeFigureIds.has(fig.id)) continue;
+      for (const n of fig.nodes) {
+        const nw = figureLocalToWorld(fig, { x: n.x, y: n.y });
+        const d = dist(pWorld, nw);
+        if (d < bestD) {
+          bestD = d;
+          bestPoint = nw;
+          bestFigureId = fig.id;
+        }
+      }
+    }
+
+    if (bestPoint && bestFigureId && bestD <= threshold) {
+      return { isSnapped: true, pointWorld: bestPoint, kind: "node", figureId: bestFigureId };
+    }
+  }
+
+  // 2) Edges / contour (polyline approximation)
+  let bestD = Number.POSITIVE_INFINITY;
+  let bestPoint: Vec2 | null = null;
+  let bestFigureId: string | null = null;
+
+  for (const fig of figures) {
+    if (excludeSeams && fig.kind === "seam") continue;
+    if (excludeFigureIds && excludeFigureIds.has(fig.id)) continue;
+    const poly = figureWorldPolyline(fig, 60);
+    const hit = nearestOnPolylineWorld(pWorld, poly);
+    if (!hit) continue;
+    if (hit.d < bestD) {
+      bestD = hit.d;
+      bestPoint = hit.point;
+      bestFigureId = fig.id;
+    }
+  }
+
+  if (bestPoint && bestFigureId && bestD <= threshold) {
+    return { isSnapped: true, pointWorld: bestPoint, kind: "edge", figureId: bestFigureId };
+  }
+
+  return { isSnapped: false };
+}
+
 function getNodeById(nodes: FigureNode[], id: string): FigureNode | undefined {
   return nodes.find((n) => n.id === id);
 }
@@ -907,6 +985,7 @@ export default function Canvas() {
     measureSnapStrengthPx,
     measureDisplayMode,
     nodesDisplayMode,
+    magnetEnabled,
     showRulers,
     pixelsPerUnit,
     scale,
@@ -960,6 +1039,9 @@ export default function Canvas() {
   const [hoveredFigureId, setHoveredFigureId] = useState<string | null>(null);
   const [dartDraft, setDartDraft] = useState<DartDraft>(null);
   const [measureDraft, setMeasureDraft] = useState<MeasureDraft>(null);
+  const [magnetSnap, setMagnetSnap] = useState<
+    { pointWorld: Vec2; kind: "node" | "edge" } | null
+  >(null);
   const [isPanning, setIsPanning] = useState(false);
   const lastPointerRef = useRef<Vec2 | null>(null);
   const lastPointerDownAtRef = useRef<number>(0);
@@ -1011,6 +1093,39 @@ export default function Canvas() {
   const selectedFigure = useMemo(() => {
     return selectedFigureId ? figures.find((f) => f.id === selectedFigureId) : null;
   }, [figures, selectedFigureId]);
+
+  const getSnappedWorldForTool = useCallback(
+    (
+      worldRaw: Vec2,
+      mode: "down" | "move"
+    ): { world: Vec2; snap: SnapResult } => {
+      // Imã affects drawing tools (line/rect/circle/curve). Measure always has snapping (existing behavior).
+      const isDrawingTool =
+        tool === "line" || tool === "rectangle" || tool === "circle" || tool === "curve";
+      const isMeasure = tool === "measure";
+
+      const shouldSnap = (magnetEnabled && isDrawingTool) || isMeasure;
+      if (!shouldSnap) {
+        return { world: worldRaw, snap: { isSnapped: false } };
+      }
+
+      const thresholdWorld = Math.max(12, measureSnapStrengthPx) / scale;
+
+      // Avoid snapping to the figure while dragging it (select tool). Not relevant here.
+      const exclude = new Set<string>();
+      void mode;
+
+      const snap = snapWorldPoint(worldRaw, figures, {
+        thresholdWorld,
+        excludeSeams: true,
+        includeNodes: true,
+        excludeFigureIds: exclude.size ? exclude : undefined,
+      });
+
+      return { world: snap.isSnapped ? snap.pointWorld : worldRaw, snap };
+    },
+    [figures, magnetEnabled, measureSnapStrengthPx, scale, tool]
+  );
 
   useEffect(() => {
     // When the offset value changes, recompute existing seam figures (keep same IDs).
@@ -1150,6 +1265,17 @@ export default function Canvas() {
         y: (pos.y - position.y) / scale,
       };
 
+      const resolvedDown = getSnappedWorldForTool(world, "down");
+      const worldForTool = resolvedDown.world;
+      if (resolvedDown.snap.isSnapped && magnetEnabled && tool !== "measure") {
+        setMagnetSnap({
+          pointWorld: resolvedDown.snap.pointWorld,
+          kind: resolvedDown.snap.kind,
+        });
+      } else if (magnetSnap) {
+        setMagnetSnap(null);
+      }
+
       // Curve tool: right click undoes the last placed point.
       if (tool === "curve" && e.evt.button === 2) {
         e.evt.preventDefault();
@@ -1166,10 +1292,10 @@ export default function Canvas() {
 
       if (tool === "measure") {
         setMeasureDraft({
-          startWorld: world,
+          startWorld: worldForTool,
           endWorld: world,
-          snappedEndWorld: world,
-          isSnapped: false,
+          snappedEndWorld: worldForTool,
+          isSnapped: resolvedDown.snap.isSnapped,
         });
         return;
       }
@@ -1238,6 +1364,7 @@ export default function Canvas() {
         tool === "node" &&
         hoveredEdge &&
         selectedFigureId &&
+        selectedFigure &&
         hoveredEdge.figureId === selectedFigureId
       ) {
         // Avoid calling setState (Canvas) inside the figures state updater (EditorProvider).
@@ -1273,29 +1400,32 @@ export default function Canvas() {
         }
 
         if (!curveDraft) {
-          setCurveDraft({ pointsWorld: [world], currentWorld: world });
+          setCurveDraft({ pointsWorld: [worldForTool], currentWorld: worldForTool });
           return;
         }
 
         setCurveDraft((prev) =>
           prev
             ? {
-                pointsWorld: [...prev.pointsWorld, world],
-                currentWorld: world,
+                pointsWorld: [...prev.pointsWorld, worldForTool],
+                currentWorld: worldForTool,
               }
-            : { pointsWorld: [world], currentWorld: world }
+            : { pointsWorld: [worldForTool], currentWorld: worldForTool }
         );
         return;
       }
 
       if (tool === "line" || tool === "rectangle" || tool === "circle") {
-        setDraft({ tool, startWorld: world, currentWorld: world });
+        setDraft({ tool, startWorld: worldForTool, currentWorld: worldForTool });
       }
     },
     [
       curveDraft,
       dartDraft,
+      getSnappedWorldForTool,
       hoveredNodeId,
+      magnetEnabled,
+      magnetSnap,
       position.x,
       position.y,
       scale,
@@ -1330,6 +1460,20 @@ export default function Canvas() {
         x: (pos.x - position.x) / scale,
         y: (pos.y - position.y) / scale,
       };
+
+      const resolvedMove = getSnappedWorldForTool(world, "move");
+      const worldForTool = resolvedMove.world;
+
+      if (tool !== "measure") {
+        if (resolvedMove.snap.isSnapped && magnetEnabled && (tool === "line" || tool === "rectangle" || tool === "circle" || tool === "curve")) {
+          setMagnetSnap({
+            pointWorld: resolvedMove.snap.pointWorld,
+            kind: resolvedMove.snap.kind,
+          });
+        } else if (magnetSnap) {
+          setMagnetSnap(null);
+        }
+      }
 
       if (measureDisplayMode === "hover") {
         const thresholdWorld = 10 / scale;
@@ -1376,28 +1520,13 @@ export default function Canvas() {
       }
 
       if (tool === "measure" && measureDraft) {
-        // Snap to closest point on any figure polyline.
-        let bestD = Number.POSITIVE_INFINITY;
-        let bestPoint = world;
-        for (const fig of figures) {
-          const poly = figureWorldPolyline(fig, 60);
-          const hit = nearestOnPolylineWorld(world, poly);
-          if (!hit) continue;
-          if (hit.d < bestD) {
-            bestD = hit.d;
-            bestPoint = hit.point;
-          }
-        }
-
-        const thresholdWorld = measureSnapStrengthPx / scale;
-        const isSnapped = bestD <= thresholdWorld;
         setMeasureDraft((prev) =>
           prev
             ? {
                 ...prev,
                 endWorld: world,
-                snappedEndWorld: isSnapped ? bestPoint : world,
-                isSnapped,
+                snappedEndWorld: worldForTool,
+                isSnapped: resolvedMove.snap.isSnapped,
               }
             : prev
         );
@@ -1406,11 +1535,12 @@ export default function Canvas() {
 
       if (!draft) return;
 
-      setDraft({ ...draft, currentWorld: world });
+      setDraft({ ...draft, currentWorld: worldForTool });
     },
     [
       draft,
       figures,
+      getSnappedWorldForTool,
       hoveredFigureId,
       hoveredEdge,
       hoveredNodeId,
@@ -1418,6 +1548,8 @@ export default function Canvas() {
       measureDraft,
       measureDisplayMode,
       nodesDisplayMode,
+      magnetEnabled,
+      magnetSnap,
       measureSnapStrengthPx,
       position.x,
       position.y,
@@ -1442,9 +1574,10 @@ export default function Canvas() {
         y: (pos.y - position.y) / scale,
       };
 
-      setCurveDraft((prev) => (prev ? { ...prev, currentWorld: world } : prev));
+      const resolved = getSnappedWorldForTool(world, "move");
+      setCurveDraft((prev) => (prev ? { ...prev, currentWorld: resolved.world } : prev));
     },
-    [curveDraft, position.x, position.y, scale]
+    [curveDraft, getSnappedWorldForTool, position.x, position.y, scale]
   );
 
   const handlePointerUp = useCallback(() => {
@@ -1528,6 +1661,26 @@ export default function Canvas() {
       </>
     );
   }, [measureDraft, previewStroke, scale, tool]);
+
+  const magnetOverlay = useMemo(() => {
+    if (!magnetEnabled) return null;
+    if (!magnetSnap) return null;
+    if (tool !== "line" && tool !== "rectangle" && tool !== "circle" && tool !== "curve") {
+      return null;
+    }
+
+    const p = magnetSnap.pointWorld;
+    return (
+      <Circle
+        x={p.x}
+        y={p.y}
+        radius={3 / scale}
+        fill={previewStroke}
+        opacity={0.9}
+        listening={false}
+      />
+    );
+  }, [magnetEnabled, magnetSnap, previewStroke, scale, tool]);
 
   useEffect(() => {
     const onKeyDown = (evt: KeyboardEvent) => {
@@ -2544,6 +2697,8 @@ export default function Canvas() {
           {dartOverlay}
 
           {measureOverlay}
+
+          {magnetOverlay}
 
           {nodeOverlay}
           </Layer>

@@ -9,6 +9,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Magnet } from "lucide-react";
 import { useEditor } from "./EditorContext";
 import { DrawingTool, Tool } from "./types";
 import {
@@ -39,6 +40,8 @@ export function EditorToolbar() {
     setMeasureDisplayMode,
     nodesDisplayMode,
     setNodesDisplayMode,
+    magnetEnabled,
+    setMagnetEnabled,
     selectedFigureId,
     deleteSelected,
   } = useEditor();
@@ -275,6 +278,8 @@ export function EditorToolbar() {
     );
   }, [nodesDisplayMode]);
 
+  const magnetIcon = <Magnet className="w-5 h-5" strokeWidth={1.5} />;
+
   const isMac = useSyncExternalStore(
     () => () => {
       // no-op: OS does not change during a session
@@ -491,6 +496,7 @@ export function EditorToolbar() {
             details={[
               "Clique em uma forma para exibir os nós.",
               "Arraste os nós para deformar a geometria.",
+              "Clique na aresta para inserir um nó (split).",
             ]}
             customIcon={
               <svg
@@ -677,6 +683,21 @@ export function EditorToolbar() {
             ]}
             customIcon={nodesModeIcon}
             dataTestId="nodes-mode-button"
+          />
+
+          <ToolButton
+            active={magnetEnabled}
+            onClick={() => setMagnetEnabled(!magnetEnabled)}
+            icon="magnet"
+            isMac={isMac}
+            title={`Imã (${magnetEnabled ? "Ligado" : "Desligado"})`}
+            details={[
+              "Ativa magnetismo (snap) para desenhar em cima de outras figuras.",
+              "Funciona em Linha/Retângulo/Círculo/Curva.",
+              "A força do snap é configurável no menu Visualizar.",
+            ]}
+            customIcon={magnetIcon}
+            dataTestId="magnet-toggle-button"
           />
 
           <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>

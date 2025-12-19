@@ -49,6 +49,13 @@
       "notes": "Overlay neutro de pontos (somente nós) com preferência global em localStorage."
     },
     {
+      "id": "editor.magnet",
+      "title": "Imã (snap): desenhar com magnetismo",
+      "risk": "medium",
+      "e2e": ["tests/magnet.snap-line.spec.ts"],
+      "notes": "Snapping genérico (nós + contorno) aplicado via resolver único do ponteiro."
+    },
+    {
       "id": "tool.rectangle",
       "title": "Ferramenta Retângulo",
       "risk": "high",

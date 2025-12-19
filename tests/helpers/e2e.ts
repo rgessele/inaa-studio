@@ -19,6 +19,9 @@ export async function initE2EState(page: Page) {
       if (localStorage.getItem("inaa:nodesDisplayMode") === null) {
         localStorage.setItem("inaa:nodesDisplayMode", "never");
       }
+      if (localStorage.getItem("inaa:magnetEnabled") === null) {
+        localStorage.setItem("inaa:magnetEnabled", "0");
+      }
       // If the app uses theme persistence elsewhere, we keep default.
     } catch {
       // ignore
@@ -49,10 +52,22 @@ declare global {
         measureSnapStrengthPx: number;
         measureDisplayMode: "never" | "always" | "hover";
         nodesDisplayMode: "never" | "always" | "hover";
+        magnetEnabled: boolean;
         projectId: string | null;
         projectName: string;
       };
       countStageNodesByName?: (name: string) => number;
+      getFiguresSnapshot?: () => Array<{
+        id: string;
+        tool: string;
+        kind?: string;
+        parentId?: string;
+        x: number;
+        y: number;
+        rotation: number;
+        nodes: Array<{ id: string; x: number; y: number }>;
+        edges: Array<{ id: string; from: string; to: string; kind: string }>;
+      }>;
       getSelectedFigureStats?: () =>
         | {
             nodesCount: number;
