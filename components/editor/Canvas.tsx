@@ -161,6 +161,7 @@ function findHoveredFigureId(
 function useIsDarkMode(): boolean {
   const [isDark, setIsDark] = useState(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const root = document.documentElement;
     const update = () => setIsDark(root.classList.contains("dark"));
@@ -1063,6 +1064,7 @@ export default function Canvas() {
   const [size, setSize] = useState({ width: 0, height: 0 });
 
   const stageRef = useRef<Konva.Stage | null>(null);
+  const backgroundRef = useRef<Konva.Rect | null>(null);
   const [draft, setDraft] = useState<Draft>(null);
   const [curveDraft, setCurveDraft] = useState<CurveDraft>(null);
   const [nodeSelection, setNodeSelection] = useState<NodeSelection>(null);
@@ -1078,7 +1080,83 @@ export default function Canvas() {
   >(null);
   const [isPanning, setIsPanning] = useState(false);
   const lastPointerRef = useRef<Vec2 | null>(null);
+  const lastPanClientRef = useRef<{ x: number; y: number } | null>(null);
   const lastPointerDownAtRef = useRef<number>(0);
+
+  const positionRef = useRef(position);
+  useEffect(() => {
+    positionRef.current = position;
+  }, [position]);
+
+  const panRafRef = useRef<number | null>(null);
+  const panPositionRef = useRef<Vec2 | null>(null);
+
+  useEffect(() => {
+    if (!isPanning) return;
+
+    const endPan = () => {
+      setIsPanning(false);
+      lastPointerRef.current = null;
+      lastPanClientRef.current = null;
+
+      if (panRafRef.current !== null) {
+        cancelAnimationFrame(panRafRef.current);
+        panRafRef.current = null;
+      }
+
+      const finalPos = panPositionRef.current;
+      panPositionRef.current = null;
+      if (finalPos) setPosition(finalPos);
+    };
+
+    const onMove = (evt: PointerEvent | MouseEvent) => {
+      evt.preventDefault();
+      const last = lastPanClientRef.current;
+      if (!last) {
+        lastPanClientRef.current = { x: evt.clientX, y: evt.clientY };
+        return;
+      }
+
+      const dx = evt.clientX - last.x;
+      const dy = evt.clientY - last.y;
+      lastPanClientRef.current = { x: evt.clientX, y: evt.clientY };
+
+      const base = panPositionRef.current ?? positionRef.current;
+      const next = { x: base.x + dx, y: base.y + dy };
+      panPositionRef.current = next;
+
+      if (panRafRef.current === null) {
+        panRafRef.current = requestAnimationFrame(() => {
+          panRafRef.current = null;
+          if (panPositionRef.current) setPosition(panPositionRef.current);
+        });
+      }
+    };
+
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("mousemove", onMove, { passive: false });
+    window.addEventListener("pointerup", endPan);
+    window.addEventListener("mouseup", endPan);
+    window.addEventListener("blur", endPan);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("pointerup", endPan);
+      window.removeEventListener("mouseup", endPan);
+      window.removeEventListener("blur", endPan);
+    };
+  }, [isPanning, setPosition]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const el = stage.container();
+    if (tool === "pan") {
+      el.style.cursor = isPanning ? "grabbing" : "grab";
+    } else {
+      el.style.cursor = "";
+    }
+  }, [isPanning, tool]);
 
   const selectionDragSyncRef = useRef<
     | {
@@ -1109,7 +1187,6 @@ export default function Canvas() {
     | null
   >(null);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     // When leaving node tool, clear node selection.
     if (tool !== "node") {
@@ -1252,6 +1329,20 @@ export default function Canvas() {
       const pointer = stage.getPointerPosition();
       if (!pointer) return;
 
+      // Trackpad pan is typically reported as wheel events with small deltas.
+      // Pinch-zoom usually sets ctrlKey=true on macOS.
+      const isTrackpadWheel =
+        e.evt.deltaMode === 0 &&
+        (Math.abs(e.evt.deltaX) > 0 || Math.abs(e.evt.deltaY) < 50);
+
+      if (!e.evt.ctrlKey && isTrackpadWheel) {
+        setPosition({
+          x: position.x - e.evt.deltaX,
+          y: position.y - e.evt.deltaY,
+        });
+        return;
+      }
+
       const direction = e.evt.deltaY > 0 ? -1 : 1;
       const factor = direction > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
       const nextScale = clamp(scale * factor, MIN_ZOOM_SCALE, MAX_ZOOM_SCALE);
@@ -1291,13 +1382,37 @@ export default function Canvas() {
 
       const stage = stageRef.current;
       if (!stage) return;
+
+      // Ensure Konva updates pointer position even when clicking on empty stage.
+      stage.setPointersPositions(e.evt);
       const pos = stage.getPointerPosition();
       if (!pos) return;
 
+      const evtAny = e.evt as MouseEvent;
+      const buttons = (evtAny.buttons ?? 0) as number;
+      const button = (evtAny.button ?? 0) as number;
+      const isMiddlePressed = (buttons & 4) === 4 || button === 1;
+      const isRightClick = button === 2;
+      const isLeftClick = (buttons & 1) === 1 || button === 0;
+
       // Pan tool or middle mouse
-      if (tool === "pan" || e.evt.button === 1) {
+      if ((tool === "pan" && isLeftClick && !isRightClick) || (isMiddlePressed && !isRightClick)) {
+        e.evt.preventDefault();
+        // Prefer pointer capture so panning continues even when leaving the stage.
+        if (e.evt instanceof PointerEvent) {
+          try {
+            stage.container().setPointerCapture(e.evt.pointerId);
+          } catch {
+            // ignore (not supported in some environments)
+          }
+        }
         setIsPanning(true);
         lastPointerRef.current = { x: pos.x, y: pos.y };
+        lastPanClientRef.current = {
+          x: (e.evt as MouseEvent).clientX,
+          y: (e.evt as MouseEvent).clientY,
+        };
+        panPositionRef.current = positionRef.current;
         return;
       }
 
@@ -1306,8 +1421,7 @@ export default function Canvas() {
         y: (pos.y - position.y) / scale,
       };
 
-      const isBackground = e.target === stage;
-      const isLeftClick = e.evt.button === 0;
+      const isBackground = e.target === stage || e.target === backgroundRef.current;
 
       // Select tool: allow forgiving click selection (hit slop) and marquee selection.
       if (tool === "select" && isBackground && isLeftClick) {
@@ -1496,16 +1610,14 @@ export default function Canvas() {
   const handlePointerMove = (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
       const stage = stageRef.current;
       if (!stage) return;
+
+      stage.setPointersPositions(e.evt);
       const pos = stage.getPointerPosition();
       if (!pos) return;
 
       if (isPanning) {
-        const last = lastPointerRef.current;
-        if (!last) return;
-        const dx = pos.x - last.x;
-        const dy = pos.y - last.y;
-        lastPointerRef.current = { x: pos.x, y: pos.y };
-        setPosition({ x: position.x + dx, y: position.y + dy });
+        e.evt.preventDefault();
+        // Movement is handled by global pointer/mouse move listeners while panning.
         return;
       }
 
@@ -1692,6 +1804,14 @@ export default function Canvas() {
     if (isPanning) {
       setIsPanning(false);
       lastPointerRef.current = null;
+
+      if (panRafRef.current !== null) {
+        cancelAnimationFrame(panRafRef.current);
+        panRafRef.current = null;
+      }
+      const finalPos = panPositionRef.current;
+      panPositionRef.current = null;
+      if (finalPos) setPosition(finalPos);
       return;
     }
 
@@ -2765,12 +2885,14 @@ export default function Canvas() {
           <Layer>
           {/* Background hit target */}
           <Rect
+            ref={backgroundRef}
             x={-100000}
             y={-100000}
             width={200000}
             height={200000}
-            fill="transparent"
-            listening={false}
+            fill="#000000"
+            opacity={0.01}
+            listening
           />
 
           {gridLines.map((l, idx) => (
@@ -2891,6 +3013,17 @@ export default function Canvas() {
                   lineCap="round"
                   lineJoin="round"
                   onPointerDown={(e) => {
+                    const evtAny = e.evt as MouseEvent;
+                    const buttons = (evtAny.buttons ?? 0) as number;
+                    const button = (evtAny.button ?? 0) as number;
+                    const isMiddlePressed = (buttons & 4) === 4 || button === 1;
+
+                    // Pan should work anywhere and must not select figures.
+                    // Do not stop propagation so Stage handlers can start panning.
+                    if (tool === "pan" || isMiddlePressed) {
+                      return;
+                    }
+
                     e.cancelBubble = true;
 
                     const base = figures.find((f) => f.id === baseId);
