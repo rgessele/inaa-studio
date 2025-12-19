@@ -1597,16 +1597,40 @@ export default function Canvas() {
         // Node tool: Option/Alt locks split preview to the midpoint of a straight edge.
         if (tool === "node" && e.evt.altKey) {
           const edge = selectedFigure.edges.find((ed) => ed.id === hit.best!.edgeId);
-          if (edge?.kind === "line") {
+          if (edge) {
             const a = getNodeById(selectedFigure.nodes, edge.from);
             const b = getNodeById(selectedFigure.nodes, edge.to);
             if (a && b) {
-              const mid = lerp({ x: a.x, y: a.y }, { x: b.x, y: b.y }, 0.5);
+              if (edge.kind === "line") {
+                const mid = lerp({ x: a.x, y: a.y }, { x: b.x, y: b.y }, 0.5);
+                setHoveredEdge({
+                  figureId: selectedFigure.id,
+                  edgeId: edge.id,
+                  t: 0.5,
+                  pointLocal: mid,
+                  snapKind: "mid",
+                });
+                return;
+              }
+
+              // Cubic: lock to parameter midpoint t=0.5 (good visual midpoint; not arc-length midpoint).
+              const p0: Vec2 = { x: a.x, y: a.y };
+              const p3: Vec2 = { x: b.x, y: b.y };
+              const p1: Vec2 = a.outHandle ? { x: a.outHandle.x, y: a.outHandle.y } : p0;
+              const p2: Vec2 = b.inHandle ? { x: b.inHandle.x, y: b.inHandle.y } : p3;
+              const t = 0.5;
+              const p01 = lerp(p0, p1, t);
+              const p12 = lerp(p1, p2, t);
+              const p23 = lerp(p2, p3, t);
+              const p012 = lerp(p01, p12, t);
+              const p123 = lerp(p12, p23, t);
+              const p0123 = lerp(p012, p123, t);
+
               setHoveredEdge({
                 figureId: selectedFigure.id,
                 edgeId: edge.id,
-                t: 0.5,
-                pointLocal: mid,
+                t,
+                pointLocal: p0123,
                 snapKind: "mid",
               });
               return;
