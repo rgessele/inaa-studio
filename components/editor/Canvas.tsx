@@ -39,6 +39,7 @@ type EdgeHover =
       edgeId: string;
       t: number;
       pointLocal: Vec2;
+      snapKind?: "mid";
     }
   | null;
 
@@ -1485,7 +1486,6 @@ export default function Canvas() {
   };
 
   const handlePointerMove = (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
-      void e;
       const stage = stageRef.current;
       if (!stage) return;
       const pos = stage.getPointerPosition();
@@ -1588,7 +1588,33 @@ export default function Canvas() {
 
         const hit = findNearestEdge(selectedFigure, local);
         const threshold = 10 / scale;
-        setHoveredEdge(hit.best && hit.bestDist <= threshold ? hit.best : null);
+
+        if (!hit.best || hit.bestDist > threshold) {
+          setHoveredEdge(null);
+          return;
+        }
+
+        // Node tool: Option/Alt locks split preview to the midpoint of a straight edge.
+        if (tool === "node" && e.evt.altKey) {
+          const edge = selectedFigure.edges.find((ed) => ed.id === hit.best!.edgeId);
+          if (edge?.kind === "line") {
+            const a = getNodeById(selectedFigure.nodes, edge.from);
+            const b = getNodeById(selectedFigure.nodes, edge.to);
+            if (a && b) {
+              const mid = lerp({ x: a.x, y: a.y }, { x: b.x, y: b.y }, 0.5);
+              setHoveredEdge({
+                figureId: selectedFigure.id,
+                edgeId: edge.id,
+                t: 0.5,
+                pointLocal: mid,
+                snapKind: "mid",
+              });
+              return;
+            }
+          }
+        }
+
+        setHoveredEdge(hit.best);
       }
 
       if (tool === "measure" && measureDraft) {
@@ -2579,6 +2605,20 @@ export default function Canvas() {
           lineCap="round"
           lineJoin="round"
         />
+        {tool === "node" && hoveredEdge.snapKind === "mid" ? (
+          <Rect
+            x={hoveredEdge.pointLocal.x}
+            y={hoveredEdge.pointLocal.y}
+            width={8 / scale}
+            height={8 / scale}
+            offsetX={4 / scale}
+            offsetY={4 / scale}
+            rotation={45}
+            fill="#ffffff"
+            stroke="#2563eb"
+            strokeWidth={1 / scale}
+          />
+        ) : null}
         <Circle
           x={hoveredEdge.pointLocal.x}
           y={hoveredEdge.pointLocal.y}
