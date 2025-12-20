@@ -32,6 +32,55 @@ export interface FigureNode {
 
 export type EdgeKind = "line" | "cubic";
 
+// =====================
+// Styled Curves
+// =====================
+
+export type CurveType = "custom" | "styled";
+
+export type TechnicalCurveId =
+  | "ARC_LOW"
+  | "ARC_MED"
+  | "ARC_HIGH"
+  | "S_SOFT"
+  | "HOOK_STRONG"
+  | "ARC_ASYM_IN"
+  | "ARC_ASYM_OUT";
+
+export type SemanticCurveCategory =
+  | "cava"
+  | "decote"
+  | "gancho"
+  | "cintura"
+  | "quadril"
+  | "barra"
+  | "tecnico";
+
+export type SemanticCurveId =
+  | "CAVA_FRENTE_CLASSICA"
+  | "CAVA_COSTAS_CLASSICA"
+  | "GANCHO_COSTAS"
+  | "DECOTE_REDONDO";
+
+export interface StyledCurveParams {
+  height: number;
+  bias: number;
+  flipX: boolean;
+  flipY: boolean;
+  rotationDeg: number;
+}
+
+export interface StyledCurveData {
+  semanticId: SemanticCurveId;
+  technicalId: TechnicalCurveId;
+  params: StyledCurveParams;
+}
+
+export interface DerivedFromCurveStyle {
+  semanticId: SemanticCurveId;
+  technicalId: TechnicalCurveId;
+}
+
 export interface FigureEdge {
   id: string;
   from: string;
@@ -69,6 +118,11 @@ export interface Figure {
   nodes: FigureNode[];
   edges: FigureEdge[];
   closed: boolean;
+
+  // Curve classification (Styled Curves): only meaningful when tool === "curve".
+  curveType?: CurveType;
+  styledData?: StyledCurveData;
+  derivedFrom?: DerivedFromCurveStyle;
 
   // Optional persisted measures cache (computed from nodes/edges)
   measures?: {

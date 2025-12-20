@@ -20,6 +20,7 @@ import {
   figureWorldPolyline,
   worldToFigureLocal,
 } from "./figurePath";
+import { breakStyledLinkIfNeeded } from "./styledCurves";
 import { Ruler } from "./Ruler";
 
 const MIN_ZOOM_SCALE = 0.1;
@@ -608,11 +609,11 @@ function splitFigureEdge(figure: Figure, edgeId: string, t: number): { figure: F
     nextEdges.splice(edgeIndex, 1, e1, e2);
 
     return {
-      figure: {
+      figure: breakStyledLinkIfNeeded({
         ...figure,
         nodes: [...figure.nodes, newNode],
         edges: nextEdges,
-      },
+      }),
       newNodeId,
     };
   }
@@ -662,11 +663,11 @@ function splitFigureEdge(figure: Figure, edgeId: string, t: number): { figure: F
   nextEdges.splice(edgeIndex, 1, e1, e2);
 
   return {
-    figure: {
+    figure: breakStyledLinkIfNeeded({
       ...figure,
       nodes: [...nextNodes, newNode],
       edges: nextEdges,
-    },
+    }),
     newNodeId,
   };
 }
@@ -1207,6 +1208,7 @@ function makeCurveFromPoints(
   return {
     id: id("fig"),
     tool: "curve",
+    curveType: "custom",
     x: 0,
     y: 0,
     rotation: 0,
@@ -3574,9 +3576,10 @@ export default function Canvas() {
                   setFigures((prev) =>
                     prev.map((f) => {
                       if (f.id !== ref.figureId) return f;
+                      const base = breakStyledLinkIfNeeded(f);
                       return {
-                        ...f,
-                        nodes: f.nodes.map((node) => {
+                        ...base,
+                        nodes: base.nodes.map((node) => {
                           if (node.id !== ref.nodeId) return node;
                           const nextIn = ref.startIn
                             ? { x: ref.startIn.x + dx, y: ref.startIn.y + dy }
@@ -3603,9 +3606,10 @@ export default function Canvas() {
                   setFigures((prev) =>
                     prev.map((f) => {
                       if (f.id !== selectedFigure.id) return f;
+                      const base = breakStyledLinkIfNeeded(f);
                       return {
-                        ...f,
-                        nodes: f.nodes.map((node) => {
+                        ...base,
+                        nodes: base.nodes.map((node) => {
                           if (node.id !== n.id) return node;
                           return {
                             ...node,
@@ -3659,9 +3663,10 @@ export default function Canvas() {
                     setFigures((prev) =>
                       prev.map((f) => {
                         if (f.id !== selectedFigure.id) return f;
+                        const base = breakStyledLinkIfNeeded(f);
                         return {
-                          ...f,
-                          nodes: f.nodes.map((node) => {
+                          ...base,
+                          nodes: base.nodes.map((node) => {
                             if (node.id !== n.id) return node;
                             const next: FigureNode = {
                               ...node,
@@ -3712,9 +3717,10 @@ export default function Canvas() {
                     setFigures((prev) =>
                       prev.map((f) => {
                         if (f.id !== selectedFigure.id) return f;
+                        const base = breakStyledLinkIfNeeded(f);
                         return {
-                          ...f,
-                          nodes: f.nodes.map((node) => {
+                          ...base,
+                          nodes: base.nodes.map((node) => {
                             if (node.id !== n.id) return node;
                             const next: FigureNode = {
                               ...node,

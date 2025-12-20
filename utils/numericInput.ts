@@ -23,9 +23,13 @@ export function bumpNumericValue(opts: {
   direction: 1 | -1;
   step: number;
   min: number;
+  max?: number;
 }): number {
   const parsed = parsePtBrDecimal(opts.raw);
   const current = parsed ?? opts.fallback;
   const next = current + opts.direction * opts.step;
-  return clampMin(next, opts.min);
+  const clampedMin = clampMin(next, opts.min);
+  if (opts.max == null) return clampedMin;
+  if (!Number.isFinite(opts.max)) return clampedMin;
+  return Math.min(opts.max, clampedMin);
 }

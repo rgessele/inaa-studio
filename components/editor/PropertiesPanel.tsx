@@ -7,6 +7,16 @@ import { pxToCm } from "./measureUnits";
 import { PX_PER_CM } from "./constants";
 import { setEdgeTargetLengthPx } from "./edgeEdit";
 import {
+  applySemanticStyleToCurveFigure,
+  semanticPresetsByCategory,
+} from "./styledCurves";
+import type { SemanticCurveId } from "./types";
+import {
+  breakStyledLinkIfNeeded,
+  reapplyStyledCurveWithParams,
+} from "./styledCurves";
+import type { StyledCurveParams } from "./types";
+import {
   bumpNumericValue,
   clampMin,
   formatPtBrDecimalFixed,
@@ -29,6 +39,556 @@ export function PropertiesPanel() {
     setUnfoldAxis,
   } = useEditor();
   const selectedFigure = figures.find((f) => f.id === selectedFigureId);
+
+  const curveSelection = selectedFigure?.tool === "curve" ? selectedFigure : null;
+  const showCurveStylePanel = tool === "curve" || curveSelection != null;
+  const presetGroups = semanticPresetsByCategory();
+  const defaultPresetId = presetGroups.flatMap((g) => g.presets)[0]?.id ?? null;
+  const [curveStylePresetId, setCurveStylePresetId] = useState<SemanticCurveId | "">(
+    (defaultPresetId as SemanticCurveId | null) ?? ""
+  );
+
+  const presetMetaById = React.useMemo(() => {
+    const map = new Map<
+      SemanticCurveId,
+      { label: string; categoryLabel: string }
+    >();
+    for (const group of presetGroups) {
+      for (const preset of group.presets) {
+        map.set(preset.id, { label: preset.label, categoryLabel: group.label });
+      }
+    }
+    return map;
+  }, [presetGroups]);
+
+  const activeStyleMeta = (() => {
+    const semanticId = curveSelection?.styledData?.semanticId;
+    if (!semanticId) return null;
+    return {
+      semanticId,
+      ...(presetMetaById.get(semanticId) ?? {
+        label: semanticId,
+        categoryLabel: "",
+      }),
+    };
+  })();
+
+  const selectedStyledParams: StyledCurveParams | null =
+    curveSelection?.styledData?.params ?? null;
+
+  const [curveHeightDraft, setCurveHeightDraft] = useState<string>("1,00");
+  const [curveHeightError, setCurveHeightError] = useState<string | null>(null);
+  const [isEditingCurveHeight, setIsEditingCurveHeight] = useState(false);
+
+  const [curveBiasDraft, setCurveBiasDraft] = useState<string>("0,00");
+  const [curveBiasError, setCurveBiasError] = useState<string | null>(null);
+  const [isEditingCurveBias, setIsEditingCurveBias] = useState(false);
+
+  const [curveRotationDraft, setCurveRotationDraft] = useState<string>("0");
+  const [curveRotationError, setCurveRotationError] = useState<string | null>(null);
+  const [isEditingCurveRotation, setIsEditingCurveRotation] = useState(false);
+
+  const [curveFlipX, setCurveFlipX] = useState(false);
+  const [curveFlipY, setCurveFlipY] = useState(false);
+
+  React.useEffect(() => {
+    if (!curveSelection) return;
+    if (!curveSelection.styledData) return;
+
+    const p = curveSelection.styledData.params;
+    if (!isEditingCurveHeight) {
+      setCurveHeightDraft(formatPtBrDecimalFixed(p.height, 2));
+      setCurveHeightError(null);
+    }
+    if (!isEditingCurveBias) {
+      setCurveBiasDraft(formatPtBrDecimalFixed(p.bias, 2));
+      setCurveBiasError(null);
+    }
+    if (!isEditingCurveRotation) {
+      setCurveRotationDraft(String(Math.round(p.rotationDeg)));
+      setCurveRotationError(null);
+    }
+    setCurveFlipX(!!p.flipX);
+    setCurveFlipY(!!p.flipY);
+  }, [
+    curveSelection,
+    isEditingCurveBias,
+    isEditingCurveHeight,
+    isEditingCurveRotation,
+  ]);
+
+  React.useEffect(() => {
+    if (!curveSelection) return;
+    if (curveSelection.styledData?.semanticId) {
+      setCurveStylePresetId(curveSelection.styledData.semanticId);
+      return;
+    }
+    setCurveStylePresetId("");
+  }, [curveSelection]);
+
+  React.useEffect(() => {
+    if (!showCurveStylePanel) return;
+    // In tool mode (no curve selected), start with a default preset.
+    // When a curve is selected and is custom, we keep "Customizado" (empty value).
+    if (tool === "curve" && !curveSelection && !curveStylePresetId && defaultPresetId) {
+      setCurveStylePresetId(defaultPresetId);
+    }
+  }, [curveSelection, curveStylePresetId, defaultPresetId, showCurveStylePanel, tool]);
+
+  const applyCurveStyle = () => {
+    if (!curveSelection) return;
+    if (!curveStylePresetId) return;
+
+    setSelectedEdge(null);
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id !== curveSelection.id) return f;
+        if (f.kind === "seam") return f;
+        const res = applySemanticStyleToCurveFigure({
+          figure: f,
+          semanticId: curveStylePresetId,
+        });
+        return "figure" in res ? res.figure : f;
+      })
+    );
+  };
+
+  const applyStyledParams = (params: Partial<StyledCurveParams>) => {
+    if (!curveSelection) return;
+    if (!curveSelection.styledData) return;
+
+    setSelectedEdge(null);
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id !== curveSelection.id) return f;
+        if (f.kind === "seam") return f;
+        const res = reapplyStyledCurveWithParams({ figure: f, params });
+        return "figure" in res ? res.figure : f;
+      })
+    );
+  };
+
+  const renderCurveStylePanel = (options: {
+    showApplyButton: boolean;
+    showHelp: boolean;
+    helpWhenNoCurveSelected?: string;
+  }) => {
+    if (!showCurveStylePanel) return null;
+
+    const { showApplyButton, showHelp, helpWhenNoCurveSelected } = options;
+
+    return (
+      <div className="space-y-4">
+        <div className="flex items-baseline justify-between">
+          <h4 className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Estilo de Curva
+          </h4>
+        </div>
+
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+              Preset
+            </span>
+            <select
+              className={
+                "w-full " +
+                inputBaseClass +
+                " " +
+                inputFocusClass +
+                " !text-left"
+              }
+              value={curveStylePresetId ?? ""}
+              onChange={(e) =>
+                setCurveStylePresetId(e.target.value as SemanticCurveId | "")
+              }
+            >
+              <option value="">Customizado</option>
+              {presetGroups
+                .filter((g) => g.presets.length)
+                .map((g) => (
+                  <optgroup key={g.category} label={g.label}>
+                    {g.presets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+            </select>
+          </div>
+
+          {showApplyButton ? (
+            <button
+              type="button"
+              disabled={!curveSelection}
+              onClick={applyCurveStyle}
+              className={
+                "w-full rounded px-3 py-2 text-xs font-bold transition-colors " +
+                (!curveSelection
+                  ? "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-default"
+                  : "bg-primary text-white hover:opacity-95")
+              }
+            >
+              Aplicar
+            </button>
+          ) : null}
+
+          {curveSelection?.styledData ? (
+            <div className="space-y-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                <span className="font-bold">Estilo atual:</span> {activeStyleMeta?.label}
+              </p>
+              {activeStyleMeta?.categoryLabel ? (
+                <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                  {activeStyleMeta.categoryLabel}
+                </p>
+              ) : null}
+            </div>
+          ) : showHelp ? (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {curveSelection
+                ? "Aplicar um preset converte a curva para styled."
+                : (helpWhenNoCurveSelected ??
+                    "Selecione uma curva para aplicar um estilo.")}
+            </p>
+          ) : null}
+        </div>
+
+        {curveSelection?.styledData ? (
+          <div className="space-y-3">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Parâmetros
+              </span>
+              <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                ↑↓ e scroll
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Altura
+                </span>
+                <input
+                  className={
+                    "w-full " +
+                    inputBaseClass +
+                    " " +
+                    (curveHeightError ? inputErrorClass : inputFocusClass)
+                  }
+                  type="text"
+                  inputMode="decimal"
+                  value={curveHeightDraft}
+                  onFocus={() => setIsEditingCurveHeight(true)}
+                  onChange={(e) => {
+                    setCurveHeightDraft(e.target.value);
+                    setCurveHeightError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      bumpCurveHeight(1);
+                      return;
+                    }
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      bumpCurveHeight(-1);
+                      return;
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setIsEditingCurveHeight(false);
+                      if (selectedStyledParams) {
+                        setCurveHeightDraft(
+                          formatPtBrDecimalFixed(selectedStyledParams.height, 2)
+                        );
+                      }
+                      setCurveHeightError(null);
+                    }
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      applyHeightDraft(curveHeightDraft);
+                      setIsEditingCurveHeight(false);
+                    }
+                  }}
+                  onWheel={(e) => {
+                    if (document.activeElement !== e.currentTarget) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    bumpCurveHeight(e.deltaY < 0 ? 1 : -1);
+                  }}
+                  onBlur={() => {
+                    applyHeightDraft(curveHeightDraft);
+                    setIsEditingCurveHeight(false);
+                  }}
+                />
+                {curveHeightError ? (
+                  <p className="text-xs text-red-600 dark:text-red-500">
+                    {curveHeightError}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Bias
+                </span>
+                <input
+                  className={
+                    "w-full " +
+                    inputBaseClass +
+                    " " +
+                    (curveBiasError ? inputErrorClass : inputFocusClass)
+                  }
+                  type="text"
+                  inputMode="decimal"
+                  value={curveBiasDraft}
+                  onFocus={() => setIsEditingCurveBias(true)}
+                  onChange={(e) => {
+                    setCurveBiasDraft(e.target.value);
+                    setCurveBiasError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      bumpCurveBias(1);
+                      return;
+                    }
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      bumpCurveBias(-1);
+                      return;
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setIsEditingCurveBias(false);
+                      if (selectedStyledParams) {
+                        setCurveBiasDraft(
+                          formatPtBrDecimalFixed(selectedStyledParams.bias, 2)
+                        );
+                      }
+                      setCurveBiasError(null);
+                    }
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      applyBiasDraft(curveBiasDraft);
+                      setIsEditingCurveBias(false);
+                    }
+                  }}
+                  onWheel={(e) => {
+                    if (document.activeElement !== e.currentTarget) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    bumpCurveBias(e.deltaY < 0 ? 1 : -1);
+                  }}
+                  onBlur={() => {
+                    applyBiasDraft(curveBiasDraft);
+                    setIsEditingCurveBias(false);
+                  }}
+                />
+                {curveBiasError ? (
+                  <p className="text-xs text-red-600 dark:text-red-500">
+                    {curveBiasError}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Rotação
+                </span>
+                <input
+                  className={
+                    "w-full " +
+                    inputBaseClass +
+                    " " +
+                    (curveRotationError ? inputErrorClass : inputFocusClass)
+                  }
+                  type="text"
+                  inputMode="decimal"
+                  value={curveRotationDraft}
+                  onFocus={() => setIsEditingCurveRotation(true)}
+                  onChange={(e) => {
+                    setCurveRotationDraft(e.target.value);
+                    setCurveRotationError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      bumpCurveRotation(1);
+                      return;
+                    }
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      bumpCurveRotation(-1);
+                      return;
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setIsEditingCurveRotation(false);
+                      if (selectedStyledParams) {
+                        setCurveRotationDraft(
+                          String(Math.round(selectedStyledParams.rotationDeg))
+                        );
+                      }
+                      setCurveRotationError(null);
+                    }
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      applyRotationDraft(curveRotationDraft);
+                      setIsEditingCurveRotation(false);
+                    }
+                  }}
+                  onWheel={(e) => {
+                    if (document.activeElement !== e.currentTarget) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    bumpCurveRotation(e.deltaY < 0 ? 1 : -1);
+                  }}
+                  onBlur={() => {
+                    applyRotationDraft(curveRotationDraft);
+                    setIsEditingCurveRotation(false);
+                  }}
+                />
+                {curveRotationError ? (
+                  <p className="text-xs text-red-600 dark:text-red-500">
+                    {curveRotationError}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-2 pt-5">
+                <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                  Espelhamento
+                </span>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={curveFlipX}
+                      onChange={(e) => {
+                        const next = e.target.checked;
+                        setCurveFlipX(next);
+                        applyStyledParams({ flipX: next });
+                      }}
+                      className="w-4 h-4"
+                    />
+                    <span>Flip X</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={curveFlipY}
+                      onChange={(e) => {
+                        const next = e.target.checked;
+                        setCurveFlipY(next);
+                        applyStyledParams({ flipY: next });
+                      }}
+                      className="w-4 h-4"
+                    />
+                    <span>Flip Y</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Ajustes paramétricos reaplicam o template na mesma curva.
+            </p>
+          </div>
+        ) : null}
+
+        <div className="h-px bg-gray-200 dark:bg-gray-700"></div>
+      </div>
+    );
+  };
+
+  const clampRotationDeg = (v: number): number => {
+    if (!Number.isFinite(v)) return 0;
+    // Keep within [-180, 180] for predictable behavior.
+    let x = v;
+    while (x > 180) x -= 360;
+    while (x < -180) x += 360;
+    return x;
+  };
+
+  const applyHeightDraft = (raw: string) => {
+    const v = parsePtBrDecimal(raw);
+    if (v == null) {
+      setCurveHeightError("Valor inválido");
+      return;
+    }
+    const safe = clampMin(v, 0.1);
+    setCurveHeightDraft(formatPtBrDecimalFixed(safe, 2));
+    setCurveHeightError(null);
+    applyStyledParams({ height: safe });
+  };
+
+  const bumpCurveHeight = (direction: 1 | -1) => {
+    const next = bumpNumericValue({
+      raw: curveHeightDraft,
+      fallback: selectedStyledParams?.height ?? 1,
+      direction,
+      step: 0.1,
+      min: 0.1,
+    });
+    setCurveHeightDraft(formatPtBrDecimalFixed(next, 2));
+    setCurveHeightError(null);
+    applyStyledParams({ height: next });
+  };
+
+  const applyBiasDraft = (raw: string) => {
+    const v = parsePtBrDecimal(raw);
+    if (v == null) {
+      setCurveBiasError("Valor inválido");
+      return;
+    }
+    const safe = Math.max(-1, Math.min(1, v));
+    setCurveBiasDraft(formatPtBrDecimalFixed(safe, 2));
+    setCurveBiasError(null);
+    applyStyledParams({ bias: safe });
+  };
+
+  const bumpCurveBias = (direction: 1 | -1) => {
+    const next = bumpNumericValue({
+      raw: curveBiasDraft,
+      fallback: selectedStyledParams?.bias ?? 0,
+      direction,
+      step: 0.1,
+      min: -1,
+      max: 1,
+    });
+    setCurveBiasDraft(formatPtBrDecimalFixed(next, 2));
+    setCurveBiasError(null);
+    applyStyledParams({ bias: next });
+  };
+
+  const applyRotationDraft = (raw: string) => {
+    const normalized = raw.trim().replace(",", ".");
+    const v = Number(normalized);
+    if (!Number.isFinite(v)) {
+      setCurveRotationError("Valor inválido");
+      return;
+    }
+    const safe = clampRotationDeg(v);
+    setCurveRotationDraft(String(Math.round(safe)));
+    setCurveRotationError(null);
+    applyStyledParams({ rotationDeg: safe });
+  };
+
+  const bumpCurveRotation = (direction: 1 | -1) => {
+    const raw = curveRotationDraft.trim();
+    const current = Number(raw.replace(",", "."));
+    const base = Number.isFinite(current)
+      ? current
+      : selectedStyledParams?.rotationDeg ?? 0;
+    const next = clampRotationDeg(base + direction * 1);
+    setCurveRotationDraft(String(Math.round(next)));
+    setCurveRotationError(null);
+    applyStyledParams({ rotationDeg: next });
+  };
 
   const seamForSelection = (() => {
     if (!selectedFigure) return null;
@@ -169,7 +729,7 @@ export function PropertiesPanel() {
           targetLengthPx: safeCm * PX_PER_CM,
           anchor: selectedEdge.anchor,
         });
-        return updated ?? f;
+        return updated ? breakStyledLinkIfNeeded(updated) : f;
       })
     );
   };
@@ -226,7 +786,8 @@ export function PropertiesPanel() {
 
   // Show tool properties when no shape is selected but a tool is active
   const showToolProperties =
-    !selectedFigure && (tool === "mirror" || tool === "unfold" || tool === "offset");
+    !selectedFigure &&
+    (tool === "mirror" || tool === "unfold" || tool === "offset" || tool === "curve");
 
   return (
     <aside
@@ -277,6 +838,10 @@ export function PropertiesPanel() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+              {showCurveStylePanel ? (
+                renderCurveStylePanel({ showApplyButton: true, showHelp: true })
+              ) : null}
+
               {(tool === "offset" || !!seamForSelection) && (
                 <div>
                   <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
@@ -562,10 +1127,21 @@ export function PropertiesPanel() {
                   ? "Espelhar"
                   : tool === "unfold"
                     ? "Desdobrar"
-                    : "Margem de costura"}
+                    : tool === "curve"
+                      ? "Curvas"
+                      : "Margem de costura"}
               </h3>
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+              {tool === "curve" ? (
+                renderCurveStylePanel({
+                  showApplyButton: false,
+                  showHelp: true,
+                  helpWhenNoCurveSelected:
+                    "Desenhe e selecione uma curva para aplicar um estilo.",
+                })
+              ) : null}
+
               {tool === "mirror" && (
                 <div>
                   <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
