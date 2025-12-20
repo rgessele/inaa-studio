@@ -18,6 +18,69 @@ type TechnicalTemplate = {
   p2: Vec2;
 };
 
+function cloneNodes(nodes: FigureNode[]): FigureNode[] {
+  return nodes.map((n) => ({
+    ...n,
+    inHandle: n.inHandle ? { ...n.inHandle } : undefined,
+    outHandle: n.outHandle ? { ...n.outHandle } : undefined,
+  }));
+}
+
+function cloneEdges(edges: FigureEdge[]): FigureEdge[] {
+  return edges.map((e) => ({ ...e }));
+}
+
+export function ensureCurveCustomSnapshot(figure: Figure): Figure {
+  if (figure.tool !== "curve") return figure;
+  if (figure.customSnapshot) return figure;
+  return {
+    ...figure,
+    customSnapshot: {
+      closed: figure.closed,
+      nodes: cloneNodes(figure.nodes),
+      edges: cloneEdges(figure.edges),
+    },
+    customSnapshotDirty: false,
+  };
+}
+
+export function saveCurveCustomSnapshot(figure: Figure): Figure {
+  if (figure.tool !== "curve") return figure;
+  return {
+    ...figure,
+    customSnapshot: {
+      closed: figure.closed,
+      nodes: cloneNodes(figure.nodes),
+      edges: cloneEdges(figure.edges),
+    },
+    customSnapshotDirty: false,
+  };
+}
+
+export function markCurveCustomSnapshotDirtyIfPresent(figure: Figure): Figure {
+  if (figure.tool !== "curve") return figure;
+  if (!figure.customSnapshot) return figure;
+  if (figure.customSnapshotDirty) return figure;
+  return { ...figure, customSnapshotDirty: true };
+}
+
+export function restoreCurveCustomSnapshot(figure: Figure): Figure {
+  if (figure.tool !== "curve") return figure;
+  const withSnapshot = ensureCurveCustomSnapshot(figure);
+  const snap = withSnapshot.customSnapshot;
+  if (!snap) return { ...withSnapshot, curveType: "custom", styledData: undefined };
+
+  return {
+    ...withSnapshot,
+    closed: snap.closed,
+    nodes: cloneNodes(snap.nodes),
+    edges: cloneEdges(snap.edges),
+    curveType: "custom",
+    styledData: undefined,
+    customSnapshotDirty: false,
+  };
+}
+
 export const TECHNICAL_CURVE_TEMPLATES: Record<TechnicalCurveId, TechnicalTemplate> = {
   ARC_LOW: {
     id: "ARC_LOW",
@@ -718,21 +781,27 @@ export function applySemanticStyleToCurveFigure(opts: {
   if (figure.tool !== "curve") return { error: "Selecione uma curva." };
   if (figure.closed) return { error: "Curvas fechadas não suportam estilo (por enquanto)." };
 
+  // If we are applying a style to a custom curve (first time), capture baseline.
+  const baseline =
+    !figure.customSnapshot && !figure.styledData && figure.curveType !== "styled"
+      ? ensureCurveCustomSnapshot(figure)
+      : figure;
+
   const preset = SEMANTIC_CURVE_PRESETS.find((p) => p.id === semanticId) ?? null;
   if (!preset) return { error: "Preset de curva inválido." };
 
   const template = TECHNICAL_CURVE_TEMPLATES[preset.technicalId] ?? null;
   if (!template) return { error: "Template técnico não encontrado." };
 
-  const endpoints = curveEndpointsNodeIds(figure);
+  const endpoints = curveEndpointsNodeIds(baseline);
   if (!endpoints) return { error: "Curva sem endpoints válidos." };
 
-  const n0 = getNode(figure.nodes, endpoints.startId);
-  const n3 = getNode(figure.nodes, endpoints.endId);
+  const n0 = getNode(baseline.nodes, endpoints.startId);
+  const n3 = getNode(baseline.nodes, endpoints.endId);
   if (!n0 || !n3) return { error: "Curva sem endpoints válidos." };
 
-  const startWorld = figureLocalToWorld(figure, { x: n0.x, y: n0.y });
-  const endWorld = figureLocalToWorld(figure, { x: n3.x, y: n3.y });
+  const startWorld = figureLocalToWorld(baseline, { x: n0.x, y: n0.y });
+  const endWorld = figureLocalToWorld(baseline, { x: n3.x, y: n3.y });
 
   const params: StyledCurveParams = {
     ...preset.defaultParams,
@@ -749,10 +818,10 @@ export function applySemanticStyleToCurveFigure(opts: {
   const p2w = projectNormalizedToWorld({ startWorld, endWorld, p: p2n });
   const p3w = projectNormalizedToWorld({ startWorld, endWorld, p: p3n });
 
-  const p0l = worldToFigureLocal(figure, p0w);
-  const p1l = worldToFigureLocal(figure, p1w);
-  const p2l = worldToFigureLocal(figure, p2w);
-  const p3l = worldToFigureLocal(figure, p3w);
+  const p0l = worldToFigureLocal(baseline, p0w);
+  const p1l = worldToFigureLocal(baseline, p1w);
+  const p2l = worldToFigureLocal(baseline, p2w);
+  const p3l = worldToFigureLocal(baseline, p3w);
 
   const nStartId = makeId("n");
   const nEndId = makeId("n");
@@ -791,7 +860,7 @@ export function applySemanticStyleToCurveFigure(opts: {
 
   return {
     figure: {
-      ...figure,
+      ...baseline,
       closed: false,
       nodes,
       edges,

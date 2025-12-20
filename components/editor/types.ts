@@ -167,6 +167,16 @@ export interface Figure {
   styledData?: StyledCurveData;
   derivedFrom?: DerivedFromCurveStyle;
 
+  // Styled Curves: baseline snapshot for "Customizado" restore.
+  // Stores the user’s chosen (or auto-captured) custom geometry.
+  customSnapshot?: {
+    closed: boolean;
+    nodes: FigureNode[];
+    edges: FigureEdge[];
+  };
+  // When true, the current geometry diverged from customSnapshot.
+  customSnapshotDirty?: boolean;
+
   // Optional persisted measures cache (computed from nodes/edges)
   measures?: {
     version: 1;

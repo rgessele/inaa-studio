@@ -8,11 +8,15 @@ import { PX_PER_CM } from "./constants";
 import { setEdgeTargetLengthPx } from "./edgeEdit";
 import {
   applySemanticStyleToCurveFigure,
+  ensureCurveCustomSnapshot,
+  restoreCurveCustomSnapshot,
+  saveCurveCustomSnapshot,
   semanticPresetsByCategory,
 } from "./styledCurves";
 import type { SemanticCurveId } from "./types";
 import {
   breakStyledLinkIfNeeded,
+  markCurveCustomSnapshotDirtyIfPresent,
   reapplyStyledCurveWithParams,
 } from "./styledCurves";
 import type { StyledCurveParams } from "./types";
@@ -93,6 +97,15 @@ export function PropertiesPanel() {
 
   React.useEffect(() => {
     if (!curveSelection) return;
+    if (!curveSelection.customSnapshot) {
+      setFigures((prev) =>
+        prev.map((f) => {
+          if (f.id !== curveSelection.id) return f;
+          if (f.kind === "seam") return f;
+          return ensureCurveCustomSnapshot(f);
+        })
+      );
+    }
     if (!curveSelection.styledData) return;
 
     const p = curveSelection.styledData.params;
@@ -115,6 +128,7 @@ export function PropertiesPanel() {
     isEditingCurveBias,
     isEditingCurveHeight,
     isEditingCurveRotation,
+    setFigures,
   ]);
 
   React.useEffect(() => {
@@ -135,9 +149,8 @@ export function PropertiesPanel() {
     }
   }, [curveSelection, curveStylePresetId, defaultPresetId, showCurveStylePanel, tool]);
 
-  const applyCurveStyle = () => {
+  const applyCurveStyleById = (semanticId: SemanticCurveId) => {
     if (!curveSelection) return;
-    if (!curveStylePresetId) return;
 
     setSelectedEdge(null);
     setFigures((prev) =>
@@ -146,9 +159,32 @@ export function PropertiesPanel() {
         if (f.kind === "seam") return f;
         const res = applySemanticStyleToCurveFigure({
           figure: f,
-          semanticId: curveStylePresetId,
+          semanticId,
         });
         return "figure" in res ? res.figure : f;
+      })
+    );
+  };
+
+  const applyCustomFromSnapshot = () => {
+    if (!curveSelection) return;
+    setSelectedEdge(null);
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id !== curveSelection.id) return f;
+        if (f.kind === "seam") return f;
+        return restoreCurveCustomSnapshot(ensureCurveCustomSnapshot(f));
+      })
+    );
+  };
+
+  const updateCustomSnapshot = () => {
+    if (!curveSelection) return;
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id !== curveSelection.id) return f;
+        if (f.kind === "seam") return f;
+        return saveCurveCustomSnapshot(f);
       })
     );
   };
@@ -169,13 +205,32 @@ export function PropertiesPanel() {
   };
 
   const renderCurveStylePanel = (options: {
-    showApplyButton: boolean;
     showHelp: boolean;
     helpWhenNoCurveSelected?: string;
   }) => {
     if (!showCurveStylePanel) return null;
 
-    const { showApplyButton, showHelp, helpWhenNoCurveSelected } = options;
+    const { showHelp, helpWhenNoCurveSelected } = options;
+
+    const isCustomSelected = curveStylePresetId === "";
+    const showUpdateCustomButton =
+      !!curveSelection &&
+      !curveSelection.styledData &&
+      (curveSelection.customSnapshotDirty || !curveSelection.customSnapshot);
+
+    const handlePresetChange = (nextRaw: string) => {
+      const next = nextRaw as SemanticCurveId | "";
+      setCurveStylePresetId(next);
+
+      if (!curveSelection) return;
+
+      if (next === "") {
+        applyCustomFromSnapshot();
+        return;
+      }
+
+      applyCurveStyleById(next);
+    };
 
     return (
       <div className="space-y-4">
@@ -199,9 +254,7 @@ export function PropertiesPanel() {
                 " !text-left"
               }
               value={curveStylePresetId ?? ""}
-              onChange={(e) =>
-                setCurveStylePresetId(e.target.value as SemanticCurveId | "")
-              }
+              onChange={(e) => handlePresetChange(e.target.value)}
             >
               <option value="">Customizado</option>
               {presetGroups
@@ -218,19 +271,16 @@ export function PropertiesPanel() {
             </select>
           </div>
 
-          {showApplyButton ? (
+          {showUpdateCustomButton ? (
             <button
               type="button"
-              disabled={!curveSelection}
-              onClick={applyCurveStyle}
+              onClick={updateCustomSnapshot}
               className={
                 "w-full rounded px-3 py-2 text-xs font-bold transition-colors " +
-                (!curveSelection
-                  ? "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-default"
-                  : "bg-primary text-white hover:opacity-95")
+                "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-200/70 dark:hover:bg-gray-700/60"
               }
             >
-              Aplicar
+              Atualizar Customizado
             </button>
           ) : null}
 
@@ -248,7 +298,9 @@ export function PropertiesPanel() {
           ) : showHelp ? (
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {curveSelection
-                ? "Aplicar um preset converte a curva para styled."
+                ? isCustomSelected
+                  ? "Curva em modo custom. Selecione um preset para aplicar automaticamente."
+                  : "Selecionar um preset aplica automaticamente na curva."
                 : (helpWhenNoCurveSelected ??
                     "Selecione uma curva para aplicar um estilo.")}
             </p>
@@ -729,7 +781,9 @@ export function PropertiesPanel() {
           targetLengthPx: safeCm * PX_PER_CM,
           anchor: selectedEdge.anchor,
         });
-        return updated ? breakStyledLinkIfNeeded(updated) : f;
+        return updated
+          ? markCurveCustomSnapshotDirtyIfPresent(breakStyledLinkIfNeeded(updated))
+          : f;
       })
     );
   };
@@ -839,7 +893,7 @@ export function PropertiesPanel() {
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
               {showCurveStylePanel ? (
-                renderCurveStylePanel({ showApplyButton: true, showHelp: true })
+                renderCurveStylePanel({ showHelp: true })
               ) : null}
 
               {(tool === "offset" || !!seamForSelection) && (
@@ -1135,7 +1189,6 @@ export function PropertiesPanel() {
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
               {tool === "curve" ? (
                 renderCurveStylePanel({
-                  showApplyButton: false,
                   showHelp: true,
                   helpWhenNoCurveSelected:
                     "Desenhe e selecione uma curva para aplicar um estilo.",

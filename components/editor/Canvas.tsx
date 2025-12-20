@@ -20,7 +20,10 @@ import {
   figureWorldPolyline,
   worldToFigureLocal,
 } from "./figurePath";
-import { breakStyledLinkIfNeeded } from "./styledCurves";
+import {
+  breakStyledLinkIfNeeded,
+  markCurveCustomSnapshotDirtyIfPresent,
+} from "./styledCurves";
 import { Ruler } from "./Ruler";
 
 const MIN_ZOOM_SCALE = 0.1;
@@ -609,11 +612,13 @@ function splitFigureEdge(figure: Figure, edgeId: string, t: number): { figure: F
     nextEdges.splice(edgeIndex, 1, e1, e2);
 
     return {
-      figure: breakStyledLinkIfNeeded({
-        ...figure,
-        nodes: [...figure.nodes, newNode],
-        edges: nextEdges,
-      }),
+      figure: markCurveCustomSnapshotDirtyIfPresent(
+        breakStyledLinkIfNeeded({
+          ...figure,
+          nodes: [...figure.nodes, newNode],
+          edges: nextEdges,
+        })
+      ),
       newNodeId,
     };
   }
@@ -663,11 +668,13 @@ function splitFigureEdge(figure: Figure, edgeId: string, t: number): { figure: F
   nextEdges.splice(edgeIndex, 1, e1, e2);
 
   return {
-    figure: breakStyledLinkIfNeeded({
-      ...figure,
-      nodes: [...nextNodes, newNode],
-      edges: nextEdges,
-    }),
+    figure: markCurveCustomSnapshotDirtyIfPresent(
+      breakStyledLinkIfNeeded({
+        ...figure,
+        nodes: [...nextNodes, newNode],
+        edges: nextEdges,
+      })
+    ),
     newNodeId,
   };
 }
@@ -1209,6 +1216,16 @@ function makeCurveFromPoints(
     id: id("fig"),
     tool: "curve",
     curveType: "custom",
+    customSnapshot: {
+      closed,
+      nodes: nodes.map((n) => ({
+        ...n,
+        inHandle: n.inHandle ? { ...n.inHandle } : undefined,
+        outHandle: n.outHandle ? { ...n.outHandle } : undefined,
+      })),
+      edges: edges.map((e) => ({ ...e })),
+    },
+    customSnapshotDirty: false,
     x: 0,
     y: 0,
     rotation: 0,
@@ -3576,7 +3593,9 @@ export default function Canvas() {
                   setFigures((prev) =>
                     prev.map((f) => {
                       if (f.id !== ref.figureId) return f;
-                      const base = breakStyledLinkIfNeeded(f);
+                      const base = markCurveCustomSnapshotDirtyIfPresent(
+                        breakStyledLinkIfNeeded(f)
+                      );
                       return {
                         ...base,
                         nodes: base.nodes.map((node) => {
@@ -3606,7 +3625,9 @@ export default function Canvas() {
                   setFigures((prev) =>
                     prev.map((f) => {
                       if (f.id !== selectedFigure.id) return f;
-                      const base = breakStyledLinkIfNeeded(f);
+                      const base = markCurveCustomSnapshotDirtyIfPresent(
+                        breakStyledLinkIfNeeded(f)
+                      );
                       return {
                         ...base,
                         nodes: base.nodes.map((node) => {
@@ -3663,7 +3684,9 @@ export default function Canvas() {
                     setFigures((prev) =>
                       prev.map((f) => {
                         if (f.id !== selectedFigure.id) return f;
-                        const base = breakStyledLinkIfNeeded(f);
+                        const base = markCurveCustomSnapshotDirtyIfPresent(
+                          breakStyledLinkIfNeeded(f)
+                        );
                         return {
                           ...base,
                           nodes: base.nodes.map((node) => {
@@ -3717,7 +3740,9 @@ export default function Canvas() {
                     setFigures((prev) =>
                       prev.map((f) => {
                         if (f.id !== selectedFigure.id) return f;
-                        const base = breakStyledLinkIfNeeded(f);
+                        const base = markCurveCustomSnapshotDirtyIfPresent(
+                          breakStyledLinkIfNeeded(f)
+                        );
                         return {
                           ...base,
                           nodes: base.nodes.map((node) => {
