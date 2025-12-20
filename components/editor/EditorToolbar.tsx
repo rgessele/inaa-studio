@@ -550,6 +550,7 @@ export function EditorToolbar() {
             details={[
               "Clique e arraste para desenhar.",
               "Segure Shift para manter 1:1 (quadrado).",
+              "Segure Alt para desenhar do centro.",
             ]}
             filled
           />
@@ -561,7 +562,11 @@ export function EditorToolbar() {
             isMac={isMac}
             title="Círculo"
             shortcuts={[{ key: "C" }]}
-            details={["Clique e arraste para definir o raio."]}
+            details={[
+              "Clique e arraste para desenhar por canto (elipse).",
+              "Segure Shift para círculo perfeito.",
+              "Segure Alt para desenhar do centro.",
+            ]}
             filled
           />
 
@@ -572,7 +577,11 @@ export function EditorToolbar() {
             isMac={isMac}
             title="Linha"
             shortcuts={[{ key: "L" }]}
-            details={["Clique e arraste para desenhar uma linha."]}
+            details={[
+              "Clique e arraste para desenhar uma linha.",
+              "Segure Shift para travar ângulo (15°).",
+              "Segure Alt para desenhar do centro.",
+            ]}
             customIcon={
               getToolIcon("line", "toolbar")
             }

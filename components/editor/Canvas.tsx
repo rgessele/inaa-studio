@@ -9,7 +9,12 @@ import { useEditor } from "./EditorContext";
 import type { Figure, FigureEdge, FigureNode, GuideLine } from "./types";
 import { PX_PER_CM } from "./constants";
 import { getPaperDimensionsCm } from "./exportSettings";
-import { circleAsCubics, len, sampleCubic, sub } from "./figureGeometry";
+import {
+  ellipseAsCubics,
+  len,
+  sampleCubic,
+  sub,
+} from "./figureGeometry";
 import { withComputedFigureMeasures } from "./figureMeasures";
 import { formatCm, pxToCm } from "./measureUnits";
 import { setEdgeTargetLengthPx } from "./edgeEdit";
@@ -1078,8 +1083,10 @@ function makeRectFigure(a: Vec2, b: Vec2, stroke: string): Figure {
   };
 }
 
-function makeCircleFigure(center: Vec2, radius: number, stroke: string): Figure {
-  const { nodes } = circleAsCubics(radius);
+function makeEllipseFigure(center: Vec2, rx: number, ry: number, stroke: string): Figure {
+  const safeRx = Math.max(0, rx);
+  const safeRy = Math.max(0, ry);
+  const { nodes } = ellipseAsCubics(safeRx, safeRy);
   const figureNodes: FigureNode[] = nodes.map((n) => ({
     id: id("n"),
     x: n.x,
@@ -1112,11 +1119,75 @@ function makeCircleFigure(center: Vec2, radius: number, stroke: string): Figure 
   };
 }
 
+type DraftMods = {
+  shift: boolean;
+  alt: boolean;
+};
+
+function signNonZero(n: number): number {
+  if (n === 0) return 1;
+  return Math.sign(n);
+}
+
+function snapAngleRad(angleRad: number, stepDeg: number): number {
+  const step = (stepDeg * Math.PI) / 180;
+  if (!step) return angleRad;
+  return Math.round(angleRad / step) * step;
+}
+
+function computeRectLikeCorners(start: Vec2, raw: Vec2, mods: DraftMods): { a: Vec2; b: Vec2 } {
+  const dx = raw.x - start.x;
+  const dy = raw.y - start.y;
+
+  if (mods.alt) {
+    let hx = dx;
+    let hy = dy;
+    if (mods.shift) {
+      const d = Math.max(Math.abs(hx), Math.abs(hy));
+      hx = signNonZero(hx) * d;
+      hy = signNonZero(hy) * d;
+    }
+    return {
+      a: { x: start.x - hx, y: start.y - hy },
+      b: { x: start.x + hx, y: start.y + hy },
+    };
+  }
+
+  // Corner-based
+  let bx = raw.x;
+  let by = raw.y;
+  if (mods.shift) {
+    const d = Math.max(Math.abs(dx), Math.abs(dy));
+    bx = start.x + signNonZero(dx) * d;
+    by = start.y + signNonZero(dy) * d;
+  }
+  return { a: start, b: { x: bx, y: by } };
+}
+
+function computeLineEndpoints(start: Vec2, raw: Vec2, mods: DraftMods): { a: Vec2; b: Vec2 } {
+  const v = sub(raw, start);
+  const length = len(v);
+  if (length === 0) return { a: start, b: start };
+
+  let angle = Math.atan2(v.y, v.x);
+  if (mods.shift) angle = snapAngleRad(angle, 15);
+  const v2: Vec2 = { x: Math.cos(angle) * length, y: Math.sin(angle) * length };
+
+  if (mods.alt) {
+    return { a: sub(start, v2), b: add(start, v2) };
+  }
+
+  return { a: start, b: add(start, v2) };
+}
+
 type Draft =
   | {
       tool: "line" | "rectangle" | "circle";
       startWorld: Vec2;
       currentWorld: Vec2;
+      effectiveAWorld: Vec2;
+      effectiveBWorld: Vec2;
+      mods: DraftMods;
     }
   | null;
 
@@ -2552,7 +2623,20 @@ export default function Canvas() {
       }
 
       if (tool === "line" || tool === "rectangle" || tool === "circle") {
-        setDraft({ tool, startWorld: worldForTool, currentWorld: worldForTool });
+        const mods: DraftMods = { shift: e.evt.shiftKey, alt: e.evt.altKey };
+        let effective = { a: worldForTool, b: worldForTool };
+        if (tool === "line") effective = computeLineEndpoints(worldForTool, worldForTool, mods);
+        if (tool === "rectangle" || tool === "circle") {
+          effective = computeRectLikeCorners(worldForTool, worldForTool, mods);
+        }
+        setDraft({
+          tool,
+          startWorld: worldForTool,
+          currentWorld: worldForTool,
+          effectiveAWorld: effective.a,
+          effectiveBWorld: effective.b,
+          mods,
+        });
       }
   };
 
@@ -2781,7 +2865,20 @@ export default function Canvas() {
 
       if (!draft) return;
 
-      setDraft({ ...draft, currentWorld: worldForTool });
+      const mods: DraftMods = { shift: e.evt.shiftKey, alt: e.evt.altKey };
+      let effective = { a: draft.startWorld, b: worldForTool };
+      if (draft.tool === "line") effective = computeLineEndpoints(draft.startWorld, worldForTool, mods);
+      if (draft.tool === "rectangle" || draft.tool === "circle") {
+        effective = computeRectLikeCorners(draft.startWorld, worldForTool, mods);
+      }
+
+      setDraft({
+        ...draft,
+        currentWorld: worldForTool,
+        effectiveAWorld: effective.a,
+        effectiveBWorld: effective.b,
+        mods,
+      });
   };
 
   const handleCurvePointerMove = useCallback(
@@ -2883,8 +2980,8 @@ export default function Canvas() {
 
     if (!draft) return;
 
-    const a = draft.startWorld;
-    const b = draft.currentWorld;
+    const a = draft.effectiveAWorld;
+    const b = draft.effectiveBWorld;
 
     const delta = sub(b, a);
     if (len(delta) < 2) {
@@ -2897,8 +2994,10 @@ export default function Canvas() {
       if (draft.tool === "line") next.push(makeLineFigure(a, b, "line", "aci7"));
       if (draft.tool === "rectangle") next.push(makeRectFigure(a, b, "aci7"));
       if (draft.tool === "circle") {
-        const radius = len(delta);
-        next.push(makeCircleFigure(a, radius, "aci7"));
+        const center: Vec2 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const rx = Math.abs(b.x - a.x) / 2;
+        const ry = Math.abs(b.y - a.y) / 2;
+        next.push(makeEllipseFigure(center, rx, ry, "aci7"));
       }
       return next;
     });
@@ -3098,12 +3197,14 @@ export default function Canvas() {
 
   const draftPreview = useMemo(() => {
     if (!draft) return null;
-    const a = draft.startWorld;
-    const b = draft.currentWorld;
+    const a = draft.effectiveAWorld;
+    const b = draft.effectiveBWorld;
 
     if (draft.tool === "circle") {
-      const r = len(sub(b, a));
-      const fig = makeCircleFigure(a, r, "aci7");
+      const center: Vec2 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const rx = Math.abs(b.x - a.x) / 2;
+      const ry = Math.abs(b.y - a.y) / 2;
+      const fig = makeEllipseFigure(center, rx, ry, "aci7");
       const pts = figureLocalPolyline(fig, 40);
       return (
         <Group x={fig.x} y={fig.y} rotation={fig.rotation} listening={false}>
@@ -3385,24 +3486,68 @@ export default function Canvas() {
       if (fig.tool === "circle" && fig.measures.circle) {
         const center = figureCentroidLocal(fig);
         const rPx = fig.measures.circle.radiusPx;
-        const rLabel = `R ${formatCm(pxToCm(rPx), 2)}`;
-        const dLabel = `⌀ ${formatCm(pxToCm(fig.measures.circle.diameterPx), 2)}`;
 
-        // When showing both labels, keep them off the geometry:
-        // radius label above, diameter label below.
-        const labelOffset = rPx + offset + fontSize;
-        const pR = add(center, { x: 0, y: -labelOffset });
-        const pD = add(center, { x: 0, y: labelOffset });
+        if (rPx && fig.measures.circle.diameterPx) {
+          const rLabel = `R ${formatCm(pxToCm(rPx), 2)}`;
+          const dLabel = `⌀ ${formatCm(pxToCm(fig.measures.circle.diameterPx), 2)}`;
+
+          // When showing both labels, keep them off the geometry:
+          // radius label above, diameter label below.
+          const labelOffset = rPx + offset + fontSize;
+          const pR = add(center, { x: 0, y: -labelOffset });
+          const pD = add(center, { x: 0, y: labelOffset });
+
+          return (
+            <>
+              <Text
+                key={`m:${fig.id}:circle:r`}
+                x={pR.x - textWidth / 2}
+                y={pR.y - fontSize / 2}
+                width={textWidth}
+                align="center"
+                text={rLabel}
+                fontSize={fontSize}
+                fill={fill}
+                opacity={opacity}
+                listening={false}
+                name="inaa-measure-label"
+              />
+              <Text
+                key={`m:${fig.id}:circle:d`}
+                x={pD.x - textWidth / 2}
+                y={pD.y - fontSize / 2}
+                width={textWidth}
+                align="center"
+                text={dLabel}
+                fontSize={fontSize}
+                fill={fill}
+                opacity={opacity}
+                listening={false}
+                name="inaa-measure-label"
+              />
+            </>
+          );
+        }
+
+        const wPx = fig.measures.circle.widthPx;
+        const hPx = fig.measures.circle.heightPx;
+        const wLabel = `↔ ${formatCm(pxToCm(wPx), 2)}`;
+        const hLabel = `↕ ${formatCm(pxToCm(hPx), 2)}`;
+        const labelOffset = Math.max(fig.measures.circle.rxPx, fig.measures.circle.ryPx) +
+          offset +
+          fontSize;
+        const pW = add(center, { x: 0, y: -labelOffset });
+        const pH = add(center, { x: 0, y: labelOffset });
 
         return (
           <>
             <Text
-              key={`m:${fig.id}:circle:r`}
-              x={pR.x - textWidth / 2}
-              y={pR.y - fontSize / 2}
+              key={`m:${fig.id}:ellipse:w`}
+              x={pW.x - textWidth / 2}
+              y={pW.y - fontSize / 2}
               width={textWidth}
               align="center"
-              text={rLabel}
+              text={wLabel}
               fontSize={fontSize}
               fill={fill}
               opacity={opacity}
@@ -3410,12 +3555,12 @@ export default function Canvas() {
               name="inaa-measure-label"
             />
             <Text
-              key={`m:${fig.id}:circle:d`}
-              x={pD.x - textWidth / 2}
-              y={pD.y - fontSize / 2}
+              key={`m:${fig.id}:ellipse:h`}
+              x={pH.x - textWidth / 2}
+              y={pH.y - fontSize / 2}
               width={textWidth}
               align="center"
-              text={dLabel}
+              text={hLabel}
               fontSize={fontSize}
               fill={fill}
               opacity={opacity}
@@ -3501,12 +3646,17 @@ export default function Canvas() {
 
     // Live draft measures
     if (draft) {
-      const a = draft.startWorld;
-      const b = draft.currentWorld;
+      const a = draft.effectiveAWorld;
+      const b = draft.effectiveBWorld;
 
       let temp: Figure | null = null;
       if (draft.tool === "rectangle") temp = makeRectFigure(a, b, "aci7");
-      if (draft.tool === "circle") temp = makeCircleFigure(a, len(sub(b, a)), "aci7");
+      if (draft.tool === "circle") {
+        const center: Vec2 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const rx = Math.abs(b.x - a.x) / 2;
+        const ry = Math.abs(b.y - a.y) / 2;
+        temp = makeEllipseFigure(center, rx, ry, "aci7");
+      }
       if (draft.tool === "line") temp = makeLineFigure(a, b, "line", "aci7");
 
       if (temp) {

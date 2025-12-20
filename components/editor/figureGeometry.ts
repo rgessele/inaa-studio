@@ -54,6 +54,50 @@ export function sampleCubic(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, steps: numbe
 
 export const KAPPA = 0.5522847498307936;
 
+export function ellipseAsCubics(rx: number, ry: number): {
+  nodes: Array<{ x: number; y: number; inHandle: Vec2; outHandle: Vec2; mode: "smooth" }>;
+} {
+  const safeRx = Math.max(0, rx);
+  const safeRy = Math.max(0, ry);
+  const hx = KAPPA * safeRx;
+  const hy = KAPPA * safeRy;
+
+  // Cardinal points (clockwise): (rx,0) -> (0,ry) -> (-rx,0) -> (0,-ry)
+  // Handles are absolute in local coordinates.
+  return {
+    nodes: [
+      {
+        x: safeRx,
+        y: 0,
+        inHandle: { x: safeRx, y: -hy },
+        outHandle: { x: safeRx, y: hy },
+        mode: "smooth",
+      },
+      {
+        x: 0,
+        y: safeRy,
+        inHandle: { x: hx, y: safeRy },
+        outHandle: { x: -hx, y: safeRy },
+        mode: "smooth",
+      },
+      {
+        x: -safeRx,
+        y: 0,
+        inHandle: { x: -safeRx, y: hy },
+        outHandle: { x: -safeRx, y: -hy },
+        mode: "smooth",
+      },
+      {
+        x: 0,
+        y: -safeRy,
+        inHandle: { x: -hx, y: -safeRy },
+        outHandle: { x: hx, y: -safeRy },
+        mode: "smooth",
+      },
+    ],
+  };
+}
+
 export function circleAsCubics(radius: number): {
   nodes: Array<{ x: number; y: number; inHandle: Vec2; outHandle: Vec2; mode: "smooth" }>; 
 } {

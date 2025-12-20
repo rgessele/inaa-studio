@@ -188,9 +188,15 @@ export interface Figure {
       angleDeg?: number;
     }>;
     circle?: {
-      radiusPx: number;
-      diameterPx: number;
+      rxPx: number;
+      ryPx: number;
+      widthPx: number;
+      heightPx: number;
       circumferencePx: number;
+
+      // Present when the shape is (approximately) a circle.
+      radiusPx?: number;
+      diameterPx?: number;
     };
     curve?: {
       lengthPx: number;

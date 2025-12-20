@@ -14,9 +14,13 @@ export type FigureMeasures = {
   figureLengthPx: number;
   perEdge: FigureMeasureEdge[];
   circle?: {
-    radiusPx: number;
-    diameterPx: number;
+    rxPx: number;
+    ryPx: number;
+    widthPx: number;
+    heightPx: number;
     circumferencePx: number;
+    radiusPx?: number;
+    diameterPx?: number;
   };
   curve?: {
     lengthPx: number;
@@ -110,22 +114,38 @@ export function computeFigureMeasures(figure: Figure): FigureMeasures {
   if (figure.tool === "circle") {
     const pts = figure.nodes.map((n) => ({ x: n.x, y: n.y }));
     if (pts.length) {
-      const center = pts.reduce<Vec2>(
-        (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
-        { x: 0, y: 0 }
-      );
-      center.x /= pts.length;
-      center.y /= pts.length;
+      let minX = pts[0].x;
+      let maxX = pts[0].x;
+      let minY = pts[0].y;
+      let maxY = pts[0].y;
+      for (const p of pts) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
 
-      const radiusPx =
-        pts.reduce((sum, p) => sum + len(sub(p, center)), 0) / pts.length;
+      const widthPx = Math.max(0, maxX - minX);
+      const heightPx = Math.max(0, maxY - minY);
+      const rxPx = widthPx / 2;
+      const ryPx = heightPx / 2;
+
+      const circumferencePx = figure.closed
+        ? figureLengthPx
+        : Math.max(0, 2 * Math.PI * ((rxPx + ryPx) / 2));
+
+      const maxR = Math.max(rxPx, ryPx);
+      const isCircle = maxR > 0 && Math.abs(rxPx - ryPx) / maxR <= 0.02;
+      const radiusPx = isCircle ? (rxPx + ryPx) / 2 : undefined;
 
       measures.circle = {
+        rxPx,
+        ryPx,
+        widthPx,
+        heightPx,
+        circumferencePx,
         radiusPx,
-        diameterPx: radiusPx * 2,
-        circumferencePx: figure.closed
-          ? figureLengthPx
-          : Math.max(0, 2 * Math.PI * radiusPx),
+        diameterPx: radiusPx ? radiusPx * 2 : undefined,
       };
     }
   }
