@@ -3,7 +3,7 @@
 import { bumpNumericValue, formatPtBrDecimalFixed, parsePtBrDecimal } from "@/utils/numericInput";
 import { getToolIcon, isToolCursorOverlayEnabled } from "./ToolCursorIcons";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Circle, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
+import { Circle, Group, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
 import Konva from "konva";
 import { useEditor } from "./EditorContext";
 import type { Figure, FigureEdge, FigureNode, GuideLine } from "./types";
@@ -1337,6 +1337,34 @@ export default function Canvas() {
   const [containerClientRect, setContainerClientRect] = useState<DOMRect | null>(null);
 
   const stageRef = useRef<Konva.Stage | null>(null);
+  const transformerRef = useRef<Konva.Transformer | null>(null);
+  const figureNodeRefs = useRef<Map<string, Konva.Group>>(new Map());
+
+  const [transformMods, setTransformMods] = useState<{ shift: boolean; alt: boolean }>(
+    { shift: false, alt: false }
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const next = { shift: e.shiftKey, alt: e.altKey };
+      setTransformMods((prev) =>
+        prev.shift === next.shift && prev.alt === next.alt ? prev : next
+      );
+    };
+
+    const onBlur = () => {
+      setTransformMods({ shift: false, alt: false });
+    };
+
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
 
   type EdgeEditDraft =
     | {
@@ -1642,6 +1670,120 @@ export default function Canvas() {
   const selectedIdsSet = useMemo(() => {
     return new Set<string>(selectedFigureIds);
   }, [selectedFigureIds]);
+
+  const transformTargetIds = useMemo(() => {
+    if (tool !== "select") return [];
+    if (!selectedFigureIds.length) return [];
+
+    const selected = new Set<string>(selectedFigureIds);
+    const out: string[] = [];
+    const seen = new Set<string>();
+
+    for (const f of figures) {
+      const isTarget =
+        selected.has(f.id) || (f.kind === "seam" && f.parentId && selected.has(f.parentId));
+      if (!isTarget) continue;
+      if (seen.has(f.id)) continue;
+      seen.add(f.id);
+      out.push(f.id);
+    }
+
+    return out;
+  }, [figures, selectedFigureIds, tool]);
+
+  useEffect(() => {
+    const transformer = transformerRef.current;
+    if (!transformer) return;
+
+    if (tool !== "select" || transformTargetIds.length === 0) {
+      transformer.nodes([]);
+      transformer.getLayer()?.batchDraw();
+      return;
+    }
+
+    const nodes: Konva.Node[] = [];
+    for (const id of transformTargetIds) {
+      const node = figureNodeRefs.current.get(id);
+      if (node) nodes.push(node);
+    }
+    transformer.nodes(nodes);
+    transformer.getLayer()?.batchDraw();
+  }, [tool, transformTargetIds]);
+
+  const finalizeSelectionTransform = useCallback(() => {
+    const transformer = transformerRef.current;
+    if (!transformer) return;
+
+    const nodes = transformer.nodes();
+    if (!nodes.length) return;
+
+    const updates = new Map<
+      string,
+      { x: number; y: number; rotation: number; scaleX: number; scaleY: number }
+    >();
+
+    for (const node of nodes) {
+      const figId = (node.getAttr("figureId") as string | undefined) ?? null;
+      if (!figId) continue;
+      updates.set(figId, {
+        x: node.x(),
+        y: node.y(),
+        rotation: node.rotation(),
+        scaleX: node.scaleX(),
+        scaleY: node.scaleY(),
+      });
+    }
+
+    if (!updates.size) return;
+
+    // Reset Konva node scaling; we bake scale into figure geometry.
+    for (const node of nodes) {
+      node.scaleX(1);
+      node.scaleY(1);
+    }
+    transformer.getLayer()?.batchDraw();
+
+    setFigures(
+      (prev) =>
+        prev.map((f) => {
+          const u = updates.get(f.id);
+          if (!u) return f;
+
+          const didScale =
+            Math.abs(u.scaleX - 1) > 1e-6 || Math.abs(u.scaleY - 1) > 1e-6;
+
+          let next: Figure = {
+            ...f,
+            x: u.x,
+            y: u.y,
+            rotation: u.rotation,
+          };
+
+          if (didScale) {
+            const sx = u.scaleX;
+            const sy = u.scaleY;
+            next = {
+              ...next,
+              nodes: next.nodes.map((n) => ({
+                ...n,
+                x: n.x * sx,
+                y: n.y * sy,
+                inHandle: n.inHandle ? { x: n.inHandle.x * sx, y: n.inHandle.y * sy } : undefined,
+                outHandle: n.outHandle
+                  ? { x: n.outHandle.x * sx, y: n.outHandle.y * sy }
+                  : undefined,
+              })),
+            };
+
+            // Scaling changes curve geometry; break styled link and mark snapshot dirty if applicable.
+            next = markCurveCustomSnapshotDirtyIfPresent(breakStyledLinkIfNeeded(next));
+          }
+
+          return next;
+        }),
+      true
+    );
+  }, [setFigures]);
 
   const getSnappedWorldForTool = useCallback(
     (
@@ -4307,6 +4449,14 @@ export default function Canvas() {
               <Group
                 key={fig.id}
                 name={`fig_${fig.id}`}
+                ref={(node) => {
+                  if (node) {
+                    figureNodeRefs.current.set(fig.id, node);
+                    node.setAttr("figureId", fig.id);
+                  } else {
+                    figureNodeRefs.current.delete(fig.id);
+                  }
+                }}
                 x={tr.x}
                 y={tr.y}
                 rotation={tr.rotation}
@@ -4614,6 +4764,48 @@ export default function Canvas() {
           })}
 
           {guidesOverlay}
+
+          <Transformer
+            ref={transformerRef}
+            enabledAnchors={
+              tool === "select"
+                ? [
+                    "top-left",
+                    "top-center",
+                    "top-right",
+                    "middle-left",
+                    "middle-right",
+                    "bottom-left",
+                    "bottom-center",
+                    "bottom-right",
+                  ]
+                : []
+            }
+            rotateEnabled={tool === "select"}
+            keepRatio={transformMods.shift}
+            centeredScaling={transformMods.alt}
+            rotationSnaps={
+              transformMods.shift
+                ? [
+                    0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180, 195,
+                    210, 225, 240, 255, 270, 285, 300, 315, 330, 345,
+                  ]
+                : []
+            }
+            rotateSnapTolerance={4}
+            flipEnabled={false}
+            anchorSize={10 / scale}
+            borderStroke="#2563eb"
+            anchorStroke="#2563eb"
+            anchorFill="#ffffff"
+            borderStrokeWidth={1 / scale}
+            anchorStrokeWidth={1 / scale}
+            boundBoxFunc={(oldBox, newBox) => {
+              if (newBox.width < 5 || newBox.height < 5) return oldBox;
+              return newBox;
+            }}
+            onTransformEnd={finalizeSelectionTransform}
+          />
 
           {offsetHoverPreview ? (
             <Group
