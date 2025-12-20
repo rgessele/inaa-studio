@@ -9,6 +9,10 @@ test.describe("visual: page guides tiles", () => {
     await page.getByTestId("toggle-page-guides").click();
     await page.getByTestId("page-size-select").selectOption("A4");
 
+    // Close the dropdown so it doesn't overlap the canvas screenshot.
+    await page.getByTestId("view-menu-button").click();
+    await expect(page.getByRole("heading", { name: "Régua" })).toBeHidden();
+
     const region = page.getByTestId("editor-stage-container");
     await expect(region).toHaveScreenshot("page-guides-a4.png", {
       animations: "disabled",
@@ -22,6 +26,10 @@ test.describe("visual: page guides tiles", () => {
     await page.getByTestId("view-menu-button").click();
     await page.getByTestId("toggle-page-guides").click();
     await page.getByTestId("page-size-select").selectOption("A0");
+
+    // Close the dropdown so it doesn't overlap the canvas screenshot.
+    await page.getByTestId("view-menu-button").click();
+    await expect(page.getByRole("heading", { name: "Régua" })).toBeHidden();
 
     const region = page.getByTestId("editor-stage-container");
     await expect(region).toHaveScreenshot("page-guides-a0.png", {

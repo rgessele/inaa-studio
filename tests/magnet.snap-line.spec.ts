@@ -1,10 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { gotoEditor } from "./helpers/e2e";
 
-function worldToScreen(containerBox: { x: number; y: number }, p: { x: number; y: number }) {
-  return { x: containerBox.x + p.x, y: containerBox.y + p.y };
-}
-
 test("imã: linha faz snap no contorno de outra figura", async ({ page }) => {
   await gotoEditor(page);
 
@@ -21,24 +17,61 @@ test("imã: linha faz snap no contorno de outra figura", async ({ page }) => {
     .poll(async () => (await page.evaluate(() => window.__INAA_DEBUG__?.getState().magnetEnabled)) ?? false)
     .toBe(true);
 
-  // Use Line tool
-  await page.keyboard.press("L");
+  // Use Line tool (UI click is more deterministic than keyboard in E2E)
+  await page.getByRole("button", { name: "Linha" }).click();
+  await expect
+    .poll(
+      async () =>
+        (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ??
+        null
+    )
+    .toBe("line");
 
-  const box = await page.getByTestId("editor-stage-container").boundingBox();
-  expect(box).toBeTruthy();
+  const beforeCount = await page.evaluate(
+    () => window.__INAA_DEBUG__?.getFiguresSnapshot?.().length ?? 0
+  );
+
+  // Ensure Konva stage has rendered with a real canvas size.
+  const stageCanvas = page
+    .getByTestId("editor-stage-container")
+    .locator("canvas")
+    .first();
+  await expect(stageCanvas).toBeVisible();
+  await expect
+    .poll(async () => {
+      return await stageCanvas.evaluate((el) => {
+        const c = el as HTMLCanvasElement;
+        return { w: c.width, h: c.height };
+      });
+    })
+    .toEqual(expect.objectContaining({ w: expect.any(Number), h: expect.any(Number) }));
+  await expect
+    .poll(async () => {
+      return await stageCanvas.evaluate((el) => {
+        const c = el as HTMLCanvasElement;
+        return Math.min(c.width, c.height);
+      });
+    })
+    .toBeGreaterThan(0);
 
   // Stage starts with scale=1 and position=(0,0) by default.
   // The test rectangle is at world coords x=0..200, y=0..120.
   const startWorld = { x: 200, y: 200 };
   const nearRightEdgeWorld = { x: 203, y: 60 }; // should snap to x=200 on the right edge
 
-  const start = worldToScreen(box!, startWorld);
-  const end = worldToScreen(box!, nearRightEdgeWorld);
+  await stageCanvas.dragTo(stageCanvas, {
+    sourcePosition: startWorld,
+    targetPosition: nearRightEdgeWorld,
+  });
 
-  await page.mouse.move(start.x, start.y);
-  await page.mouse.down();
-  await page.mouse.move(end.x, end.y);
-  await page.mouse.up();
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => {
+        const figs = window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? [];
+        return figs.length;
+      });
+    })
+    .toBe(beforeCount + 1);
 
   const last = await page.evaluate(() => {
     const figs = window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? [];
