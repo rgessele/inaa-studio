@@ -2888,8 +2888,11 @@ export default function Canvas() {
         const rLabel = `R ${formatCm(pxToCm(rPx), 2)}`;
         const dLabel = `⌀ ${formatCm(pxToCm(fig.measures.circle.diameterPx), 2)}`;
 
-        const pR = add(center, { x: rPx + offset, y: 0 });
-        const pD = add(center, { x: 0, y: rPx + offset });
+        // When showing both labels, keep them off the geometry:
+        // radius label above, diameter label below.
+        const labelOffset = rPx + offset + fontSize;
+        const pR = add(center, { x: 0, y: -labelOffset });
+        const pD = add(center, { x: 0, y: labelOffset });
 
         return (
           <>

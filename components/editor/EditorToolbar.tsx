@@ -358,6 +358,10 @@ export function EditorToolbar() {
       {embedded ? null : (
         <aside className="w-12 bg-surface-light dark:bg-surface-dark border-r border-gray-200 dark:border-gray-700 flex flex-col relative z-50 shadow-subtle shrink-0 items-center py-4 gap-1">
           <button
+            onClick={() => {
+              if (typeof window === "undefined") return;
+              window.dispatchEvent(new CustomEvent("inaa:save"));
+            }}
             onMouseEnter={saveTooltip.onMouseEnter}
             onMouseLeave={saveTooltip.onMouseLeave}
             className="group relative flex items-center justify-center p-2 rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"

@@ -176,6 +176,22 @@ export function EditorHeader() {
     };
   }, [handleSaveAsShortcut, handleSaveClick]);
 
+  useEffect(() => {
+    const onSave = () => {
+      void handleSaveClick();
+    };
+    const onSaveAs = () => {
+      handleSaveAsShortcut();
+    };
+
+    window.addEventListener("inaa:save", onSave);
+    window.addEventListener("inaa:saveAs", onSaveAs);
+    return () => {
+      window.removeEventListener("inaa:save", onSave);
+      window.removeEventListener("inaa:saveAs", onSaveAs);
+    };
+  }, [handleSaveAsShortcut, handleSaveClick]);
+
   const handleSave = async (name: string) => {
     setIsSaving(true);
     const result = await saveProject(name, figures, pageGuideSettings, projectId);
