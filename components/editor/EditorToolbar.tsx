@@ -12,6 +12,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Magnet } from "lucide-react";
 import { useEditor } from "./EditorContext";
 import { DrawingTool, Tool } from "./types";
+import { getToolIcon } from "./ToolCursorIcons";
 import {
   createDefaultExportSettings,
   generateTiledPDF,
@@ -573,17 +574,7 @@ export function EditorToolbar() {
             shortcuts={[{ key: "L" }]}
             details={["Clique e arraste para desenhar uma linha."]}
             customIcon={
-              <svg
-                className="w-5 h-5 stroke-current"
-                fill="none"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.5"
-                viewBox="0 0 24 24"
-              >
-                <line x1="5" x2="19" y1="19" y2="5"></line>
-              </svg>
+              getToolIcon("line", "toolbar")
             }
           />
 
@@ -599,17 +590,7 @@ export function EditorToolbar() {
               "Enter ou duplo-clique para finalizar.",
             ]}
             customIcon={
-              <svg
-                className="w-5 h-5 stroke-current"
-                fill="none"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.5"
-                viewBox="0 0 24 24"
-              >
-                <path d="M5 19 Q 12 5, 19 19"></path>
-              </svg>
+              getToolIcon("curve", "toolbar")
             }
           />
 
@@ -717,20 +698,7 @@ export function EditorToolbar() {
               "Clique em uma forma para gerar a margem.",
               "Use as opções para ajustar a distância.",
             ]}
-            customIcon={
-              <svg
-                className="w-5 h-5 stroke-current"
-                fill="none"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.5"
-                viewBox="0 0 24 24"
-              >
-                <rect x="6" y="6" width="12" height="12" />
-                <rect x="3" y="3" width="18" height="18" strokeDasharray="2 2" />
-              </svg>
-            }
+            customIcon={getToolIcon("offset", "toolbar")}
           />
 
           <ToolButton
@@ -745,19 +713,7 @@ export function EditorToolbar() {
               "2º clique: ponto B na borda.",
               "3º clique: ápice (vértice) da pence.",
             ]}
-            customIcon={
-              <svg
-                className="w-5 h-5 stroke-current"
-                fill="none"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.5"
-                viewBox="0 0 24 24"
-              >
-                <path d="M12 2 L6 12 L12 10 L18 12 Z" />
-              </svg>
-            }
+            customIcon={getToolIcon("dart", "toolbar")}
           />
 
           <div className="h-px w-6 bg-gray-200 dark:bg-gray-700 my-1"></div>
@@ -773,19 +729,7 @@ export function EditorToolbar() {
               "Clique em uma forma para criar cópia espelhada.",
               "Configure o eixo (vertical/horizontal) nas propriedades.",
             ]}
-            customIcon={
-              <svg
-                className="w-5 h-5 stroke-current"
-                fill="none"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.5"
-                viewBox="0 0 24 24"
-              >
-                <path d="M12 3 L12 21 M9 6 L6 9 L9 12 M15 12 L18 9 L15 6" />
-              </svg>
-            }
+            customIcon={getToolIcon("mirror", "toolbar")}
           />
 
           <ToolButton
@@ -799,19 +743,7 @@ export function EditorToolbar() {
               "Clique em uma forma pela metade para desdobrar.",
               "Duplica, espelha e une as metades numa peça única.",
             ]}
-            customIcon={
-              <svg
-                className="w-5 h-5 stroke-current"
-                fill="none"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.5"
-                viewBox="0 0 24 24"
-              >
-                <path d="M12 3 L12 21 M8 6 L12 10 L16 6 M8 18 L12 14 L16 18" />
-              </svg>
-            }
+            customIcon={getToolIcon("unfold", "toolbar")}
           />
 
           <div className="flex-1"></div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { bumpNumericValue, formatPtBrDecimalFixed, parsePtBrDecimal } from "@/utils/numericInput";
+import { getToolIcon, isToolCursorOverlayEnabled } from "./ToolCursorIcons";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Circle, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
 import Konva from "konva";
@@ -1372,6 +1373,39 @@ export default function Canvas() {
     };
   }, []);
 
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const clear = () => {
+      cursorBadgePendingRef.current = null;
+      if (cursorBadgeRafRef.current !== null) {
+        cancelAnimationFrame(cursorBadgeRafRef.current);
+        cursorBadgeRafRef.current = null;
+      }
+      setCursorBadge(null);
+    };
+
+    el.addEventListener("pointerleave", clear);
+    el.addEventListener("mouseleave", clear);
+    return () => {
+      el.removeEventListener("pointerleave", clear);
+      el.removeEventListener("mouseleave", clear);
+    };
+  }, []);
+
+  useEffect(() => {
+    // If the tool changes to one where the overlay is disabled, hide immediately.
+    if (tool === "select" || tool === "pan" || isPanning) {
+      setCursorBadge(null);
+      cursorBadgePendingRef.current = null;
+      if (cursorBadgeRafRef.current !== null) {
+        cancelAnimationFrame(cursorBadgeRafRef.current);
+        cursorBadgeRafRef.current = null;
+      }
+    }
+  }, [isPanning, tool]);
+
   const positionRef = useRef(position);
   useEffect(() => {
     positionRef.current = position;
@@ -2105,7 +2139,18 @@ export default function Canvas() {
       };
 
       // Cursor badge: keep native cursor, but show a small tool icon near it.
-      if (tool === "offset") {
+      const activeEl = document.activeElement;
+      const isTyping =
+        activeEl instanceof HTMLElement &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          activeEl.tagName === "SELECT" ||
+          activeEl.isContentEditable);
+
+      const shouldShowCursorBadge =
+        isToolCursorOverlayEnabled(tool) && !isPanning && !isTyping;
+
+      if (shouldShowCursorBadge) {
         cursorBadgePendingRef.current = { x: pos.x, y: pos.y };
         if (cursorBadgeRafRef.current === null) {
           cursorBadgeRafRef.current = requestAnimationFrame(() => {
@@ -2114,10 +2159,7 @@ export default function Canvas() {
             if (!pending) return;
             setCursorBadge((prev) => {
               if (!prev) return pending;
-              if (
-                Math.abs(prev.x - pending.x) > 1 ||
-                Math.abs(prev.y - pending.y) > 1
-              ) {
+              if (Math.abs(prev.x - pending.x) > 1 || Math.abs(prev.y - pending.y) > 1) {
                 return pending;
               }
               return prev;
@@ -3736,7 +3778,7 @@ export default function Canvas() {
             : "absolute inset-0"
         }
       >
-        {cursorBadge && tool === "offset" ? (
+        {cursorBadge && getToolIcon(tool, "cursor") ? (
           <div
             className="pointer-events-none absolute z-50"
             style={{ left: cursorBadge.x + 14, top: cursorBadge.y + 14 }}
@@ -3747,18 +3789,7 @@ export default function Canvas() {
                 "w-7 h-7"
               }
             >
-                <svg
-                  className="w-4 h-4 text-gray-700 dark:text-gray-200"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.5"
-                  viewBox="0 0 24 24"
-                >
-                  <rect x="6" y="6" width="12" height="12" />
-                  <rect x="3" y="3" width="18" height="18" strokeDasharray="2 2" />
-                </svg>
+              {getToolIcon(tool, "cursor")}
             </div>
           </div>
         ) : null}
