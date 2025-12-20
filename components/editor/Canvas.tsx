@@ -1,5 +1,6 @@
 "use client";
 
+import { bumpNumericValue, formatPtBrDecimalFixed, parsePtBrDecimal } from "@/utils/numericInput";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Circle, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
 import Konva from "konva";
@@ -1707,15 +1708,9 @@ export default function Canvas() {
   );
 
   const parseCmInput = useCallback((raw: string): number | null => {
-    const normalized = raw.trim().replace(",", ".");
-    const v = Number(normalized);
-    if (!Number.isFinite(v)) return null;
+    const v = parsePtBrDecimal(raw);
+    if (v == null) return null;
     return Math.max(0.01, v);
-  }, []);
-
-  const formatCmInput = useCallback((cm: number): string => {
-    const safe = Number.isFinite(cm) ? cm : 0;
-    return safe.toFixed(2).replace(".", ",");
   }, []);
 
   const openInlineEdgeEdit = useCallback(
@@ -1733,12 +1728,12 @@ export default function Canvas() {
         figureId: opts.figureId,
         edgeId: opts.edgeId,
         anchor: opts.anchor,
-        value: formatCmInput(cm),
+        value: formatPtBrDecimalFixed(cm, 2),
         x: opts.clientX - rect.left,
         y: opts.clientY - rect.top,
       });
     },
-    [figures, formatCmInput]
+    [figures]
   );
 
   const applyEdgeLengthEdit = useCallback(
@@ -3766,9 +3761,14 @@ export default function Canvas() {
                   if (evt.key === "ArrowUp" || evt.key === "ArrowDown") {
                     evt.preventDefault();
                     const dir: 1 | -1 = evt.key === "ArrowUp" ? 1 : -1;
-                    const current = parseCmInput(edgeEditDraft.value) ?? 0.01;
-                    const next = Math.max(0.01, current + dir * 0.1);
-                    const nextStr = formatCmInput(next);
+                    const next = bumpNumericValue({
+                      raw: edgeEditDraft.value,
+                      fallback: parseCmInput(edgeEditDraft.value) ?? 0.01,
+                      direction: dir,
+                      step: 0.1,
+                      min: 0.01,
+                    });
+                    const nextStr = formatPtBrDecimalFixed(next, 2);
                     setEdgeEditDraft((prev) =>
                       prev ? { ...prev, value: nextStr } : prev
                     );
@@ -3790,9 +3790,14 @@ export default function Canvas() {
                   evt.preventDefault();
                   evt.stopPropagation();
                   const dir: 1 | -1 = evt.deltaY < 0 ? 1 : -1;
-                  const current = parseCmInput(edgeEditDraft.value) ?? 0.01;
-                  const next = Math.max(0.01, current + dir * 0.1);
-                  const nextStr = formatCmInput(next);
+                  const next = bumpNumericValue({
+                    raw: edgeEditDraft.value,
+                    fallback: parseCmInput(edgeEditDraft.value) ?? 0.01,
+                    direction: dir,
+                    step: 0.1,
+                    min: 0.01,
+                  });
+                  const nextStr = formatPtBrDecimalFixed(next, 2);
                   setEdgeEditDraft((prev) => (prev ? { ...prev, value: nextStr } : prev));
                   const applyDraft =
                     selectedEdge &&

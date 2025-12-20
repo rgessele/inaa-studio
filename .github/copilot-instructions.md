@@ -179,6 +179,42 @@ The editor provides multiple drawing tools, each with keyboard shortcuts:
 - Keep state close to where it's used
 - Avoid prop drilling by using context appropriately
 
+### Input UX Standard (Editor & Dashboard)
+
+When adding or editing inputs, follow this UX contract to keep the UI consistent and avoid confusion:
+
+- **Editable vs locked**
+  - If a field is not editable, prefer `disabled` (not `readOnly`) so it does not look interactive and does not show focus rings.
+  - Use distinct styling for disabled fields (muted text, no shadow/ring).
+
+- **Focus style**
+  - Do not use theme `primary` for focus rings/borders on generic numeric/text inputs, because `primary` may be a strong accent color (e.g. red) and reads like an error.
+  - Prefer a **neutral focus** (e.g. gray border/ring) and reserve red exclusively for validation errors.
+
+- **Invalid state**
+  - When the value is invalid, show an explicit error message (pt-BR) and a red border/ring.
+  - Clear the error when the user edits.
+
+- **Numeric inputs (pt-BR)**
+  - Accept comma decimal input (e.g. `"1,25"`). Parse by replacing `,` with `.`.
+  - Always clamp to a safe minimum (e.g. seam/offset `>= 0.1`, edge length `>= 0.01`).
+  - Display using comma decimals and fixed precision (typically 2 decimals).
+
+- **Keyboard + mouse adjustments**
+  - For numeric inputs, support:
+    - `ArrowUp` / `ArrowDown` to increment/decrement.
+    - Mouse wheel (only when the input is focused) to increment/decrement.
+  - Use a consistent step size by context (default: `0.1`).
+  - `preventDefault()` on wheel to avoid scrolling the panel while adjusting.
+
+- **Inline edits (canvas overlays)**
+  - If there is an inline editor tied to `selectedEdge`/selection, keep internal draft state in sync with selection changes (e.g. anchor changes).
+  - Avoid closing inline editors when clicking related controls (e.g. anchor buttons) by preventing focus steal on pointer down.
+
+Reference implementations:
+- `components/editor/PropertiesPanel.tsx` (numeric inputs + focus/error/disabled patterns)
+- `components/editor/Canvas.tsx` (inline edge length edit + anchor sync)
+
 ## Common Pitfalls to Avoid
 
 1. **Canvas Components**: Always mark components using Konva/Canvas as client components

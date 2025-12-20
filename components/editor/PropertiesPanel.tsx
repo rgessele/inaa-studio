@@ -6,24 +6,12 @@ import { figureWorldBoundingBox } from "./figurePath";
 import { pxToCm } from "./measureUnits";
 import { PX_PER_CM } from "./constants";
 import { setEdgeTargetLengthPx } from "./edgeEdit";
-
-function parseDecimalCm(raw: string): number | null {
-  const normalized = raw.trim().replace(",", ".");
-  if (!normalized) return null;
-  const v = Number(normalized);
-  if (!Number.isFinite(v)) return null;
-  return v;
-}
-
-function clampMin(value: number, min: number): number {
-  if (!Number.isFinite(value)) return min;
-  return Math.max(min, value);
-}
-
-function formatCmInput(cm: number): string {
-  if (!Number.isFinite(cm)) return "";
-  return cm.toFixed(2).replace(".", ",");
-}
+import {
+  bumpNumericValue,
+  clampMin,
+  formatPtBrDecimalFixed,
+  parsePtBrDecimal,
+} from "@/utils/numericInput";
 
 export function PropertiesPanel() {
   const {
@@ -87,34 +75,39 @@ export function PropertiesPanel() {
   };
 
   const [seamOffsetDraft, setSeamOffsetDraft] = useState<string>(
-    formatCmInput(offsetDisplayCm)
+    formatPtBrDecimalFixed(offsetDisplayCm, 2)
   );
   const [seamOffsetError, setSeamOffsetError] = useState<string | null>(null);
   const [isEditingSeamOffset, setIsEditingSeamOffset] = useState(false);
 
   React.useEffect(() => {
     if (isEditingSeamOffset) return;
-    setSeamOffsetDraft(formatCmInput(offsetDisplayCm));
+    setSeamOffsetDraft(formatPtBrDecimalFixed(offsetDisplayCm, 2));
     setSeamOffsetError(null);
   }, [isEditingSeamOffset, offsetDisplayCm, seamForSelection?.id]);
 
   const applySeamOffsetDraft = (raw: string) => {
-    const cm = parseDecimalCm(raw);
+    const cm = parsePtBrDecimal(raw);
     if (cm == null) {
       setSeamOffsetError("Valor inválido");
       return;
     }
     const safe = clampMin(cm, 0.1);
     updateSelectedSeamOffset(safe);
-    setSeamOffsetDraft(formatCmInput(safe));
+    setSeamOffsetDraft(formatPtBrDecimalFixed(safe, 2));
     setSeamOffsetError(null);
   };
 
   const bumpSeamOffset = (direction: 1 | -1) => {
-    const current = parseDecimalCm(seamOffsetDraft) ?? offsetDisplayCm;
-    const next = clampMin(current + direction * 0.1, 0.1);
+    const next = bumpNumericValue({
+      raw: seamOffsetDraft,
+      fallback: offsetDisplayCm,
+      direction,
+      step: 0.1,
+      min: 0.1,
+    });
     updateSelectedSeamOffset(next);
-    setSeamOffsetDraft(formatCmInput(next));
+    setSeamOffsetDraft(formatPtBrDecimalFixed(next, 2));
     setSeamOffsetError(null);
   };
 
@@ -145,12 +138,12 @@ export function PropertiesPanel() {
       setEdgeLengthDraft("");
       return;
     }
-    setEdgeLengthDraft(formatCmInput(selectedEdgeInfo.lengthCm));
+    setEdgeLengthDraft(formatPtBrDecimalFixed(selectedEdgeInfo.lengthCm, 2));
   }, [selectedEdgeInfo?.edge.id, selectedEdgeInfo?.lengthCm]);
 
   const applyEdgeLength = (raw: string) => {
     if (!selectedEdge || !selectedFigure) return;
-    const cm = parseDecimalCm(raw);
+    const cm = parsePtBrDecimal(raw);
     if (cm == null) return;
     const safeCm = clampMin(cm, 0.01);
 
@@ -171,41 +164,51 @@ export function PropertiesPanel() {
 
   const bumpEdgeLength = (direction: 1 | -1) => {
     if (!selectedEdgeInfo) return;
-    const current = parseDecimalCm(edgeLengthDraft) ?? selectedEdgeInfo.lengthCm;
-    const next = clampMin(current + direction * 0.1, 0.01);
-    setEdgeLengthDraft(formatCmInput(next));
+    const next = bumpNumericValue({
+      raw: edgeLengthDraft,
+      fallback: selectedEdgeInfo.lengthCm,
+      direction,
+      step: 0.1,
+      min: 0.01,
+    });
+    setEdgeLengthDraft(formatPtBrDecimalFixed(next, 2));
     applyEdgeLength(String(next));
   };
 
   const [toolOffsetDraft, setToolOffsetDraft] = useState<string>(
-    formatCmInput(offsetValueCm)
+    formatPtBrDecimalFixed(offsetValueCm, 2)
   );
   const [toolOffsetError, setToolOffsetError] = useState<string | null>(null);
   const [isEditingToolOffset, setIsEditingToolOffset] = useState(false);
 
   React.useEffect(() => {
     if (isEditingToolOffset) return;
-    setToolOffsetDraft(formatCmInput(offsetValueCm));
+    setToolOffsetDraft(formatPtBrDecimalFixed(offsetValueCm, 2));
     setToolOffsetError(null);
   }, [isEditingToolOffset, offsetValueCm]);
 
   const applyToolOffsetDraft = (raw: string) => {
-    const cm = parseDecimalCm(raw);
+    const cm = parsePtBrDecimal(raw);
     if (cm == null) {
       setToolOffsetError("Valor inválido");
       return;
     }
     const safe = clampMin(cm, 0.1);
     setOffsetValueCm(safe);
-    setToolOffsetDraft(formatCmInput(safe));
+    setToolOffsetDraft(formatPtBrDecimalFixed(safe, 2));
     setToolOffsetError(null);
   };
 
   const bumpToolOffset = (direction: 1 | -1) => {
-    const current = parseDecimalCm(toolOffsetDraft) ?? offsetValueCm;
-    const next = clampMin(current + direction * 0.1, 0.1);
+    const next = bumpNumericValue({
+      raw: toolOffsetDraft,
+      fallback: offsetValueCm,
+      direction,
+      step: 0.1,
+      min: 0.1,
+    });
     setOffsetValueCm(next);
-    setToolOffsetDraft(formatCmInput(next));
+    setToolOffsetDraft(formatPtBrDecimalFixed(next, 2));
     setToolOffsetError(null);
   };
 
@@ -299,7 +302,7 @@ export function PropertiesPanel() {
                         if (e.key === "Escape") {
                           e.preventDefault();
                           setIsEditingSeamOffset(false);
-                          setSeamOffsetDraft(formatCmInput(offsetDisplayCm));
+                          setSeamOffsetDraft(formatPtBrDecimalFixed(offsetDisplayCm, 2));
                           setSeamOffsetError(null);
                         }
                         if (e.key === "Enter") {
@@ -659,7 +662,7 @@ export function PropertiesPanel() {
                         if (e.key === "Escape") {
                           e.preventDefault();
                           setIsEditingToolOffset(false);
-                          setToolOffsetDraft(formatCmInput(offsetValueCm));
+                          setToolOffsetDraft(formatPtBrDecimalFixed(offsetValueCm, 2));
                           setToolOffsetError(null);
                         }
                         if (e.key === "Enter") {
