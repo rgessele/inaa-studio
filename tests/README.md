@@ -46,6 +46,13 @@ os testes E2E.
 O workflow do Playwright roda no macOS para manter compatibilidade com os
 snapshots `*-darwin.png`.
 
+Quando rodando no GitHub Actions (sem `.env.local`), configure os Secrets do repositório:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+Sem isso, o servidor Next.js falha ao inicializar o client do Supabase.
+
 ## Boas práticas
 
 - Para cada feature nova:
