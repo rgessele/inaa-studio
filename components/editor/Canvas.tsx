@@ -4265,6 +4265,11 @@ export default function Canvas() {
             const strokeWidth = (fig.strokeWidth || 1) / scale;
             const dash = fig.dash ? fig.dash.map((d) => d / scale) : undefined;
 
+            const hitStrokeWidth =
+              tool === "select" && !isSeam && selectedIdsSet.has(fig.id)
+                ? 24 / scale
+                : 10 / scale;
+
             const tr = getRuntimeFigureTransform(fig);
 
             return (
@@ -4416,6 +4421,7 @@ export default function Canvas() {
                   closed={fig.closed}
                   stroke={stroke}
                   strokeWidth={strokeWidth}
+                  hitStrokeWidth={hitStrokeWidth}
                   dash={dash}
                   opacity={opacity}
                   lineCap="round"
