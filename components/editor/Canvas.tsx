@@ -1460,6 +1460,32 @@ export default function Canvas() {
     | null
   >(null);
 
+  const [dragPreviewPositions, setDragPreviewPositions] = useState<
+    Map<string, Vec2> | null
+  >(null);
+  const dragPreviewPendingRef = useRef<Map<string, Vec2> | null>(null);
+  const dragPreviewRafRef = useRef<number | null>(null);
+
+  const requestDragPreviewRender = useCallback(() => {
+    if (dragPreviewRafRef.current != null) return;
+    dragPreviewRafRef.current = requestAnimationFrame(() => {
+      dragPreviewRafRef.current = null;
+      setDragPreviewPositions(dragPreviewPendingRef.current);
+    });
+  }, []);
+
+  const getRuntimeFigureTransform = useCallback(
+    (fig: Figure): { x: number; y: number; rotation: number } => {
+      const p = dragPreviewPositions?.get(fig.id);
+      return {
+        x: p?.x ?? fig.x,
+        y: p?.y ?? fig.y,
+        rotation: fig.rotation || 0,
+      };
+    },
+    [dragPreviewPositions]
+  );
+
   const dragNodeRef = useRef<
     | {
         figureId: string;
@@ -2980,12 +3006,13 @@ export default function Canvas() {
 
     for (const fig of figures) {
       if (!visibleIds.has(fig.id)) continue;
+      const tr = getRuntimeFigureTransform(fig);
       nodes.push(
         <Group
           key={`mgrp:${fig.id}`}
-          x={fig.x}
-          y={fig.y}
-          rotation={fig.rotation || 0}
+          x={tr.x}
+          y={tr.y}
+          rotation={tr.rotation}
           listening={false}
         >
           {renderFigureLabels(fig)}
@@ -3050,6 +3077,7 @@ export default function Canvas() {
     scale,
     selectedEdge,
     selectedFigureId,
+    getRuntimeFigureTransform,
   ]);
 
   const seamLabelsOverlay = useMemo(() => {
@@ -3126,9 +3154,9 @@ export default function Canvas() {
       labels.push(
         <Group
           key={`seamlabel:${seam.id}`}
-          x={seam.x}
-          y={seam.y}
-          rotation={seam.rotation || 0}
+          x={getRuntimeFigureTransform(seam).x}
+          y={getRuntimeFigureTransform(seam).y}
+          rotation={getRuntimeFigureTransform(seam).rotation}
           listening={false}
         >
           <Text
@@ -3151,7 +3179,7 @@ export default function Canvas() {
     }
 
     return labels.length ? <>{labels}</> : null;
-  }, [figures, isDark, measureDisplayMode, scale, tool]);
+  }, [figures, getRuntimeFigureTransform, isDark, measureDisplayMode, scale, tool]);
 
   const nodeOverlay = useMemo(() => {
     if (tool !== "node" || !selectedFigure) return null;
@@ -3431,6 +3459,8 @@ export default function Canvas() {
       if (!visibleIds.has(fig.id)) continue;
       if (fig.kind === "seam") continue;
 
+      const tr = getRuntimeFigureTransform(fig);
+
       const isSelected = fig.id === selectedFigureId;
       const stroke = isSelected ? "#2563eb" : resolveStrokeColor(fig.stroke, isDark);
       const opacity = (fig.opacity ?? 1) * 0.85;
@@ -3438,9 +3468,9 @@ export default function Canvas() {
       nodes.push(
         <Group
           key={`npts:${fig.id}`}
-          x={fig.x}
-          y={fig.y}
-          rotation={fig.rotation || 0}
+          x={tr.x}
+          y={tr.y}
+          rotation={tr.rotation}
           listening={false}
         >
           {fig.nodes.map((n) => (
@@ -3462,7 +3492,15 @@ export default function Canvas() {
     }
 
     return nodes.length ? <>{nodes}</> : null;
-  }, [figures, hoveredFigureId, isDark, nodesDisplayMode, scale, selectedFigureId]);
+  }, [
+    figures,
+    getRuntimeFigureTransform,
+    hoveredFigureId,
+    isDark,
+    nodesDisplayMode,
+    scale,
+    selectedFigureId,
+  ]);
 
   const edgeHoverOverlay = useMemo(() => {
     if ((tool !== "node" && tool !== "dart") || !selectedFigure || !hoveredEdge)
@@ -3920,18 +3958,27 @@ export default function Canvas() {
             const strokeWidth = (fig.strokeWidth || 1) / scale;
             const dash = fig.dash ? fig.dash.map((d) => d / scale) : undefined;
 
+            const tr = getRuntimeFigureTransform(fig);
+
             return (
               <Group
                 key={fig.id}
                 name={`fig_${fig.id}`}
-                x={fig.x}
-                y={fig.y}
-                rotation={fig.rotation || 0}
+                x={tr.x}
+                y={tr.y}
+                rotation={tr.rotation}
                 draggable={tool === "select" && !isSeam && selectedIdsSet.has(fig.id)}
                 onDragStart={() => {
                   if (tool !== "select") return;
                   if (isSeam) return;
                   if (!selectedIdsSet.has(fig.id)) return;
+
+                  if (dragPreviewRafRef.current != null) {
+                    cancelAnimationFrame(dragPreviewRafRef.current);
+                    dragPreviewRafRef.current = null;
+                  }
+                  dragPreviewPendingRef.current = null;
+                  setDragPreviewPositions(null);
 
                   const stage = stageRef.current;
                   if (!stage) return;
@@ -3971,17 +4018,14 @@ export default function Canvas() {
                   const dx = e.target.x() - anchorStart.x;
                   const dy = e.target.y() - anchorStart.y;
 
+                  const next = new Map<string, Vec2>();
                   for (const id of sync.affectedIds) {
-                    if (id === sync.anchorFigureId) continue;
                     const start = sync.startPositions.get(id);
                     if (!start) continue;
-                    const node = stage.findOne(`.fig_${id}`);
-                    if (!node) continue;
-                    node.position({ x: start.x + dx, y: start.y + dy });
+                    next.set(id, { x: start.x + dx, y: start.y + dy });
                   }
-
-                  // Draw at most once per frame-ish.
-                  stage.batchDraw();
+                  dragPreviewPendingRef.current = next;
+                  requestDragPreviewRender();
                 }}
                 onDragEnd={(e) => {
                   const sync = selectionDragSyncRef.current;
@@ -3994,7 +4038,12 @@ export default function Canvas() {
                   const dx = e.target.x() - anchorStart.x;
                   const dy = e.target.y() - anchorStart.y;
 
-                  if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return;
+                  if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) {
+                    dragPreviewPendingRef.current = null;
+                    setDragPreviewPositions(null);
+                    requestDragPreviewRender();
+                    return;
+                  }
 
                   const affected = new Set(sync.affectedIds);
                   setFigures((prev) =>
@@ -4002,6 +4051,10 @@ export default function Canvas() {
                       affected.has(f.id) ? { ...f, x: f.x + dx, y: f.y + dy } : f
                     )
                   );
+
+                  // Clear preview; next render uses updated figure positions.
+                  dragPreviewPendingRef.current = null;
+                  setDragPreviewPositions(null);
                 }}
               >
                 <Line

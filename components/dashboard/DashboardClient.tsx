@@ -50,17 +50,6 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   return { r, g, b };
 }
 
-function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }): number {
-  const toLinear = (channel: number) => {
-    const s = channel / 255;
-    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-  };
-  const R = toLinear(r);
-  const G = toLinear(g);
-  const B = toLinear(b);
-  return 0.2126 * R + 0.7152 * G + 0.0722 * B;
-}
-
 function tagBadgeStyles(hex: string): {
   badgeStyle: React.CSSProperties;
   dotStyle: React.CSSProperties;

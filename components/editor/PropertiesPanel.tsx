@@ -39,6 +39,9 @@ export function PropertiesPanel() {
     );
   })();
 
+  const seamForSelectionId = seamForSelection?.id ?? null;
+  const seamForSelectionOffsetCm = seamForSelection?.offsetCm;
+
   const offsetDisplayCm = seamForSelection?.offsetCm ?? offsetValueCm;
 
   const inputBaseClass =
@@ -51,12 +54,18 @@ export function PropertiesPanel() {
 
   React.useEffect(() => {
     if (tool !== "offset") return;
-    if (!seamForSelection) return;
-    if (!Number.isFinite(seamForSelection.offsetCm ?? NaN)) return;
-    const next = seamForSelection.offsetCm as number;
+    if (!seamForSelectionId) return;
+    if (!Number.isFinite(seamForSelectionOffsetCm ?? NaN)) return;
+    const next = seamForSelectionOffsetCm as number;
     if (offsetValueCm === next) return;
     setOffsetValueCm(next);
-  }, [offsetValueCm, seamForSelection?.id, seamForSelection?.offsetCm, setOffsetValueCm, tool]);
+  }, [
+    offsetValueCm,
+    seamForSelectionId,
+    seamForSelectionOffsetCm,
+    setOffsetValueCm,
+    tool,
+  ]);
 
   const updateSelectedSeamOffset = (nextCm: number) => {
     if (!seamForSelection) {
@@ -126,6 +135,9 @@ export function PropertiesPanel() {
           };
         })()
       : null;
+
+  const selectedEdgeId = selectedEdgeInfo?.edge.id ?? null;
+  const selectedEdgeLengthCm = selectedEdgeInfo?.lengthCm ?? null;
   const selectedBounds = selectedFigure
     ? figureWorldBoundingBox(selectedFigure)
     : null;
@@ -134,12 +146,12 @@ export function PropertiesPanel() {
   const [edgeLengthDraft, setEdgeLengthDraft] = useState<string>("");
 
   React.useEffect(() => {
-    if (!selectedEdgeInfo) {
+    if (selectedEdgeId == null || selectedEdgeLengthCm == null) {
       setEdgeLengthDraft("");
       return;
     }
-    setEdgeLengthDraft(formatPtBrDecimalFixed(selectedEdgeInfo.lengthCm, 2));
-  }, [selectedEdgeInfo?.edge.id, selectedEdgeInfo?.lengthCm]);
+    setEdgeLengthDraft(formatPtBrDecimalFixed(selectedEdgeLengthCm, 2));
+  }, [selectedEdgeId, selectedEdgeLengthCm]);
 
   const applyEdgeLength = (raw: string) => {
     if (!selectedEdge || !selectedFigure) return;
