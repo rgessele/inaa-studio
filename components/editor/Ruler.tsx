@@ -8,11 +8,74 @@ interface RulerProps {
 }
 
 export function Ruler({ orientation }: RulerProps) {
-  const { scale, position, unit, pixelsPerUnit } = useEditor();
+  const { scale, position, unit, pixelsPerUnit, addGuide, updateGuide, removeGuide } =
+    useEditor();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = React.useState({ width: 0, height: 0 });
   const TICK_SIZE = 10;
   const LABEL_OFFSET = 4;
+
+  const dragRef = useRef<
+    | {
+        pointerId: number;
+        guideId: string | null;
+      }
+    | null
+  >(null);
+
+  const updateFromClient = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const drag = dragRef.current;
+    if (!drag) return;
+
+    const isHorizontal = orientation === "horizontal";
+
+    const stageX = isHorizontal ? clientX - rect.left : clientX - rect.right;
+    const stageY = isHorizontal ? clientY - rect.bottom : clientY - rect.top;
+
+    const inCanvas = isHorizontal ? stageY > 0 : stageX > 0;
+    const valuePx = isHorizontal
+      ? (stageY - position.y) / scale
+      : (stageX - position.x) / scale;
+
+    // Create a guide only after the user drags into the stage area.
+    if (!drag.guideId && inCanvas) {
+      drag.guideId = addGuide(orientation, valuePx);
+    }
+
+    if (drag.guideId) {
+      updateGuide(drag.guideId, valuePx);
+    }
+  };
+
+  const endDrag = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (!canvas || !drag) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const isHorizontal = orientation === "horizontal";
+
+    const overRuler = isHorizontal
+      ? clientY >= rect.top && clientY <= rect.bottom
+      : clientX >= rect.left && clientX <= rect.right;
+
+    if (drag.guideId && overRuler) {
+      removeGuide(drag.guideId);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      const active = dragRef.current;
+      if (!active) return;
+      dragRef.current = null;
+      if (active.guideId) removeGuide(active.guideId);
+    };
+  }, [removeGuide]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -136,5 +199,46 @@ export function Ruler({ orientation }: RulerProps) {
     return () => resizeObserver.disconnect();
   }, []);
 
-  return <canvas ref={canvasRef} className="w-full h-full block" />;
+  return (
+    <canvas
+      ref={canvasRef}
+      className="w-full h-full block"
+      onPointerDown={(e) => {
+        // Left button only.
+        if (e.button !== 0) return;
+        e.preventDefault();
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        dragRef.current = { pointerId: e.pointerId, guideId: null };
+        try {
+          canvas.setPointerCapture(e.pointerId);
+        } catch {
+          // ignore
+        }
+
+        const onMove = (evt: PointerEvent) => {
+          if (!dragRef.current || dragRef.current.pointerId !== evt.pointerId) return;
+          updateFromClient(evt.clientX, evt.clientY);
+        };
+
+        const onUp = (evt: PointerEvent) => {
+          if (!dragRef.current || dragRef.current.pointerId !== evt.pointerId) return;
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onUp);
+          endDrag(evt.clientX, evt.clientY);
+          try {
+            canvas.releasePointerCapture(e.pointerId);
+          } catch {
+            // ignore
+          }
+        };
+
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+      }}
+    />
+  );
 }
+

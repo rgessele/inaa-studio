@@ -1,5 +1,10 @@
 import { createClient } from "@/lib/supabase/client";
-import type { DesignDataV2, Figure, PageGuideSettings } from "@/components/editor/types";
+import type {
+  DesignDataV2,
+  Figure,
+  GuideLine,
+  PageGuideSettings,
+} from "@/components/editor/types";
 
 export interface Project {
   id: string;
@@ -15,6 +20,7 @@ export async function saveProject(
   projectName: string,
   figures: Figure[],
   pageGuideSettings: PageGuideSettings,
+  guides: GuideLine[],
   projectId: string | null = null
 ): Promise<{ success: boolean; projectId?: string; error?: string }> {
   try {
@@ -55,6 +61,7 @@ export async function saveProject(
         pageGuideSettings:
           pageGuideSettings ??
           (existing?.design_data as DesignDataV2 | undefined)?.pageGuideSettings,
+        guides,
         meta: (existing?.design_data as DesignDataV2 | undefined)?.meta,
       };
 
@@ -74,7 +81,7 @@ export async function saveProject(
       // Insert new project
       const projectData = {
         ...baseProjectData,
-        design_data: { version: 2, figures, pageGuideSettings },
+        design_data: { version: 2, figures, pageGuideSettings, guides },
       };
 
       const { data, error } = await supabase
@@ -103,7 +110,8 @@ export async function saveProjectAsCopy(
   sourceProjectId: string,
   newProjectName: string,
   figures: Figure[],
-  pageGuideSettings: PageGuideSettings
+  pageGuideSettings: PageGuideSettings,
+  guides: GuideLine[]
 ): Promise<{ success: boolean; projectId?: string; error?: string }> {
   try {
     const supabase = createClient();
@@ -133,6 +141,7 @@ export async function saveProjectAsCopy(
       version: 2,
       figures,
       pageGuideSettings,
+      guides,
       meta: (source?.design_data as DesignDataV2 | undefined)?.meta,
     };
 

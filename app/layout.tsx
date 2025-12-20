@@ -10,7 +10,10 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Inaá Studio",
+  title: {
+    default: "Inaá Studio",
+    template: "Inaá Studio - %s",
+  },
   description: "Ferramenta para criação de projetos de modelagem",
 };
 

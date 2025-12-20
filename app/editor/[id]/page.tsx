@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 import { EditorLayout, Canvas } from "@/components/editor";
 import ProjectLoader from "./ProjectLoader";
 
@@ -7,6 +8,34 @@ interface PageProps {
   params: Promise<{
     id: string;
   }>;
+}
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const reminded = await params;
+  const id = reminded.id;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return {};
+  }
+
+  const { data: project } = await supabase
+    .from("projects")
+    .select("name")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!project?.name) {
+    return {};
+  }
+
+  // With the root layout template, this becomes: "Inaá Studio - <nome>"
+  return { title: project.name };
 }
 
 export default async function EditorProjectPage({ params }: PageProps) {

@@ -19,7 +19,8 @@ export default function ProjectLoader({ project }: ProjectLoaderProps) {
     // Load the project when the component mounts
     const figures = project.design_data?.figures ?? [];
     const pageGuideSettings = project.design_data?.pageGuideSettings;
-    loadProject(figures, project.id, project.name, pageGuideSettings);
+    const guides = project.design_data?.guides ?? [];
+    loadProject(figures, project.id, project.name, pageGuideSettings, guides);
   }, [project, loadProject]);
 
   return null; // This component only handles loading, no UI

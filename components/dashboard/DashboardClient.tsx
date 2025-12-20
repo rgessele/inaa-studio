@@ -346,7 +346,8 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
           paperSize: defaults.paperSize,
           orientation: defaults.orientation,
           marginCm: defaults.marginCm,
-        }
+        },
+        project.design_data?.guides ?? []
       );
 
       if (!result.success || !result.projectId) {

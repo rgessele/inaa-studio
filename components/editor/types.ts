@@ -99,10 +99,19 @@ export interface PageGuideSettings {
   marginCm: number;
 }
 
+export type GuideOrientation = "horizontal" | "vertical";
+
+export interface GuideLine {
+  id: string;
+  orientation: GuideOrientation;
+  valuePx: number;
+}
+
 export interface DesignDataV2 {
   version: 2;
   figures: Figure[];
   pageGuideSettings?: PageGuideSettings;
+  guides?: GuideLine[];
   meta?: {
     fabric?: string | null;
     notes?: string | null;

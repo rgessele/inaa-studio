@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Circle, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
 import Konva from "konva";
 import { useEditor } from "./EditorContext";
-import type { Figure, FigureEdge, FigureNode } from "./types";
+import type { Figure, FigureEdge, FigureNode, GuideLine } from "./types";
 import { PX_PER_CM } from "./constants";
 import { getPaperDimensionsCm } from "./exportSettings";
 import { circleAsCubics, len, sampleCubic, sub } from "./figureGeometry";
@@ -27,6 +27,8 @@ const MAX_ZOOM_SCALE = 10;
 const ZOOM_FACTOR = 1.08;
 
 type Vec2 = { x: number; y: number };
+
+type BoundingBox = { x: number; y: number; width: number; height: number };
 
 type NodeSelection =
   | {
@@ -239,8 +241,6 @@ function findHoveredFigureId(
 
 function useIsDarkMode(): boolean {
   const [isDark, setIsDark] = useState(false);
-
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const root = document.documentElement;
     const update = () => setIsDark(root.classList.contains("dark"));
@@ -402,8 +402,8 @@ type SnapResult =
   | {
       isSnapped: true;
       pointWorld: Vec2;
-      kind: "node" | "edge";
-      figureId: string;
+      kind: "node" | "edge" | "guide";
+      figureId?: string;
     }
   | {
       isSnapped: false;
@@ -412,6 +412,7 @@ type SnapResult =
 function snapWorldPoint(
   pWorld: Vec2,
   figures: Figure[],
+  guides: GuideLine[],
   opts: {
     thresholdWorld: number;
     excludeSeams?: boolean;
@@ -448,6 +449,44 @@ function snapWorldPoint(
 
     if (bestPoint && bestFigureId && bestD <= threshold) {
       return { isSnapped: true, pointWorld: bestPoint, kind: "node", figureId: bestFigureId };
+    }
+  }
+
+  // 1.5) Manual guide lines (magnetic)
+  if (guides.length) {
+    let bestDx = Number.POSITIVE_INFINITY;
+    let bestX: number | null = null;
+    let bestDy = Number.POSITIVE_INFINITY;
+    let bestY: number | null = null;
+
+    for (const g of guides) {
+      if (g.orientation === "vertical") {
+        const dx = Math.abs(pWorld.x - g.valuePx);
+        if (dx < bestDx) {
+          bestDx = dx;
+          bestX = g.valuePx;
+        }
+      } else {
+        const dy = Math.abs(pWorld.y - g.valuePx);
+        if (dy < bestDy) {
+          bestDy = dy;
+          bestY = g.valuePx;
+        }
+      }
+    }
+
+    const snapX = bestX != null && bestDx <= threshold;
+    const snapY = bestY != null && bestDy <= threshold;
+
+    if (snapX || snapY) {
+      return {
+        isSnapped: true,
+        pointWorld: {
+          x: snapX ? (bestX as number) : pWorld.x,
+          y: snapY ? (bestY as number) : pWorld.y,
+        },
+        kind: "guide",
+      };
     }
   }
 
@@ -1202,6 +1241,9 @@ export default function Canvas() {
     nodesDisplayMode,
     magnetEnabled,
     showRulers,
+    guides,
+    updateGuide,
+    removeGuide,
     pixelsPerUnit,
     scale,
     setScale,
@@ -1223,6 +1265,14 @@ export default function Canvas() {
       .getPropertyValue("--color-accent-gold")
       .trim();
     return v || "#776a3e";
+  }, []);
+
+  const guideStroke = useMemo(() => {
+    if (typeof window === "undefined") return "#a855f7";
+    const v = getComputedStyle(document.documentElement)
+      .getPropertyValue("--color-guide-neon")
+      .trim();
+    return v || "#a855f7";
   }, []);
   const gridStroke = useMemo(
     () => {
@@ -1265,6 +1315,7 @@ export default function Canvas() {
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const [containerClientRect, setContainerClientRect] = useState<DOMRect | null>(null);
 
   const stageRef = useRef<Konva.Stage | null>(null);
 
@@ -1291,6 +1342,7 @@ export default function Canvas() {
     return () => cancelAnimationFrame(id);
   }, [edgeEditDraft]);
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!edgeEditDraft) return;
     if (!selectedEdge) return;
@@ -1355,7 +1407,7 @@ export default function Canvas() {
   const [marqueeDraft, setMarqueeDraft] = useState<MarqueeDraft>(null);
   const [hoveredMeasureEdge, setHoveredMeasureEdge] = useState<MeasureEdgeHover>(null);
   const [magnetSnap, setMagnetSnap] = useState<
-    { pointWorld: Vec2; kind: "node" | "edge" } | null
+    { pointWorld: Vec2; kind: "node" | "edge" | "guide" } | null
   >(null);
   const [isPanning, setIsPanning] = useState(false);
   const lastPointerRef = useRef<Vec2 | null>(null);
@@ -1490,6 +1542,7 @@ export default function Canvas() {
         anchorFigureId: string;
         affectedIds: string[];
         startPositions: Map<string, Vec2>;
+        startBounds: BoundingBox | null;
       }
     | null
   >(null);
@@ -1592,7 +1645,7 @@ export default function Canvas() {
       const exclude = new Set<string>();
       void mode;
 
-      const snap = snapWorldPoint(worldRaw, figures, {
+      const snap = snapWorldPoint(worldRaw, figures, guides, {
         thresholdWorld,
         excludeSeams: true,
         includeNodes: true,
@@ -1601,7 +1654,70 @@ export default function Canvas() {
 
       return { world: snap.isSnapped ? snap.pointWorld : worldRaw, snap };
     },
-    [figures, magnetEnabled, measureSnapStrengthPx, scale, tool]
+    [figures, guides, magnetEnabled, measureSnapStrengthPx, scale, tool]
+  );
+
+
+  const snapSelectionDeltaToGuides = useCallback(
+    (startBounds: BoundingBox | null, dx: number, dy: number): { dx: number; dy: number } => {
+      if (!magnetEnabled) return { dx, dy };
+      if (!guides.length) return { dx, dy };
+      if (!startBounds) return { dx, dy };
+
+      const thresholdWorld = Math.max(12, measureSnapStrengthPx) / scale;
+
+      const movedX = startBounds.x + dx;
+      const movedY = startBounds.y + dy;
+      const left = movedX;
+      const right = movedX + startBounds.width;
+      const centerX = movedX + startBounds.width / 2;
+      const top = movedY;
+      const bottom = movedY + startBounds.height;
+      const centerY = movedY + startBounds.height / 2;
+
+      let bestAdjustX: number | null = null;
+      let bestAbsAdjustX = Number.POSITIVE_INFINITY;
+      let bestAdjustY: number | null = null;
+      let bestAbsAdjustY = Number.POSITIVE_INFINITY;
+
+      const tryAdjustX = (guideX: number) => {
+        const candidates = [left, centerX, right];
+        for (const c of candidates) {
+          const adjust = guideX - c;
+          const abs = Math.abs(adjust);
+          if (abs <= thresholdWorld && abs < bestAbsAdjustX) {
+            bestAbsAdjustX = abs;
+            bestAdjustX = adjust;
+          }
+        }
+      };
+
+      const tryAdjustY = (guideY: number) => {
+        const candidates = [top, centerY, bottom];
+        for (const c of candidates) {
+          const adjust = guideY - c;
+          const abs = Math.abs(adjust);
+          if (abs <= thresholdWorld && abs < bestAbsAdjustY) {
+            bestAbsAdjustY = abs;
+            bestAdjustY = adjust;
+          }
+        }
+      };
+
+      for (const g of guides) {
+        if (g.orientation === "vertical") {
+          tryAdjustX(g.valuePx);
+        } else {
+          tryAdjustY(g.valuePx);
+        }
+      }
+
+      return {
+        dx: bestAdjustX != null ? dx + bestAdjustX : dx,
+        dy: bestAdjustY != null ? dy + bestAdjustY : dy,
+      };
+    },
+    [guides, magnetEnabled, measureSnapStrengthPx, scale]
   );
 
   useEffect(() => {
@@ -1683,9 +1799,11 @@ export default function Canvas() {
 
     const ro = new ResizeObserver(() => {
       setSize({ width: el.clientWidth, height: el.clientHeight });
+      setContainerClientRect(el.getBoundingClientRect());
     });
     ro.observe(el);
     setSize({ width: el.clientWidth, height: el.clientHeight });
+    setContainerClientRect(el.getBoundingClientRect());
     return () => ro.disconnect();
   }, []);
 
@@ -1699,6 +1817,164 @@ export default function Canvas() {
       y1: h0 + size.height / scale,
     };
   }, [position.x, position.y, scale, size.width, size.height]);
+
+  const guidePreviewPendingRef = useRef<Map<string, number> | null>(null);
+  const guidePreviewRafRef = useRef<number | null>(null);
+  const [guidePreviewValues, setGuidePreviewValues] = useState<Map<string, number> | null>(
+    null
+  );
+
+  const requestGuidePreviewRender = useCallback(() => {
+    if (guidePreviewRafRef.current != null) return;
+    guidePreviewRafRef.current = requestAnimationFrame(() => {
+      guidePreviewRafRef.current = null;
+      setGuidePreviewValues(guidePreviewPendingRef.current);
+    });
+  }, []);
+
+  const guidesOverlay = useMemo(() => {
+    if (!guides.length) return null;
+
+    const guidesDraggable = tool === "select";
+
+    const pad = 500 / scale;
+    const x0 = viewportWorld.x0 - pad;
+    const x1 = viewportWorld.x1 + pad;
+    const y0 = viewportWorld.y0 - pad;
+    const y1 = viewportWorld.y1 + pad;
+
+    const RULER_SIZE_PX = 24;
+    const containerRect = containerClientRect;
+
+    const shouldDeleteGuide = (g: GuideLine, clientX: number, clientY: number) => {
+      if (!showRulers) return false;
+      if (!containerRect) return false;
+
+      if (g.orientation === "horizontal") {
+        const inX = clientX >= containerRect.left && clientX <= containerRect.right;
+        const inY =
+          clientY >= containerRect.top - RULER_SIZE_PX && clientY <= containerRect.top;
+        return inX && inY;
+      }
+
+      const inY = clientY >= containerRect.top && clientY <= containerRect.bottom;
+      const inX =
+        clientX >= containerRect.left - RULER_SIZE_PX && clientX <= containerRect.left;
+      return inX && inY;
+    };
+
+    return (
+      <>
+        {guides.map((g) => {
+          const preview = guidePreviewValues?.get(g.id);
+          const valuePx = preview ?? g.valuePx;
+
+          if (g.orientation === "vertical") {
+            return (
+              <Line
+                key={g.id}
+                x={valuePx}
+                y={0}
+                points={[0, y0, 0, y1]}
+                stroke={guideStroke}
+                strokeWidth={2 / scale}
+                opacity={0.95}
+                shadowColor={guideStroke}
+                shadowBlur={8 / scale}
+                shadowOpacity={0.7}
+                hitStrokeWidth={8 / scale}
+                draggable={guidesDraggable}
+                listening={guidesDraggable}
+                dragBoundFunc={(pos) => ({ x: pos.x, y: 0 })}
+                onDragMove={(e) => {
+                  if (!guidesDraggable) return;
+                  const next = e.target.x();
+                  const map = guidePreviewPendingRef.current
+                    ? new Map(guidePreviewPendingRef.current)
+                    : new Map();
+                  map.set(g.id, next);
+                  guidePreviewPendingRef.current = map;
+                  requestGuidePreviewRender();
+                }}
+                onDragEnd={(e) => {
+                  if (!guidesDraggable) return;
+                  const evt = e.evt as MouseEvent;
+                  const next = e.target.x();
+
+                  if (shouldDeleteGuide(g, evt.clientX, evt.clientY)) {
+                    removeGuide(g.id);
+                  } else {
+                    updateGuide(g.id, next);
+                  }
+
+                  guidePreviewPendingRef.current = null;
+                  setGuidePreviewValues(null);
+                }}
+              />
+            );
+          }
+
+          return (
+            <Line
+              key={g.id}
+              x={0}
+              y={valuePx}
+              points={[x0, 0, x1, 0]}
+              stroke={guideStroke}
+              strokeWidth={2 / scale}
+              opacity={0.95}
+              shadowColor={guideStroke}
+              shadowBlur={8 / scale}
+              shadowOpacity={0.7}
+              hitStrokeWidth={8 / scale}
+              draggable={guidesDraggable}
+              listening={guidesDraggable}
+              dragBoundFunc={(pos) => ({ x: 0, y: pos.y })}
+              onDragMove={(e) => {
+                if (!guidesDraggable) return;
+                const next = e.target.y();
+                const map = guidePreviewPendingRef.current
+                  ? new Map(guidePreviewPendingRef.current)
+                  : new Map();
+                map.set(g.id, next);
+                guidePreviewPendingRef.current = map;
+                requestGuidePreviewRender();
+              }}
+              onDragEnd={(e) => {
+                if (!guidesDraggable) return;
+                const evt = e.evt as MouseEvent;
+                const next = e.target.y();
+
+                if (shouldDeleteGuide(g, evt.clientX, evt.clientY)) {
+                  removeGuide(g.id);
+                } else {
+                  updateGuide(g.id, next);
+                }
+
+                guidePreviewPendingRef.current = null;
+                setGuidePreviewValues(null);
+              }}
+            />
+          );
+        })}
+      </>
+    );
+  }, [
+    guidePreviewValues,
+    guideStroke,
+    guides,
+    containerClientRect,
+    removeGuide,
+    requestGuidePreviewRender,
+    scale,
+    showRulers,
+    tool,
+    updateGuide,
+    viewportWorld.x0,
+    viewportWorld.x1,
+    viewportWorld.y0,
+    viewportWorld.y1,
+  ]);
 
   const gridLines = useMemo(() => {
     if (!showGrid) return [] as Array<{ points: number[] }>; // local to world
@@ -4022,6 +4298,22 @@ export default function Canvas() {
                     )
                     .map((f) => f.id);
 
+                  let startBounds: BoundingBox | null = null;
+                  for (const f of figures) {
+                    if (!affectedIds.includes(f.id)) continue;
+                    const bb = figureWorldBoundingBox(f);
+                    if (!bb) continue;
+                    if (!startBounds) {
+                      startBounds = { ...bb };
+                    } else {
+                      const x0 = Math.min(startBounds.x, bb.x);
+                      const y0 = Math.min(startBounds.y, bb.y);
+                      const x1 = Math.max(startBounds.x + startBounds.width, bb.x + bb.width);
+                      const y1 = Math.max(startBounds.y + startBounds.height, bb.y + bb.height);
+                      startBounds = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+                    }
+                  }
+
                   const startPositions = new Map<string, Vec2>();
                   for (const id of affectedIds) {
                     const node = stage.findOne(`.fig_${id}`);
@@ -4033,6 +4325,7 @@ export default function Canvas() {
                     anchorFigureId: fig.id,
                     affectedIds,
                     startPositions,
+                    startBounds,
                   };
                 }}
                 onDragMove={(e) => {
@@ -4046,8 +4339,24 @@ export default function Canvas() {
                   const anchorStart = sync.startPositions.get(sync.anchorFigureId);
                   if (!anchorStart) return;
 
-                  const dx = e.target.x() - anchorStart.x;
-                  const dy = e.target.y() - anchorStart.y;
+                  const desired = { x: e.target.x(), y: e.target.y() };
+                  let dx = desired.x - anchorStart.x;
+                  let dy = desired.y - anchorStart.y;
+
+                  // Snap the selection bounds (left/center/right and top/center/bottom)
+                  // to nearby guide lines for a more intuitive "CAD-like" behavior.
+                  const snappedDelta = snapSelectionDeltaToGuides(
+                    sync.startBounds ?? null,
+                    dx,
+                    dy
+                  );
+                  dx = snappedDelta.dx;
+                  dy = snappedDelta.dy;
+
+                  const nextAnchor = { x: anchorStart.x + dx, y: anchorStart.y + dy };
+                  if (nextAnchor.x !== desired.x || nextAnchor.y !== desired.y) {
+                    e.target.position(nextAnchor);
+                  }
 
                   const next = new Map<string, Vec2>();
                   for (const id of sync.affectedIds) {
@@ -4066,8 +4375,22 @@ export default function Canvas() {
                   const anchorStart = sync.startPositions.get(sync.anchorFigureId);
                   if (!anchorStart) return;
 
-                  const dx = e.target.x() - anchorStart.x;
-                  const dy = e.target.y() - anchorStart.y;
+                  const desired = { x: e.target.x(), y: e.target.y() };
+                  let dx = desired.x - anchorStart.x;
+                  let dy = desired.y - anchorStart.y;
+
+                  const snappedDelta = snapSelectionDeltaToGuides(
+                    sync.startBounds ?? null,
+                    dx,
+                    dy
+                  );
+                  dx = snappedDelta.dx;
+                  dy = snappedDelta.dy;
+
+                  const nextAnchor = { x: anchorStart.x + dx, y: anchorStart.y + dy };
+                  if (nextAnchor.x !== desired.x || nextAnchor.y !== desired.y) {
+                    e.target.position(nextAnchor);
+                  }
 
                   if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) {
                     dragPreviewPendingRef.current = null;
@@ -4252,6 +4575,8 @@ export default function Canvas() {
               </Group>
             );
           })}
+
+          {guidesOverlay}
 
           {offsetHoverPreview ? (
             <Group

@@ -15,6 +15,8 @@ import {
   type MeasureDisplayMode,
   type NodesDisplayMode,
   type PageGuideSettings,
+  type GuideLine,
+  type GuideOrientation,
 } from "./types";
 import { DEFAULT_UNIT, DEFAULT_PIXELS_PER_UNIT } from "./constants";
 import { useHistory } from "./useHistory";
@@ -62,6 +64,11 @@ interface EditorContextType {
   setPixelsPerUnit: (pixels: number) => void;
   showRulers: boolean;
   setShowRulers: (show: boolean) => void;
+
+  guides: GuideLine[];
+  addGuide: (orientation: GuideOrientation, valuePx: number) => string;
+  updateGuide: (id: string, valuePx: number) => void;
+  removeGuide: (id: string) => void;
   getStage: () => Konva.Stage | null;
   registerStage: (stage: Konva.Stage | null) => void;
   showGrid: boolean;
@@ -112,7 +119,8 @@ interface EditorContextType {
     figures: Figure[],
     projectId: string,
     projectName: string,
-    pageGuideSettings?: PageGuideSettings
+    pageGuideSettings?: PageGuideSettings,
+    guides?: GuideLine[]
   ) => void;
 }
 
@@ -128,6 +136,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [pixelsPerUnit, setPixelsPerUnit] = useState(DEFAULT_PIXELS_PER_UNIT);
   const [showRulers, setShowRulers] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
+
+  const [guides, setGuides] = useState<GuideLine[]>([]);
 
   const GRID_CONTRAST_DEFAULT = 0.5;
   const [gridContrast, setGridContrastState] = useState(GRID_CONTRAST_DEFAULT);
@@ -335,9 +345,38 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   } = useHistory<Figure[]>([]);
 
   React.useEffect(() => {
-    const current = JSON.stringify({ figures: figures || [], pageGuideSettings });
+    const current = JSON.stringify({
+      figures: figures || [],
+      pageGuideSettings,
+      guides,
+    });
     setHasUnsavedChanges(current !== lastSavedSnapshot);
-  }, [figures, lastSavedSnapshot, pageGuideSettings]);
+  }, [figures, guides, lastSavedSnapshot, pageGuideSettings]);
+
+  const makeId = useCallback((prefix: string): string => {
+    return typeof crypto !== "undefined" && crypto.randomUUID
+      ? `${prefix}_${crypto.randomUUID()}`
+      : `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+  }, []);
+
+  const addGuide = useCallback(
+    (orientation: GuideOrientation, valuePx: number) => {
+      const id = makeId("guide");
+      setGuides((prev) => [...prev, { id, orientation, valuePx }]);
+      return id;
+    },
+    [makeId]
+  );
+
+  const updateGuide = useCallback((id: string, valuePx: number) => {
+    setGuides((prev) =>
+      prev.map((g) => (g.id === id ? { ...g, valuePx } : g))
+    );
+  }, []);
+
+  const removeGuide = useCallback((id: string) => {
+    setGuides((prev) => prev.filter((g) => g.id !== id));
+  }, []);
 
   const setFigures = useCallback(
     (
@@ -394,7 +433,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       figures: Figure[],
       projectId: string,
       projectName: string,
-      nextPageGuideSettings?: PageGuideSettings
+      nextPageGuideSettings?: PageGuideSettings,
+      nextGuides?: GuideLine[]
     ) => {
       setFigures(figures, false); // Load without saving to history
       setProjectId(projectId);
@@ -402,10 +442,14 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       if (nextPageGuideSettings) {
         setPageGuideSettings(nextPageGuideSettings);
       }
+
+      setGuides(Array.isArray(nextGuides) ? nextGuides : []);
+
       setLastSavedSnapshot(
         JSON.stringify({
           figures,
           pageGuideSettings: nextPageGuideSettings ?? pageGuideSettings,
+          guides: Array.isArray(nextGuides) ? nextGuides : [],
         })
       );
       setSelectedFigureIdsState([]);
@@ -416,18 +460,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
   const markProjectSaved = useCallback(() => {
     setLastSavedSnapshot(
-      JSON.stringify({ figures: figures || [], pageGuideSettings })
+      JSON.stringify({ figures: figures || [], pageGuideSettings, guides })
     );
-  }, [figures, pageGuideSettings]);
+  }, [figures, guides, pageGuideSettings]);
 
   React.useEffect(() => {
     if (process.env.NEXT_PUBLIC_E2E_TESTS !== "1") return;
-
-    const makeId = (prefix: string): string => {
-      return typeof crypto !== "undefined" && crypto.randomUUID
-        ? `${prefix}_${crypto.randomUUID()}`
-        : `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
-    };
 
     const addTestRectangle = () => {
       const figId = makeId("fig");
@@ -472,7 +510,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         safe.figures ?? [],
         safe.projectId ?? "e2e-project",
         safe.projectName ?? "Projeto E2E",
-        safe.pageGuideSettings
+        safe.pageGuideSettings,
+        []
       );
     };
 
@@ -490,6 +529,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         measureDisplayMode,
         nodesDisplayMode,
         magnetEnabled,
+        guidesCount: guides.length,
         projectId,
         projectName,
       }),
@@ -543,6 +583,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setFigures,
     setSelectedFigureId,
     tool,
+    guides,
+    makeId,
   ]);
 
   const deleteSelected = useCallback(() => {
@@ -606,6 +648,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setPixelsPerUnit,
         showRulers,
         setShowRulers,
+
+        guides,
+        addGuide,
+        updateGuide,
+        removeGuide,
         getStage,
         registerStage,
         showGrid,
