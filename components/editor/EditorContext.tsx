@@ -36,6 +36,8 @@ export type SelectedEdge = {
 interface EditorContextType {
   tool: Tool;
   setTool: (tool: Tool) => void;
+
+  modifierKeys: { shift: boolean; alt: boolean; meta: boolean; ctrl: boolean };
   figures: Figure[];
   setFigures: (
     figures: Figure[] | ((prev: Figure[]) => Figure[]),
@@ -128,6 +130,12 @@ const EditorContext = createContext<EditorContextType | undefined>(undefined);
 
 export function EditorProvider({ children }: { children: ReactNode }) {
   const [tool, setTool] = useState<Tool>("select");
+  const [modifierKeys, setModifierKeys] = useState<{
+    shift: boolean;
+    alt: boolean;
+    meta: boolean;
+    ctrl: boolean;
+  }>({ shift: false, alt: false, meta: false, ctrl: false });
   const [selectedFigureIds, setSelectedFigureIdsState] = useState<string[]>([]);
   const [selectedEdge, setSelectedEdge] = useState<SelectedEdge>(null);
   const [scale, setScale] = useState(1);
@@ -167,6 +175,38 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   );
 
   const [magnetEnabled, setMagnetEnabledState] = useState(false);
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const next = {
+        shift: e.shiftKey,
+        alt: e.altKey,
+        meta: e.metaKey,
+        ctrl: e.ctrlKey,
+      };
+      setModifierKeys((prev) =>
+        prev.shift === next.shift &&
+        prev.alt === next.alt &&
+        prev.meta === next.meta &&
+        prev.ctrl === next.ctrl
+          ? prev
+          : next
+      );
+    };
+
+    const onBlur = () => {
+      setModifierKeys({ shift: false, alt: false, meta: false, ctrl: false });
+    };
+
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
 
   React.useEffect(() => {
     try {
@@ -623,6 +663,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       value={{
         tool,
         setTool,
+        modifierKeys,
         figures: figures || [],
         setFigures,
         selectedFigureIds,

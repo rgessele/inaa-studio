@@ -1326,6 +1326,7 @@ export default function Canvas() {
     setOffsetTargetId,
     mirrorAxis,
     unfoldAxis,
+    modifierKeys,
     measureSnapStrengthPx,
     measureDisplayMode,
     nodesDisplayMode,
@@ -1411,31 +1412,10 @@ export default function Canvas() {
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const figureNodeRefs = useRef<Map<string, Konva.Group>>(new Map());
 
-  const [transformMods, setTransformMods] = useState<{ shift: boolean; alt: boolean }>(
-    { shift: false, alt: false }
+  const transformMods = useMemo(
+    () => ({ shift: modifierKeys.shift, alt: modifierKeys.alt }),
+    [modifierKeys.alt, modifierKeys.shift]
   );
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const next = { shift: e.shiftKey, alt: e.altKey };
-      setTransformMods((prev) =>
-        prev.shift === next.shift && prev.alt === next.alt ? prev : next
-      );
-    };
-
-    const onBlur = () => {
-      setTransformMods({ shift: false, alt: false });
-    };
-
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("keyup", onKey);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("keyup", onKey);
-      window.removeEventListener("blur", onBlur);
-    };
-  }, []);
 
   type EdgeEditDraft =
     | {

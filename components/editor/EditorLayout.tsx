@@ -8,6 +8,7 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import { EditorProvider, useEditor } from "./EditorContext";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { useToolShortcuts } from "./useToolShortcuts";
+import { ToolModifiersOverlay } from "./ToolModifiersOverlay";
 
 function EditorLayoutContent({ children }: { children: React.ReactNode }) {
   const { undo, redo, setTool, deleteSelected, selectedFigureId } = useEditor();
@@ -42,6 +43,7 @@ function EditorLayoutContent({ children }: { children: React.ReactNode }) {
           }
         >
           {children}
+          {embedded ? null : <ToolModifiersOverlay />}
         </div>
         {embedded ? null : <PropertiesPanel />}
       </main>
