@@ -49,6 +49,9 @@ export interface Figure {
   kind?: "seam";
   parentId?: string;
   offsetCm?: number;
+  // Tracks the base geometry state used to generate this derived figure.
+  // Used to auto-recompute seam allowance when the parent changes.
+  sourceSignature?: string;
 
   // Transform
   x: number;

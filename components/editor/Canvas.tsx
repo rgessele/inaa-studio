@@ -129,6 +129,82 @@ type MeasureEdgeHover =
     }
   | null;
 
+function formatSeamLabelCm(cm: number): string {
+  const safe = Number.isFinite(cm) ? cm : 0;
+  return `${safe.toFixed(2).replace(".", ",")}cm`;
+}
+
+function seamSourceSignature(base: Figure, offsetCm?: number): string {
+  // Exclude computed measures to avoid churn.
+  const offsetKey = Number.isFinite(offsetCm)
+    ? Math.round((offsetCm as number) * 10000) / 10000
+    : null;
+  const sig = {
+    x: base.x,
+    y: base.y,
+    rotation: base.rotation ?? 0,
+    closed: base.closed,
+    offsetCm: offsetKey,
+    nodes: base.nodes.map((n) => ({
+      id: n.id,
+      x: n.x,
+      y: n.y,
+      mode: n.mode,
+      inHandle: n.inHandle ? { x: n.inHandle.x, y: n.inHandle.y } : null,
+      outHandle: n.outHandle ? { x: n.outHandle.x, y: n.outHandle.y } : null,
+    })),
+    edges: base.edges.map((e) => ({
+      id: e.id,
+      from: e.from,
+      to: e.to,
+      kind: e.kind,
+    })),
+  };
+  return JSON.stringify(sig);
+}
+
+function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
+  // Ray casting; poly is assumed closed (first point not repeated).
+  if (poly.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i];
+    const b = poly[j];
+
+    const intersects =
+      (a.y > p.y) !== (b.y > p.y) &&
+      p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function findHoveredClosedFigureOrSeamBaseId(
+  figures: Figure[],
+  pWorld: Vec2,
+  samples: number
+): string | null {
+  // Prefer top-most (later in array). If hovering inside a seam, treat it as hovering its base.
+  for (let i = figures.length - 1; i >= 0; i--) {
+    const fig = figures[i];
+    if (!fig.closed) continue;
+
+    const flat = figureWorldPolyline(fig, samples);
+    if (flat.length < 6) continue;
+    const poly: Vec2[] = [];
+    for (let k = 0; k < flat.length; k += 2) {
+      poly.push({ x: flat[k], y: flat[k + 1] });
+    }
+    if (!pointInPolygon(pWorld, poly)) continue;
+
+    if (fig.kind === "seam") {
+      return fig.parentId ?? null;
+    }
+    return fig.id;
+  }
+  return null;
+}
+
 function figureCentroidLocal(figure: Figure): Vec2 {
   if (!figure.nodes.length) return { x: 0, y: 0 };
   const sum = figure.nodes.reduce(
@@ -208,7 +284,6 @@ function normalizeUprightAngleDeg(angleDeg: number): number {
   if (a < -90) a += 180;
   return a;
 }
-
 function polylineLength(points: Vec2[]): number {
   if (points.length < 2) return 0;
   let sum = 0;
@@ -796,7 +871,9 @@ function offsetClosedPolyline(points: Vec2[], offsetPx: number): Vec2[] | null {
   if (pts.length < 3) return null;
 
   const area = signedArea(pts);
-  const outwardSign = area > 0 ? -1 : 1;
+  // We use the right-hand normal (dy, -dx). For CCW polygons (area > 0),
+  // the right normal points outward; for CW, it points inward.
+  const outwardSign = area > 0 ? 1 : -1;
 
   // edge outward normals
   const normals: Vec2[] = [];
@@ -804,8 +881,8 @@ function offsetClosedPolyline(points: Vec2[], offsetPx: number): Vec2[] | null {
     const a = pts[i];
     const b = pts[(i + 1) % pts.length];
     const d = normalize(sub(b, a));
-    const left = { x: d.y, y: -d.x };
-    normals.push(mul(left, outwardSign));
+    const right = { x: d.y, y: -d.x };
+    normals.push(mul(right, outwardSign));
   }
 
   const out: Vec2[] = [];
@@ -842,6 +919,8 @@ function makeSeamFigure(base: Figure, offsetValueCm: number): Figure | null {
   const out = offsetClosedPolyline(poly, offsetPx);
   if (!out) return null;
 
+  const sourceSignature = seamSourceSignature(base, offsetValueCm);
+
   const nodes: FigureNode[] = out.map((p) => ({
     id: id("n"),
     x: p.x,
@@ -861,6 +940,7 @@ function makeSeamFigure(base: Figure, offsetValueCm: number): Figure | null {
     kind: "seam",
     parentId: base.id,
     offsetCm: offsetValueCm,
+    sourceSignature,
     dash: [5, 5],
     fill: "transparent",
     nodes,
@@ -1168,6 +1248,19 @@ export default function Canvas() {
   const previewStroke = aci7;
   const previewDash = useMemo(() => [8 / scale, 6 / scale], [scale]);
 
+  const previewRemoveStroke = useMemo(() => {
+    if (typeof window === "undefined") return "#dc2626";
+    const el = document.createElement("span");
+    el.className = "text-red-600";
+    el.style.position = "absolute";
+    el.style.left = "-9999px";
+    el.style.top = "-9999px";
+    document.body.appendChild(el);
+    const c = getComputedStyle(el).color;
+    document.body.removeChild(el);
+    return c || "#dc2626";
+  }, []);
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
 
@@ -1207,6 +1300,45 @@ export default function Canvas() {
   const [hoveredEdge, setHoveredEdge] = useState<EdgeHover>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredFigureId, setHoveredFigureId] = useState<string | null>(null);
+  const [hoveredOffsetBaseId, setHoveredOffsetBaseId] = useState<string | null>(
+    null
+  );
+  const [cursorBadge, setCursorBadge] = useState<
+    | {
+        x: number;
+        y: number;
+      }
+    | null
+  >(null);
+
+  const offsetHoverPreview = useMemo(() => {
+    if (tool !== "offset") return null;
+    if (!hoveredOffsetBaseId) return null;
+
+    const base = figures.find((f) => f.id === hoveredOffsetBaseId) ?? null;
+    if (!base) return null;
+    if (!base.closed) return null;
+
+    const hasSeam = figures.some(
+      (f) => f.kind === "seam" && f.parentId === hoveredOffsetBaseId
+    );
+    if (hasSeam) return null;
+
+    const seam = makeSeamFigure(base, offsetValueCm);
+    if (!seam) return null;
+
+    const pts = figureLocalPolyline(seam, 60);
+    return {
+      x: seam.x,
+      y: seam.y,
+      rotation: seam.rotation || 0,
+      closed: seam.closed,
+      dash: seam.dash ?? [5, 5],
+      stroke: resolveStrokeColor(seam.stroke, isDark),
+      points: pts,
+      key: `offset-preview-add:${hoveredOffsetBaseId}`,
+    };
+  }, [figures, hoveredOffsetBaseId, isDark, offsetValueCm, tool]);
   const [dartDraft, setDartDraft] = useState<DartDraft>(null);
   const [measureDraft, setMeasureDraft] = useState<MeasureDraft>(null);
   const [marqueeDraft, setMarqueeDraft] = useState<MarqueeDraft>(null);
@@ -1218,6 +1350,17 @@ export default function Canvas() {
   const lastPointerRef = useRef<Vec2 | null>(null);
   const lastPanClientRef = useRef<{ x: number; y: number } | null>(null);
   const lastPointerDownAtRef = useRef<number>(0);
+  const cursorBadgeRafRef = useRef<number | null>(null);
+  const cursorBadgePendingRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (cursorBadgeRafRef.current !== null) {
+        cancelAnimationFrame(cursorBadgeRafRef.current);
+        cursorBadgeRafRef.current = null;
+      }
+    };
+  }, []);
 
   const positionRef = useRef(position);
   useEffect(() => {
@@ -1296,7 +1439,7 @@ export default function Canvas() {
       return;
     }
     el.style.cursor = "";
-  }, [isPanning, tool]);
+  }, [figures, hoveredOffsetBaseId, isPanning, tool]);
 
   const selectionDragSyncRef = useRef<
     | {
@@ -1392,26 +1535,77 @@ export default function Canvas() {
   );
 
   useEffect(() => {
-    // When the offset value changes, recompute existing seam figures (keep same IDs).
+    // Keep seam figures synced when their parent/base geometry changes.
+    // We store a sourceSignature on the seam to avoid infinite loops.
+
+    const byId = new Map(figures.map((f) => [f.id, f] as const));
+    const toRemove = new Set<string>();
+    const toUpdate = new Set<string>();
+
+    for (const seam of figures) {
+      if (seam.kind !== "seam" || !seam.parentId) continue;
+      const base = byId.get(seam.parentId);
+      if (!base) {
+        toRemove.add(seam.id);
+        continue;
+      }
+
+      const sig = seamSourceSignature(base, seam.offsetCm ?? 1);
+      if (seam.sourceSignature === sig) continue;
+
+      // If the base is no longer closed or the seam can't be regenerated,
+      // remove it to avoid infinite retries.
+      const regenerated = makeSeamFigure(base, seam.offsetCm ?? 1);
+      if (!base.closed || !regenerated) {
+        toRemove.add(seam.id);
+        continue;
+      }
+
+      toUpdate.add(seam.id);
+    }
+
+    if (!toRemove.size && !toUpdate.size) return;
+
     setFigures(
       (prev) => {
         let changed = false;
         const byId = new Map(prev.map((f) => [f.id, f] as const));
-        const next = prev.map((f) => {
-          if (f.kind !== "seam" || !f.parentId) return f;
-          if (f.offsetCm === offsetValueCm) return f;
+
+        const next: typeof prev = [];
+        for (const f of prev) {
+          if (toRemove.has(f.id)) {
+            changed = true;
+            continue;
+          }
+
+          if (f.kind !== "seam" || !f.parentId || !toUpdate.has(f.id)) {
+            next.push(f);
+            continue;
+          }
+
           const base = byId.get(f.parentId);
-          if (!base) return f;
-          const updated = recomputeSeamFigure(base, f, offsetValueCm);
-          if (!updated) return f;
+          if (!base) {
+            next.push(f);
+            continue;
+          }
+
+          const offsetCm = f.offsetCm ?? 1;
+          const updated = recomputeSeamFigure(base, f, offsetCm);
+          if (!updated) {
+            // If we can't recompute now, keep as-is (but we already gated calls
+            // so this should be rare).
+            next.push(f);
+            continue;
+          }
           changed = true;
-          return updated;
-        });
+          next.push(updated);
+        }
+
         return changed ? next : prev;
       },
       false
     );
-  }, [offsetValueCm, setFigures]);
+  }, [figures, setFigures]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -1874,6 +2068,53 @@ export default function Canvas() {
         x: (pos.x - position.x) / scale,
         y: (pos.y - position.y) / scale,
       };
+
+      // Cursor badge: keep native cursor, but show a small tool icon near it.
+      if (tool === "offset") {
+        cursorBadgePendingRef.current = { x: pos.x, y: pos.y };
+        if (cursorBadgeRafRef.current === null) {
+          cursorBadgeRafRef.current = requestAnimationFrame(() => {
+            cursorBadgeRafRef.current = null;
+            const pending = cursorBadgePendingRef.current;
+            if (!pending) return;
+            setCursorBadge((prev) => {
+              if (!prev) return pending;
+              if (
+                Math.abs(prev.x - pending.x) > 1 ||
+                Math.abs(prev.y - pending.y) > 1
+              ) {
+                return pending;
+              }
+              return prev;
+            });
+          });
+        }
+      } else if (cursorBadge) {
+        cursorBadgePendingRef.current = null;
+        if (cursorBadgeRafRef.current !== null) {
+          cancelAnimationFrame(cursorBadgeRafRef.current);
+          cursorBadgeRafRef.current = null;
+        }
+        setCursorBadge(null);
+      }
+
+      if (tool === "offset") {
+        const thresholdWorld = 10 / scale;
+        const hitId = findHoveredFigureId(figures, world, thresholdWorld);
+
+        const hit = hitId ? figures.find((f) => f.id === hitId) ?? null : null;
+        const hitBaseId = hit?.kind === "seam" ? hit.parentId ?? null : hitId;
+
+        // If we didn't hit an edge/line, allow hover anywhere inside a closed figure.
+        const insideId = hitBaseId
+          ? null
+          : findHoveredClosedFigureOrSeamBaseId(figures, world, 60);
+
+        const baseId = hitBaseId ?? insideId;
+        setHoveredOffsetBaseId((prev) => (prev === baseId ? prev : baseId));
+      } else if (hoveredOffsetBaseId) {
+        setHoveredOffsetBaseId(null);
+      }
 
       if (measureDisplayMode !== "never") {
         const thresholdWorld = 10 / scale;
@@ -2799,6 +3040,107 @@ export default function Canvas() {
     selectedFigureId,
   ]);
 
+  const seamLabelsOverlay = useMemo(() => {
+    if (measureDisplayMode === "never" && tool !== "offset") return null;
+
+    const fontSize = 11 / scale;
+    const offset = 10 / scale;
+    const textWidth = 240 / scale;
+    const fill = resolveAci7(isDark);
+    const opacity = 0.75;
+
+    const byId = new Map(figures.map((f) => [f.id, f] as const));
+    const labels: React.ReactNode[] = [];
+
+    for (const seam of figures) {
+      if (seam.kind !== "seam" || !seam.parentId) continue;
+      const base = byId.get(seam.parentId) ?? null;
+
+      const flat = figureLocalPolyline(seam, 60);
+      if (flat.length < 4) continue;
+      const pts: Vec2[] = [];
+      for (let i = 0; i < flat.length; i += 2) {
+        pts.push({ x: flat[i], y: flat[i + 1] });
+      }
+
+      if (pts.length >= 2 && dist(pts[0], pts[pts.length - 1]) < 1e-6) {
+        pts.pop();
+      }
+      if (pts.length < 2) continue;
+
+      // Strategy A: pick the longest segment.
+      let bestA: Vec2 | null = null;
+      let bestB: Vec2 | null = null;
+      let bestLen = -1;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        const l = dist(a, b);
+        if (l > bestLen) {
+          bestLen = l;
+          bestA = a;
+          bestB = b;
+        }
+      }
+      if (seam.closed && pts.length >= 2) {
+        const a = pts[pts.length - 1];
+        const b = pts[0];
+        const l = dist(a, b);
+        if (l > bestLen) {
+          bestLen = l;
+          bestA = a;
+          bestB = b;
+        }
+      }
+
+      if (!bestA || !bestB || bestLen <= 1e-6) continue;
+
+      const mid = lerp(bestA, bestB, 0.5);
+      const tangent = sub(bestB, bestA);
+      const n = norm(perp(tangent));
+
+      const centroid = base
+        ? figureCentroidLocal(base)
+        : figureCentroidLocal(seam);
+      const p1 = add(mid, mul(n, offset));
+      const p2 = add(mid, mul(n, -offset));
+      const p = dist(p1, centroid) >= dist(p2, centroid) ? p1 : p2;
+
+      const rawAngleDeg = (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
+      const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
+
+      const label = `Margem de Costura: ${formatSeamLabelCm(seam.offsetCm ?? 0)}`;
+
+      labels.push(
+        <Group
+          key={`seamlabel:${seam.id}`}
+          x={seam.x}
+          y={seam.y}
+          rotation={seam.rotation || 0}
+          listening={false}
+        >
+          <Text
+            x={p.x}
+            y={p.y}
+            offsetX={textWidth / 2}
+            offsetY={fontSize / 2}
+            rotation={angleDeg}
+            width={textWidth}
+            align="center"
+            text={label}
+            fontSize={fontSize}
+            fill={fill}
+            opacity={opacity}
+            listening={false}
+            name="inaa-seam-label"
+          />
+        </Group>
+      );
+    }
+
+    return labels.length ? <>{labels}</> : null;
+  }, [figures, isDark, measureDisplayMode, scale, tool]);
+
   const nodeOverlay = useMemo(() => {
     if (tool !== "node" || !selectedFigure) return null;
 
@@ -3344,6 +3686,33 @@ export default function Canvas() {
             : "absolute inset-0"
         }
       >
+        {cursorBadge && tool === "offset" ? (
+          <div
+            className="pointer-events-none absolute z-50"
+            style={{ left: cursorBadge.x + 14, top: cursorBadge.y + 14 }}
+          >
+            <div
+              className={
+                "flex items-center justify-center rounded bg-white/90 dark:bg-gray-900/85 border border-gray-200 dark:border-gray-700 shadow-subtle " +
+                "w-7 h-7"
+              }
+            >
+                <svg
+                  className="w-4 h-4 text-gray-700 dark:text-gray-200"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="1.5"
+                  viewBox="0 0 24 24"
+                >
+                  <rect x="6" y="6" width="12" height="12" />
+                  <rect x="3" y="3" width="18" height="18" strokeDasharray="2 2" />
+                </svg>
+            </div>
+          </div>
+        ) : null}
+
         {edgeEditDraft ? (
           <div
             className="absolute z-50"
@@ -3444,13 +3813,22 @@ export default function Canvas() {
             const isSeam = fig.kind === "seam" && !!fig.parentId;
             const baseId = isSeam ? fig.parentId! : fig.id;
             const isSelected = selectedIdsSet.has(baseId);
-            const stroke = isSelected
-              ? "#2563eb"
-              : resolveStrokeColor(fig.stroke, isDark);
+            const isRemovePreview =
+              tool === "offset" &&
+              hoveredOffsetBaseId != null &&
+              isSeam &&
+              fig.parentId === hoveredOffsetBaseId;
+            const stroke = isRemovePreview
+              ? previewRemoveStroke
+              : isSelected
+                ? "#2563eb"
+                : resolveStrokeColor(fig.stroke, isDark);
             const hasSelectedEdge =
               !!selectedEdge && selectedEdge.figureId === baseId;
             const dimFactor = hasSelectedEdge ? (isSeam ? 0.5 : 0.25) : 1;
-            const opacity = (fig.opacity ?? 1) * (isSeam ? 0.7 : 1) * dimFactor;
+            const opacity = isRemovePreview
+              ? 0.95
+              : (fig.opacity ?? 1) * (isSeam ? 0.7 : 1) * dimFactor;
             const strokeWidth = (fig.strokeWidth || 1) / scale;
             const dash = fig.dash ? fig.dash.map((d) => d / scale) : undefined;
 
@@ -3547,6 +3925,7 @@ export default function Canvas() {
                   opacity={opacity}
                   lineCap="round"
                   lineJoin="round"
+                  listening={!isSeam || tool === "offset"}
                   onPointerDown={(e) => {
                     const evtAny = e.evt as MouseEvent;
                     const buttons = (evtAny.buttons ?? 0) as number;
@@ -3680,7 +4059,14 @@ export default function Canvas() {
                       const existing = figures.some(
                         (f) => f.kind === "seam" && f.parentId === baseId
                       );
-                      if (existing) return;
+                      if (existing) {
+                        setFigures((prev) =>
+                          prev.filter(
+                            (f) => !(f.kind === "seam" && f.parentId === baseId)
+                          )
+                        );
+                        return;
+                      }
 
                       const seam = makeSeamFigure(base, offsetValueCm);
                       if (!seam) return;
@@ -3695,6 +4081,28 @@ export default function Canvas() {
             );
           })}
 
+          {offsetHoverPreview ? (
+            <Group
+              key={offsetHoverPreview.key}
+              x={offsetHoverPreview.x}
+              y={offsetHoverPreview.y}
+              rotation={offsetHoverPreview.rotation}
+              listening={false}
+            >
+              <Line
+                points={offsetHoverPreview.points}
+                closed={offsetHoverPreview.closed}
+                stroke={offsetHoverPreview.stroke}
+                strokeWidth={2 / scale}
+                dash={offsetHoverPreview.dash.map((d) => d / scale)}
+                opacity={0.55}
+                lineCap="round"
+                lineJoin="round"
+                listening={false}
+              />
+            </Group>
+          ) : null}
+
           {nodesPointsOverlay}
 
           {draftPreview}
@@ -3702,6 +4110,8 @@ export default function Canvas() {
           {curveDraftPreview}
 
           {measuresLabelsOverlay}
+
+          {seamLabelsOverlay}
 
           {edgeHoverOverlay}
 

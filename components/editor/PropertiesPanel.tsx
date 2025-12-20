@@ -24,6 +24,42 @@ export function PropertiesPanel() {
   } = useEditor();
   const selectedFigure = figures.find((f) => f.id === selectedFigureId);
 
+  const seamForSelection = (() => {
+    if (!selectedFigure) return null;
+    if (selectedFigure.kind === "seam") return selectedFigure;
+    return (
+      figures.find((f) => f.kind === "seam" && f.parentId === selectedFigure.id) ??
+      null
+    );
+  })();
+
+  const offsetDisplayCm = seamForSelection?.offsetCm ?? offsetValueCm;
+
+  React.useEffect(() => {
+    if (tool !== "offset") return;
+    if (!seamForSelection) return;
+    if (!Number.isFinite(seamForSelection.offsetCm ?? NaN)) return;
+    const next = seamForSelection.offsetCm as number;
+    if (offsetValueCm === next) return;
+    setOffsetValueCm(next);
+  }, [offsetValueCm, seamForSelection?.id, seamForSelection?.offsetCm, setOffsetValueCm, tool]);
+
+  const updateSelectedSeamOffset = (nextCm: number) => {
+    if (!seamForSelection) {
+      // No seam yet; only update tool default.
+      setOffsetValueCm(nextCm);
+      return;
+    }
+
+    const safe = Math.max(0.1, nextCm);
+    setOffsetValueCm(safe);
+
+    // Update only this seam figure. Geometry recalculation happens in Canvas.
+    setFigures((prev) =>
+      prev.map((f) => (f.id === seamForSelection.id ? { ...f, offsetCm: safe } : f))
+    );
+  };
+
   const selectedEdgeInfo =
     selectedEdge && selectedFigure && selectedEdge.figureId === selectedFigure.id
       ? (() => {
@@ -129,6 +165,36 @@ export function PropertiesPanel() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+              {(tool === "offset" || !!seamForSelection) && (
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
+                    Margem de costura
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      className="w-24 px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
+                      type="number"
+                      min={0.1}
+                      step={0.1}
+                      value={offsetDisplayCm}
+                      onChange={(e) => {
+                        const next = Number(e.target.value);
+                        if (!Number.isFinite(next)) return;
+                        updateSelectedSeamOffset(next);
+                      }}
+                    />
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      cm
+                    </span>
+                  </div>
+                  <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                    {seamForSelection
+                      ? "Edite a distância da margem desta peça."
+                      : "Clique em uma forma fechada para gerar a margem tracejada."}
+                  </p>
+                </div>
+              )}
+
               {selectedEdgeInfo ? (
                 <div>
                   <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 flex items-center justify-between">

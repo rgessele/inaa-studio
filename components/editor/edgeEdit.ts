@@ -1,4 +1,4 @@
-import type { EdgeKind, Figure, FigureEdge, FigureNode } from "./types";
+import type { EdgeKind, Figure, FigureNode } from "./types";
 import { sampleCubic, type Vec2 } from "./figureGeometry";
 import type { EdgeAnchor } from "./EditorContext";
 
@@ -128,10 +128,9 @@ function solveEndDisplacementForArcLength(opts: {
   const wantIncrease = target > baseLen;
 
   // Bracket a solution.
-  let lo = 0;
+  const lo = 0;
   let hi = (wantIncrease ? 1 : -1) * baseLen;
 
-  let loLen = baseLen;
   let hiLen = lengthAt(hi);
 
   const MAX_BRACKET_ITERS = 16;
