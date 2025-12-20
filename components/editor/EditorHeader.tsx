@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { UnitSettings } from "./UnitSettings";
 import { ViewMenu } from "./ViewMenu";
 import { useEditor } from "./EditorContext";
 import { SaveProjectModal } from "./SaveProjectModal";
@@ -317,7 +316,6 @@ export function EditorHeader() {
               details={["Salva as alterações do projeto atual."]}
             />
           </button>
-          <UnitSettings />
           <div className="flex items-center mr-2">
             <ThemeToggleButton
               onMouseEnter={themeTooltip.onMouseEnter}

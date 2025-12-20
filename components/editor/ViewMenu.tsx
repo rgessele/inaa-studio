@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useEditor } from "./EditorContext";
+import { PX_PER_CM, PX_PER_IN, PX_PER_MM } from "./constants";
 import {
   PAPER_SIZES,
   PAPER_SIZE_LABELS,
@@ -11,6 +12,12 @@ import {
 
 export function ViewMenu() {
   const {
+    unit,
+    setUnit,
+    pixelsPerUnit,
+    setPixelsPerUnit,
+    showRulers,
+    setShowRulers,
     showPageGuides,
     setShowPageGuides,
     pageGuideSettings,
@@ -22,6 +29,19 @@ export function ViewMenu() {
   } = useEditor();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const handleUnitChange = (newUnit: string) => {
+    setUnit(newUnit);
+    if (newUnit === "cm") {
+      setPixelsPerUnit(PX_PER_CM);
+    } else if (newUnit === "mm") {
+      setPixelsPerUnit(PX_PER_MM);
+    } else if (newUnit === "in") {
+      setPixelsPerUnit(PX_PER_IN);
+    } else if (newUnit === "px") {
+      setPixelsPerUnit(1);
+    }
+  };
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -48,9 +68,63 @@ export function ViewMenu() {
 
       {isOpen && (
         <div className="absolute top-full left-0 mt-1 w-72 bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-4 z-50">
-          <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-white">
-            Visualização
-          </h3>
+          <h4 className="text-[11px] font-semibold text-gray-900 dark:text-white mb-2">
+            Régua
+          </h4>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-gray-600 dark:text-gray-300">
+                Mostrar Réguas
+              </label>
+              <button
+                onClick={() => setShowRulers(!showRulers)}
+                className={`w-10 h-5 rounded-full relative transition-colors ${showRulers ? "bg-primary" : "bg-gray-300 dark:bg-gray-600"}`}
+              >
+                <span
+                  className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-transform ${showRulers ? "left-6" : "left-1"}`}
+                />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                  Unidade
+                </label>
+                <select
+                  value={unit}
+                  onChange={(e) => handleUnitChange(e.target.value)}
+                  className="w-full h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-gray-400/50 focus:border-gray-400"
+                >
+                  <option value="px">px</option>
+                  <option value="cm">cm</option>
+                  <option value="mm">mm</option>
+                  <option value="in">in</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                  Escala
+                </label>
+                <input
+                  type="number"
+                  value={pixelsPerUnit}
+                  onChange={(e) => setPixelsPerUnit(Number(e.target.value))}
+                  min={0.1}
+                  step={0.1}
+                  className="w-full h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 text-xs text-gray-900 dark:text-white text-right tabular-nums focus:outline-none focus:ring-1 focus:ring-gray-400/50 focus:border-gray-400"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 h-px bg-gray-200 dark:bg-gray-700" />
+
+          <h4 className="mt-4 text-[11px] font-semibold text-gray-900 dark:text-white mb-2">
+            Página
+          </h4>
 
           <div className="flex items-center justify-between">
             <label className="text-xs text-gray-600 dark:text-gray-300">
@@ -148,7 +222,11 @@ export function ViewMenu() {
 
           <div className="mt-4 h-px bg-gray-200 dark:bg-gray-700" />
 
-          <div className="mt-4">
+          <h4 className="mt-4 text-[11px] font-semibold text-gray-900 dark:text-white mb-2">
+            Grid
+          </h4>
+
+          <div>
             <div className="flex items-center justify-between">
               <label className="text-xs text-gray-600 dark:text-gray-300">
                 Contraste do Grid
@@ -173,7 +251,13 @@ export function ViewMenu() {
             </p>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 h-px bg-gray-200 dark:bg-gray-700" />
+
+          <h4 className="mt-4 text-[11px] font-semibold text-gray-900 dark:text-white mb-2">
+            Magnetismo
+          </h4>
+
+          <div>
             <div className="flex items-center justify-between">
               <label className="text-xs text-gray-600 dark:text-gray-300">
                 Força do magnetismo
