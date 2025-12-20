@@ -1290,6 +1290,15 @@ export default function Canvas() {
   }, [edgeEditDraft]);
 
   useEffect(() => {
+    if (!edgeEditDraft) return;
+    if (!selectedEdge) return;
+    if (selectedEdge.figureId !== edgeEditDraft.figureId) return;
+    if (selectedEdge.edgeId !== edgeEditDraft.edgeId) return;
+    if (selectedEdge.anchor === edgeEditDraft.anchor) return;
+    setEdgeEditDraft((prev) => (prev ? { ...prev, anchor: selectedEdge.anchor } : prev));
+  }, [edgeEditDraft, selectedEdge]);
+
+  useEffect(() => {
     if (tool === "select") return;
     if (selectedEdge) setSelectedEdge(null);
   }, [selectedEdge, setSelectedEdge, tool]);
@@ -1704,6 +1713,11 @@ export default function Canvas() {
     return Math.max(0.01, v);
   }, []);
 
+  const formatCmInput = useCallback((cm: number): string => {
+    const safe = Number.isFinite(cm) ? cm : 0;
+    return safe.toFixed(2).replace(".", ",");
+  }, []);
+
   const openInlineEdgeEdit = useCallback(
     (opts: { figureId: string; edgeId: string; anchor: "start" | "end" | "mid"; clientX: number; clientY: number }) => {
       const fig = figures.find((f) => f.id === opts.figureId);
@@ -1719,12 +1733,12 @@ export default function Canvas() {
         figureId: opts.figureId,
         edgeId: opts.edgeId,
         anchor: opts.anchor,
-        value: cm.toFixed(2),
+        value: formatCmInput(cm),
         x: opts.clientX - rect.left,
         y: opts.clientY - rect.top,
       });
     },
-    [figures]
+    [figures, formatCmInput]
   );
 
   const applyEdgeLengthEdit = useCallback(
@@ -3731,18 +3745,84 @@ export default function Canvas() {
                   setEdgeEditDraft((prev) => (prev ? { ...prev, value: next } : prev));
                 }}
                 onKeyDown={(evt) => {
+                  const applyDraft =
+                    selectedEdge &&
+                    selectedEdge.figureId === edgeEditDraft.figureId &&
+                    selectedEdge.edgeId === edgeEditDraft.edgeId
+                      ? {
+                          figureId: edgeEditDraft.figureId,
+                          edgeId: edgeEditDraft.edgeId,
+                          anchor: selectedEdge.anchor,
+                        }
+                      : {
+                          figureId: edgeEditDraft.figureId,
+                          edgeId: edgeEditDraft.edgeId,
+                          anchor: edgeEditDraft.anchor,
+                        };
+
+                  if (evt.key === "ArrowUp" || evt.key === "ArrowDown") {
+                    evt.preventDefault();
+                    const dir: 1 | -1 = evt.key === "ArrowUp" ? 1 : -1;
+                    const current = parseCmInput(edgeEditDraft.value) ?? 0.01;
+                    const next = Math.max(0.01, current + dir * 0.1);
+                    const nextStr = formatCmInput(next);
+                    setEdgeEditDraft((prev) =>
+                      prev ? { ...prev, value: nextStr } : prev
+                    );
+                    applyEdgeLengthEdit(applyDraft, nextStr);
+                    return;
+                  }
                   if (evt.key === "Escape") {
                     evt.preventDefault();
                     setEdgeEditDraft(null);
                   }
                   if (evt.key === "Enter") {
                     evt.preventDefault();
-                    applyEdgeLengthEdit(edgeEditDraft, edgeEditDraft.value);
+                    applyEdgeLengthEdit(applyDraft, edgeEditDraft.value);
                     setEdgeEditDraft(null);
                   }
                 }}
+                onWheel={(evt) => {
+                  if (document.activeElement !== evt.currentTarget) return;
+                  evt.preventDefault();
+                  evt.stopPropagation();
+                  const dir: 1 | -1 = evt.deltaY < 0 ? 1 : -1;
+                  const current = parseCmInput(edgeEditDraft.value) ?? 0.01;
+                  const next = Math.max(0.01, current + dir * 0.1);
+                  const nextStr = formatCmInput(next);
+                  setEdgeEditDraft((prev) => (prev ? { ...prev, value: nextStr } : prev));
+                  const applyDraft =
+                    selectedEdge &&
+                    selectedEdge.figureId === edgeEditDraft.figureId &&
+                    selectedEdge.edgeId === edgeEditDraft.edgeId
+                      ? {
+                          figureId: edgeEditDraft.figureId,
+                          edgeId: edgeEditDraft.edgeId,
+                          anchor: selectedEdge.anchor,
+                        }
+                      : {
+                          figureId: edgeEditDraft.figureId,
+                          edgeId: edgeEditDraft.edgeId,
+                          anchor: edgeEditDraft.anchor,
+                        };
+                  applyEdgeLengthEdit(applyDraft, nextStr);
+                }}
                 onBlur={() => {
-                  applyEdgeLengthEdit(edgeEditDraft, edgeEditDraft.value);
+                  const applyDraft =
+                    selectedEdge &&
+                    selectedEdge.figureId === edgeEditDraft.figureId &&
+                    selectedEdge.edgeId === edgeEditDraft.edgeId
+                      ? {
+                          figureId: edgeEditDraft.figureId,
+                          edgeId: edgeEditDraft.edgeId,
+                          anchor: selectedEdge.anchor,
+                        }
+                      : {
+                          figureId: edgeEditDraft.figureId,
+                          edgeId: edgeEditDraft.edgeId,
+                          anchor: edgeEditDraft.anchor,
+                        };
+                  applyEdgeLengthEdit(applyDraft, edgeEditDraft.value);
                   setEdgeEditDraft(null);
                 }}
               />

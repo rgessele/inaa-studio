@@ -7,6 +7,24 @@ import { pxToCm } from "./measureUnits";
 import { PX_PER_CM } from "./constants";
 import { setEdgeTargetLengthPx } from "./edgeEdit";
 
+function parseDecimalCm(raw: string): number | null {
+  const normalized = raw.trim().replace(",", ".");
+  if (!normalized) return null;
+  const v = Number(normalized);
+  if (!Number.isFinite(v)) return null;
+  return v;
+}
+
+function clampMin(value: number, min: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, value);
+}
+
+function formatCmInput(cm: number): string {
+  if (!Number.isFinite(cm)) return "";
+  return cm.toFixed(2).replace(".", ",");
+}
+
 export function PropertiesPanel() {
   const {
     tool,
@@ -35,6 +53,14 @@ export function PropertiesPanel() {
 
   const offsetDisplayCm = seamForSelection?.offsetCm ?? offsetValueCm;
 
+  const inputBaseClass =
+    "px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm";
+  const inputFocusClass = "focus:ring-1 focus:ring-gray-400/50 focus:border-gray-400";
+  const inputDisabledClass =
+    "disabled:bg-gray-50 dark:disabled:bg-gray-900/30 disabled:border-gray-200 dark:disabled:border-gray-700 disabled:text-gray-500 dark:disabled:text-gray-400 disabled:cursor-default disabled:shadow-none disabled:ring-0";
+  const inputErrorClass =
+    "border-red-500 dark:border-red-500 ring-1 ring-red-500 dark:ring-red-500 focus:ring-red-500 focus:border-red-500";
+
   React.useEffect(() => {
     if (tool !== "offset") return;
     if (!seamForSelection) return;
@@ -58,6 +84,38 @@ export function PropertiesPanel() {
     setFigures((prev) =>
       prev.map((f) => (f.id === seamForSelection.id ? { ...f, offsetCm: safe } : f))
     );
+  };
+
+  const [seamOffsetDraft, setSeamOffsetDraft] = useState<string>(
+    formatCmInput(offsetDisplayCm)
+  );
+  const [seamOffsetError, setSeamOffsetError] = useState<string | null>(null);
+  const [isEditingSeamOffset, setIsEditingSeamOffset] = useState(false);
+
+  React.useEffect(() => {
+    if (isEditingSeamOffset) return;
+    setSeamOffsetDraft(formatCmInput(offsetDisplayCm));
+    setSeamOffsetError(null);
+  }, [isEditingSeamOffset, offsetDisplayCm, seamForSelection?.id]);
+
+  const applySeamOffsetDraft = (raw: string) => {
+    const cm = parseDecimalCm(raw);
+    if (cm == null) {
+      setSeamOffsetError("Valor inválido");
+      return;
+    }
+    const safe = clampMin(cm, 0.1);
+    updateSelectedSeamOffset(safe);
+    setSeamOffsetDraft(formatCmInput(safe));
+    setSeamOffsetError(null);
+  };
+
+  const bumpSeamOffset = (direction: 1 | -1) => {
+    const current = parseDecimalCm(seamOffsetDraft) ?? offsetDisplayCm;
+    const next = clampMin(current + direction * 0.1, 0.1);
+    updateSelectedSeamOffset(next);
+    setSeamOffsetDraft(formatCmInput(next));
+    setSeamOffsetError(null);
   };
 
   const selectedEdgeInfo =
@@ -87,15 +145,14 @@ export function PropertiesPanel() {
       setEdgeLengthDraft("");
       return;
     }
-    setEdgeLengthDraft(selectedEdgeInfo.lengthCm.toFixed(2));
+    setEdgeLengthDraft(formatCmInput(selectedEdgeInfo.lengthCm));
   }, [selectedEdgeInfo?.edge.id, selectedEdgeInfo?.lengthCm]);
 
   const applyEdgeLength = (raw: string) => {
     if (!selectedEdge || !selectedFigure) return;
-    const normalized = raw.trim().replace(",", ".");
-    const cm = Number(normalized);
-    if (!Number.isFinite(cm)) return;
-    const safeCm = Math.max(0.01, cm);
+    const cm = parseDecimalCm(raw);
+    if (cm == null) return;
+    const safeCm = clampMin(cm, 0.01);
 
     setFigures((prev) =>
       prev.map((f) => {
@@ -110,6 +167,46 @@ export function PropertiesPanel() {
         return updated ?? f;
       })
     );
+  };
+
+  const bumpEdgeLength = (direction: 1 | -1) => {
+    if (!selectedEdgeInfo) return;
+    const current = parseDecimalCm(edgeLengthDraft) ?? selectedEdgeInfo.lengthCm;
+    const next = clampMin(current + direction * 0.1, 0.01);
+    setEdgeLengthDraft(formatCmInput(next));
+    applyEdgeLength(String(next));
+  };
+
+  const [toolOffsetDraft, setToolOffsetDraft] = useState<string>(
+    formatCmInput(offsetValueCm)
+  );
+  const [toolOffsetError, setToolOffsetError] = useState<string | null>(null);
+  const [isEditingToolOffset, setIsEditingToolOffset] = useState(false);
+
+  React.useEffect(() => {
+    if (isEditingToolOffset) return;
+    setToolOffsetDraft(formatCmInput(offsetValueCm));
+    setToolOffsetError(null);
+  }, [isEditingToolOffset, offsetValueCm]);
+
+  const applyToolOffsetDraft = (raw: string) => {
+    const cm = parseDecimalCm(raw);
+    if (cm == null) {
+      setToolOffsetError("Valor inválido");
+      return;
+    }
+    const safe = clampMin(cm, 0.1);
+    setOffsetValueCm(safe);
+    setToolOffsetDraft(formatCmInput(safe));
+    setToolOffsetError(null);
+  };
+
+  const bumpToolOffset = (direction: 1 | -1) => {
+    const current = parseDecimalCm(toolOffsetDraft) ?? offsetValueCm;
+    const next = clampMin(current + direction * 0.1, 0.1);
+    setOffsetValueCm(next);
+    setToolOffsetDraft(formatCmInput(next));
+    setToolOffsetError(null);
   };
 
   // Show tool properties when no shape is selected but a tool is active
@@ -172,21 +269,65 @@ export function PropertiesPanel() {
                   </label>
                   <div className="flex items-center gap-2">
                     <input
-                      className="w-24 px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
-                      type="number"
-                      min={0.1}
-                      step={0.1}
-                      value={offsetDisplayCm}
+                      className={
+                        "w-24 " +
+                        inputBaseClass +
+                        " " +
+                        inputDisabledClass +
+                        " " +
+                        (seamOffsetError ? inputErrorClass : inputFocusClass)
+                      }
+                      type="text"
+                      inputMode="decimal"
+                      value={seamOffsetDraft}
+                      onFocus={() => setIsEditingSeamOffset(true)}
                       onChange={(e) => {
-                        const next = Number(e.target.value);
-                        if (!Number.isFinite(next)) return;
-                        updateSelectedSeamOffset(next);
+                        setSeamOffsetDraft(e.target.value);
+                        setSeamOffsetError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "ArrowUp") {
+                          e.preventDefault();
+                          bumpSeamOffset(1);
+                          return;
+                        }
+                        if (e.key === "ArrowDown") {
+                          e.preventDefault();
+                          bumpSeamOffset(-1);
+                          return;
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setIsEditingSeamOffset(false);
+                          setSeamOffsetDraft(formatCmInput(offsetDisplayCm));
+                          setSeamOffsetError(null);
+                        }
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          applySeamOffsetDraft(seamOffsetDraft);
+                          setIsEditingSeamOffset(false);
+                        }
+                      }}
+                      onWheel={(e) => {
+                        if (document.activeElement !== e.currentTarget) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        bumpSeamOffset(e.deltaY < 0 ? 1 : -1);
+                      }}
+                      onBlur={() => {
+                        applySeamOffsetDraft(seamOffsetDraft);
+                        setIsEditingSeamOffset(false);
                       }}
                     />
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                       cm
                     </span>
                   </div>
+                  {seamOffsetError ? (
+                    <p className="mt-2 text-xs text-red-600 dark:text-red-500">
+                      {seamOffsetError}
+                    </p>
+                  ) : null}
                   <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
                     {seamForSelection
                       ? "Edite a distância da margem desta peça."
@@ -209,16 +350,37 @@ export function PropertiesPanel() {
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <input
-                        className="w-24 px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
+                        className={
+                          "w-24 " +
+                          inputBaseClass +
+                          " " +
+                          inputFocusClass
+                        }
                         type="text"
                         inputMode="decimal"
                         value={edgeLengthDraft}
                         onChange={(e) => setEdgeLengthDraft(e.target.value)}
                         onKeyDown={(e) => {
+                          if (e.key === "ArrowUp") {
+                            e.preventDefault();
+                            bumpEdgeLength(1);
+                            return;
+                          }
+                          if (e.key === "ArrowDown") {
+                            e.preventDefault();
+                            bumpEdgeLength(-1);
+                            return;
+                          }
                           if (e.key === "Enter") {
                             e.preventDefault();
                             applyEdgeLength(edgeLengthDraft);
                           }
+                        }}
+                        onWheel={(e) => {
+                          if (document.activeElement !== e.currentTarget) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          bumpEdgeLength(e.deltaY < 0 ? 1 : -1);
                         }}
                         onBlur={() => applyEdgeLength(edgeLengthDraft)}
                       />
@@ -242,6 +404,14 @@ export function PropertiesPanel() {
                             <button
                               key={opt.key}
                               type="button"
+                              onPointerDown={(e) => {
+                                // Keep focus on the inline edge-length input when it's open.
+                                // Otherwise clicking here blurs the input and closes it.
+                                e.preventDefault();
+                              }}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                              }}
                               onClick={() =>
                                 selectedEdge
                                   ? setSelectedEdge({
@@ -288,14 +458,19 @@ export function PropertiesPanel() {
                       X
                     </span>
                     <input
-                      className="w-full pl-7 pr-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
+                      className={
+                        "w-full pl-7 pr-2 " +
+                        inputBaseClass +
+                        " " +
+                        inputDisabledClass
+                      }
                       type="number"
                       value={
                         selectedBounds
                           ? Number(pxToCm(selectedBounds.x).toFixed(2))
                           : 0
                       }
-                      readOnly
+                      disabled
                     />
                   </div>
                   <div className="relative group">
@@ -303,14 +478,19 @@ export function PropertiesPanel() {
                       Y
                     </span>
                     <input
-                      className="w-full pl-7 pr-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
+                      className={
+                        "w-full pl-7 pr-2 " +
+                        inputBaseClass +
+                        " " +
+                        inputDisabledClass
+                      }
                       type="number"
                       value={
                         selectedBounds
                           ? Number(pxToCm(selectedBounds.y).toFixed(2))
                           : 0
                       }
-                      readOnly
+                      disabled
                     />
                   </div>
                   <div className="relative group">
@@ -318,14 +498,19 @@ export function PropertiesPanel() {
                       L
                     </span>
                     <input
-                      className="w-full pl-7 pr-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
+                      className={
+                        "w-full pl-7 pr-2 " +
+                        inputBaseClass +
+                        " " +
+                        inputDisabledClass
+                      }
                       type="number"
                       value={
                         selectedBounds
                           ? Number(pxToCm(selectedBounds.width).toFixed(2))
                           : 0
                       }
-                      readOnly
+                      disabled
                     />
                   </div>
                   <div className="relative group">
@@ -333,14 +518,19 @@ export function PropertiesPanel() {
                       A
                     </span>
                     <input
-                      className="w-full pl-7 pr-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
+                      className={
+                        "w-full pl-7 pr-2 " +
+                        inputBaseClass +
+                        " " +
+                        inputDisabledClass
+                      }
                       type="number"
                       value={
                         selectedBounds
                           ? Number(pxToCm(selectedBounds.height).toFixed(2))
                           : 0
                       }
-                      readOnly
+                      disabled
                     />
                   </div>
                 </div>
@@ -439,21 +629,65 @@ export function PropertiesPanel() {
                   </label>
                   <div className="flex items-center gap-2">
                     <input
-                      className="w-24 px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:ring-1 focus:ring-primary focus:border-primary text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm"
-                      type="number"
-                      min={0.1}
-                      step={0.1}
-                      value={offsetValueCm}
+                      className={
+                        "w-24 " +
+                        inputBaseClass +
+                        " " +
+                        inputDisabledClass +
+                        " " +
+                        (toolOffsetError ? inputErrorClass : inputFocusClass)
+                      }
+                      type="text"
+                      inputMode="decimal"
+                      value={toolOffsetDraft}
+                      onFocus={() => setIsEditingToolOffset(true)}
                       onChange={(e) => {
-                        const next = Number(e.target.value);
-                        if (!Number.isFinite(next)) return;
-                        setOffsetValueCm(Math.max(0.1, next));
+                        setToolOffsetDraft(e.target.value);
+                        setToolOffsetError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "ArrowUp") {
+                          e.preventDefault();
+                          bumpToolOffset(1);
+                          return;
+                        }
+                        if (e.key === "ArrowDown") {
+                          e.preventDefault();
+                          bumpToolOffset(-1);
+                          return;
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setIsEditingToolOffset(false);
+                          setToolOffsetDraft(formatCmInput(offsetValueCm));
+                          setToolOffsetError(null);
+                        }
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          applyToolOffsetDraft(toolOffsetDraft);
+                          setIsEditingToolOffset(false);
+                        }
+                      }}
+                      onWheel={(e) => {
+                        if (document.activeElement !== e.currentTarget) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        bumpToolOffset(e.deltaY < 0 ? 1 : -1);
+                      }}
+                      onBlur={() => {
+                        applyToolOffsetDraft(toolOffsetDraft);
+                        setIsEditingToolOffset(false);
                       }}
                     />
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                       cm
                     </span>
                   </div>
+                  {toolOffsetError ? (
+                    <p className="mt-2 text-xs text-red-600 dark:text-red-500">
+                      {toolOffsetError}
+                    </p>
+                  ) : null}
                   <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
                     Clique em uma forma fechada para gerar a margem tracejada.
                   </p>
