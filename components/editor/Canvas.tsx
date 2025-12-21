@@ -1511,49 +1511,70 @@ export default function Canvas() {
   const lastPointerRef = useRef<Vec2 | null>(null);
   const lastPanClientRef = useRef<{ x: number; y: number } | null>(null);
   const lastPointerDownAtRef = useRef<number>(0);
-  const cursorBadgeRafRef = useRef<number | null>(null);
-  const cursorBadgePendingRef = useRef<{ x: number; y: number } | null>(null);
+  const cursorBadgeIdleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const cursorBadgeLastPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  const clearCursorBadgeIdleTimeout = useCallback(() => {
+    if (cursorBadgeIdleTimeoutRef.current) {
+      clearTimeout(cursorBadgeIdleTimeoutRef.current);
+      cursorBadgeIdleTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleCursorBadgeIdleShow = useCallback(() => {
+    clearCursorBadgeIdleTimeout();
+    cursorBadgeIdleTimeoutRef.current = setTimeout(() => {
+      if (cursorBadgeLastPosRef.current) {
+        setCursorBadge(cursorBadgeLastPosRef.current);
+      }
+    }, 1500);
+  }, [clearCursorBadgeIdleTimeout]);
+
+  const hideCursorBadge = useCallback(() => {
+    clearCursorBadgeIdleTimeout();
+    setCursorBadge(null);
+  }, [clearCursorBadgeIdleTimeout]);
 
   useEffect(() => {
     return () => {
-      if (cursorBadgeRafRef.current !== null) {
-        cancelAnimationFrame(cursorBadgeRafRef.current);
-        cursorBadgeRafRef.current = null;
-      }
+      clearCursorBadgeIdleTimeout();
     };
-  }, []);
+  }, [clearCursorBadgeIdleTimeout]);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
     const clear = () => {
-      cursorBadgePendingRef.current = null;
-      if (cursorBadgeRafRef.current !== null) {
-        cancelAnimationFrame(cursorBadgeRafRef.current);
-        cursorBadgeRafRef.current = null;
-      }
-      setCursorBadge(null);
+      cursorBadgeLastPosRef.current = null;
+      hideCursorBadge();
+    };
+
+    // Prevent browser scroll when using wheel inside canvas container
+    const preventScroll = (e: WheelEvent) => {
+      e.preventDefault();
     };
 
     el.addEventListener("pointerleave", clear);
     el.addEventListener("mouseleave", clear);
+    el.addEventListener("wheel", preventScroll, { passive: false });
     return () => {
       el.removeEventListener("pointerleave", clear);
       el.removeEventListener("mouseleave", clear);
+      el.removeEventListener("wheel", preventScroll);
     };
-  }, []);
+  }, [hideCursorBadge]); // hideCursorBadge needs to be defined or I should use setCursorBadge(null) directly
 
   useEffect(() => {
     // If the tool changes to one where the overlay is disabled, hide immediately.
-    if (tool === "select" || tool === "pan" || isPanning) {
+    if (tool === "select" || tool === "pan" || isPanning || !isToolCursorOverlayEnabled(tool)) {
+      clearCursorBadgeIdleTimeout();
       setCursorBadge(null);
-      cursorBadgePendingRef.current = null;
-      if (cursorBadgeRafRef.current !== null) {
-        cancelAnimationFrame(cursorBadgeRafRef.current);
-        cursorBadgeRafRef.current = null;
-      }
     }
+    // Intentionally omit helper callbacks from deps to keep the deps array size
+    // stable (avoid dev-time Fast Refresh hook warnings) and because they only
+    // touch refs/setState.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPanning, tool]);
 
   const positionRef = useRef(position);
@@ -2221,6 +2242,11 @@ export default function Canvas() {
       const pointer = stage.getPointerPosition();
       if (!pointer) return;
 
+      // Cursor badge (idle-only): hide during wheel/trackpad interaction.
+      cursorBadgeLastPosRef.current = { x: pointer.x, y: pointer.y };
+      setCursorBadge(null);
+      scheduleCursorBadgeIdleShow();
+
       // Trackpad pan is typically reported as wheel events with small deltas.
       // Pinch-zoom usually sets ctrlKey=true on macOS.
       const isTrackpadWheel =
@@ -2652,28 +2678,14 @@ export default function Canvas() {
         isToolCursorOverlayEnabled(tool) && !isPanning && !isTyping;
 
       if (shouldShowCursorBadge) {
-        cursorBadgePendingRef.current = { x: pos.x, y: pos.y };
-        if (cursorBadgeRafRef.current === null) {
-          cursorBadgeRafRef.current = requestAnimationFrame(() => {
-            cursorBadgeRafRef.current = null;
-            const pending = cursorBadgePendingRef.current;
-            if (!pending) return;
-            setCursorBadge((prev) => {
-              if (!prev) return pending;
-              if (Math.abs(prev.x - pending.x) > 1 || Math.abs(prev.y - pending.y) > 1) {
-                return pending;
-              }
-              return prev;
-            });
-          });
-        }
-      } else if (cursorBadge) {
-        cursorBadgePendingRef.current = null;
-        if (cursorBadgeRafRef.current !== null) {
-          cancelAnimationFrame(cursorBadgeRafRef.current);
-          cursorBadgeRafRef.current = null;
-        }
-        setCursorBadge(null);
+        cursorBadgeLastPosRef.current = { x: pos.x, y: pos.y };
+        // Hide immediately on move if visible
+        setCursorBadge((prev) => (prev ? null : prev));
+        // Schedule show after delay
+        scheduleCursorBadgeIdleShow();
+      } else {
+        cursorBadgeLastPosRef.current = null;
+        hideCursorBadge();
       }
 
       if (tool === "offset") {
@@ -4364,11 +4376,18 @@ export default function Canvas() {
           >
             <div
               className={
-                "flex items-center justify-center rounded bg-white/90 dark:bg-gray-900/85 border border-gray-200 dark:border-gray-700 shadow-subtle " +
-                "w-7 h-7"
+                "relative flex items-center justify-center rounded-full " +
+                "bg-surface-light/90 dark:bg-surface-dark/85 " +
+                "shadow-subtle w-8 h-8"
               }
             >
-              {getToolIcon(tool, "cursor")}
+              <span
+                className={
+                  "pointer-events-none absolute -inset-1 rounded-full " +
+                  "ring-2 ring-guide-neon/30 animate-pulse"
+                }
+              />
+              {getToolIcon(tool, "cursor", "w-5 h-5 text-guide-neon")}
             </div>
           </div>
         ) : null}

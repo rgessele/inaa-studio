@@ -37,11 +37,13 @@ function Svg({ className, strokeWidth = 1.5, children }: React.PropsWithChildren
 
 type ToolIconVariant = "cursor" | "toolbar";
 
-export function getToolIcon(tool: string, variant: ToolIconVariant): React.ReactNode | null {
-  const className =
+export function getToolIcon(tool: string, variant: ToolIconVariant, extraClassName?: string): React.ReactNode | null {
+  const baseClass =
     variant === "cursor"
       ? "w-4 h-4 text-gray-700 dark:text-gray-200"
       : "w-5 h-5 stroke-current";
+  
+  const className = extraClassName || baseClass;
   const strokeWidth = variant === "cursor" ? 1.5 : 1.5;
   return getToolIconInternal(tool, className, strokeWidth);
 }
