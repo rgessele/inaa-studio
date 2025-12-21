@@ -58,8 +58,88 @@ export function ToolModifiersOverlay() {
             active={isModifierActive(modifierKeys, tag.key)}
           />
         ))}
-        <ZoomIndicator scale={scale} />
+        <div className="flex items-center gap-2 pointer-events-auto">
+          <SystemStatus />
+          <ZoomIndicator scale={scale} />
+        </div>
       </div>
+    </div>
+  );
+}
+
+function StatusTooltip({ children, text }: { children: React.ReactNode; text: string }) {
+  return (
+    <div className="group relative flex items-center justify-center cursor-help">
+      {children}
+      <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1.5 bg-gray-900/90 dark:bg-gray-800/90 backdrop-blur-sm text-white text-[10px] rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 border border-white/10">
+        {text}
+        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900/90 dark:border-t-gray-800/90" />
+      </div>
+    </div>
+  );
+}
+
+function SystemStatus() {
+  const { figures } = useEditor();
+  const [fps, setFps] = useState(60);
+
+  useEffect(() => {
+    let frameCount = 0;
+    let lastTime = performance.now();
+    let rafId: number;
+
+    const loop = () => {
+      const now = performance.now();
+      frameCount++;
+      if (now - lastTime >= 1000) {
+        setFps(Math.round((frameCount * 1000) / (now - lastTime)));
+        frameCount = 0;
+        lastTime = now;
+      }
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  const figureCount = figures.length;
+  const nodeCount = figures.reduce((acc, f) => acc + f.nodes.length, 0);
+
+  let fpsColor = "text-emerald-600 dark:text-emerald-400";
+  if (fps < 30) fpsColor = "text-red-600 dark:text-red-400";
+  else if (fps < 50) fpsColor = "text-amber-600 dark:text-amber-400";
+
+  return (
+    <div
+      className={
+        "inline-flex h-6 items-center gap-2 rounded border px-2 text-[11px] font-medium leading-none " +
+        "bg-white/60 dark:bg-gray-900/55 border-gray-200/60 dark:border-gray-700/60 " +
+        "text-gray-500 dark:text-gray-400 tabular-nums"
+      }
+    >
+      <StatusTooltip text="Total de Figuras">
+        <div className="flex items-center gap-1">
+          <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>shapes</span>
+          <span>{figureCount}</span>
+        </div>
+      </StatusTooltip>
+      
+      <div className="w-px h-3 bg-gray-300 dark:bg-gray-700" />
+      
+      <StatusTooltip text="Total de Nós (Vértices)">
+        <div className="flex items-center gap-1">
+          <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>share</span>
+          <span>{nodeCount}</span>
+        </div>
+      </StatusTooltip>
+
+      <div className="w-px h-3 bg-gray-300 dark:bg-gray-700" />
+      
+      <StatusTooltip text="Quadros por segundo (FPS)">
+        <div className={`flex items-center gap-1 ${fpsColor}`}>
+          <span>{fps} FPS</span>
+        </div>
+      </StatusTooltip>
     </div>
   );
 }
@@ -68,9 +148,9 @@ function ZoomIndicator({ scale }: { scale: number }) {
   return (
     <div
       className={
-        "inline-flex items-center gap-2 rounded border px-2 py-1 text-[11px] leading-none " +
+        "inline-flex h-6 items-center gap-2 rounded border px-2 text-[11px] font-medium leading-none " +
         "bg-white/60 dark:bg-gray-900/55 border-gray-200/60 dark:border-gray-700/60 " +
-        "text-gray-600 dark:text-gray-300"
+        "text-gray-600 dark:text-gray-300 tabular-nums"
       }
     >
       <svg
@@ -87,7 +167,7 @@ function ZoomIndicator({ scale }: { scale: number }) {
           d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
         />
       </svg>
-      <span className="font-semibold tracking-wide">
+      <span className="tracking-wide">
         {Math.round(scale * 100)}%
       </span>
     </div>
