@@ -38,7 +38,7 @@ function ModifierTagChip({
 }
 
 export function ToolModifiersOverlay() {
-  const { tool, modifierKeys } = useEditor();
+  const { tool, modifierKeys, scale } = useEditor();
 
   // Hydration-safe: render a stable default first, then refine on client.
   const [platform, setPlatform] = useState<PlatformKind>("win");
@@ -46,8 +46,6 @@ export function ToolModifiersOverlay() {
     setPlatform(detectPlatformKind());
   }, []);
   const tags = TOOL_MODIFIER_TAGS[tool] ?? [];
-
-  if (tags.length === 0) return null;
 
   return (
     <div className="absolute bottom-3 right-3 z-20 pointer-events-none select-none">
@@ -60,7 +58,38 @@ export function ToolModifiersOverlay() {
             active={isModifierActive(modifierKeys, tag.key)}
           />
         ))}
+        <ZoomIndicator scale={scale} />
       </div>
+    </div>
+  );
+}
+
+function ZoomIndicator({ scale }: { scale: number }) {
+  return (
+    <div
+      className={
+        "inline-flex items-center gap-2 rounded border px-2 py-1 text-[11px] leading-none " +
+        "bg-white/60 dark:bg-gray-900/55 border-gray-200/60 dark:border-gray-700/60 " +
+        "text-gray-600 dark:text-gray-300"
+      }
+    >
+      <svg
+        className="w-3 h-3"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+        />
+      </svg>
+      <span className="font-semibold tracking-wide">
+        {Math.round(scale * 100)}%
+      </span>
     </div>
   );
 }
