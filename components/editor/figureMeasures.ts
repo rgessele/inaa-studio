@@ -22,6 +22,10 @@ export type FigureMeasures = {
     radiusPx?: number;
     diameterPx?: number;
   };
+  rect?: {
+    widthPx: number;
+    heightPx: number;
+  };
   curve?: {
     lengthPx: number;
     tangentAngleDegAtMid?: number;
@@ -178,6 +182,25 @@ export function computeFigureMeasures(figure: Figure): FigureMeasures {
 
     // Prefer polyline length for curve (more stable across multi-edge curves)
     measures.figureLengthPx = lengthPx;
+  }
+
+  if (figure.tool === "rectangle") {
+    const pts = figure.nodes.map((n) => ({ x: n.x, y: n.y }));
+    if (pts.length) {
+      let minX = pts[0].x;
+      let maxX = pts[0].x;
+      let minY = pts[0].y;
+      let maxY = pts[0].y;
+      for (const p of pts) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+      const widthPx = Math.max(0, maxX - minX);
+      const heightPx = Math.max(0, maxY - minY);
+      measures.rect = { widthPx, heightPx };
+    }
   }
 
   return measures;

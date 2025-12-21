@@ -19,6 +19,7 @@ export function Minimap() {
     setShowMinimap,
     setPosition,
     getStage,
+    selectedFigureIds,
   } = useEditor();
 
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
@@ -36,16 +37,28 @@ export function Minimap() {
     };
 
     updateSize();
-    // We can't easily listen to stage resize if it's driven by window resize in Canvas.tsx
-    // But Canvas.tsx updates size state.
-    // A simple polling or resize observer on window might be enough for now.
+    
+    // Retry getting stage size if it wasn't available initially
+    const interval = setInterval(() => {
+      const s = getStage();
+      if (s && (stageSize.width === 0 || stageSize.height === 0)) {
+        setStageSize({
+          width: s.width(),
+          height: s.height(),
+        });
+      }
+    }, 500);
+
     const onResize = () => {
       // Small delay to let Canvas update first
       setTimeout(updateSize, 100);
     };
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [getStage]);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      clearInterval(interval);
+    };
+  }, [getStage, stageSize.width, stageSize.height]);
 
   // Calculate world bounds of all figures
   const worldBounds = useMemo(() => {
@@ -202,6 +215,7 @@ export function Minimap() {
             // For performance, we can just draw the polyline or even a bounding box
             // Let's try polyline first, it's nicer
             const flatPoints = figureLocalPolyline(f, 1); // Low detail
+            const isSelected = selectedFigureIds.includes(f.id);
 
             return (
               <Line
@@ -212,8 +226,8 @@ export function Minimap() {
                 scaleX={minimapScale}
                 scaleY={minimapScale}
                 rotation={f.rotation}
-                stroke="#9ca3af" // gray-400
-                strokeWidth={1 / minimapScale} // Constant width in screen pixels
+                stroke={isSelected ? "#2563eb" : "#9ca3af"} // blue-600 if selected, else gray-400
+                strokeWidth={isSelected ? 2 / minimapScale : 1 / minimapScale}
                 listening={false}
                 perfectDrawEnabled={false}
               />

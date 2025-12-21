@@ -1,4 +1,4 @@
-import type { Figure, FigureNode } from "./types";
+import type { Figure, FigureEdge, FigureNode } from "./types";
 import { add, rotate, rotateInv, sampleCubic, sub, type Vec2 } from "./figureGeometry";
 
 function toPointArray(points: Vec2[]): number[] {
@@ -11,6 +11,30 @@ function toPointArray(points: Vec2[]): number[] {
 
 function getNode(nodes: FigureNode[], id: string): FigureNode | undefined {
   return nodes.find((n) => n.id === id);
+}
+
+export function figureCentroidLocal(figure: Figure): Vec2 {
+  if (!figure.nodes.length) return { x: 0, y: 0 };
+  const sum = figure.nodes.reduce(
+    (acc, n) => ({ x: acc.x + n.x, y: acc.y + n.y }),
+    { x: 0, y: 0 }
+  );
+  return { x: sum.x / figure.nodes.length, y: sum.y / figure.nodes.length };
+}
+
+export function edgeLocalPoints(figure: Figure, edge: FigureEdge, steps: number): Vec2[] {
+  const a = getNode(figure.nodes, edge.from);
+  const b = getNode(figure.nodes, edge.to);
+  if (!a || !b) return [];
+
+  const p0: Vec2 = { x: a.x, y: a.y };
+  const p3: Vec2 = { x: b.x, y: b.y };
+
+  if (edge.kind === "line") return [p0, p3];
+
+  const p1: Vec2 = a.outHandle ? { x: a.outHandle.x, y: a.outHandle.y } : p0;
+  const p2: Vec2 = b.inHandle ? { x: b.inHandle.x, y: b.inHandle.y } : p3;
+  return sampleCubic(p0, p1, p2, p3, steps);
 }
 
 export function figureLocalPolyline(figure: Figure, cubicSteps: number = 30): number[] {

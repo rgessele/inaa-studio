@@ -198,6 +198,10 @@ export interface Figure {
       radiusPx?: number;
       diameterPx?: number;
     };
+    rect?: {
+      widthPx: number;
+      heightPx: number;
+    };
     curve?: {
       lengthPx: number;
       tangentAngleDegAtMid?: number;
