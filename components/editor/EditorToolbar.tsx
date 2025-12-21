@@ -43,6 +43,8 @@ export function EditorToolbar() {
     setNodesDisplayMode,
     magnetEnabled,
     setMagnetEnabled,
+    showMinimap,
+    setShowMinimap,
     selectedFigureId,
     deleteSelected,
   } = useEditor();

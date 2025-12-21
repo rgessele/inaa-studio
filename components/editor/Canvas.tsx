@@ -30,6 +30,7 @@ import {
   markCurveCustomSnapshotDirtyIfPresent,
 } from "./styledCurves";
 import { Ruler } from "./Ruler";
+import { Minimap } from "./Minimap";
 
 const MIN_ZOOM_SCALE = 0.1;
 const MAX_ZOOM_SCALE = 10;
@@ -4369,6 +4370,7 @@ export default function Canvas() {
             : "absolute inset-0"
         }
       >
+        <Minimap />
         {cursorBadge && getToolIcon(tool, "cursor") ? (
           <div
             className="pointer-events-none absolute z-50"

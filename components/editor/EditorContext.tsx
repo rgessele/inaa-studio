@@ -93,6 +93,9 @@ interface EditorContextType {
   magnetEnabled: boolean;
   setMagnetEnabled: (enabled: boolean) => void;
 
+  showMinimap: boolean;
+  setShowMinimap: (show: boolean) => void;
+
   measureSnapStrengthPx: number;
   setMeasureSnapStrengthPx: (strengthPx: number) => void;
 
@@ -299,6 +302,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     MEASURE_SNAP_MIN_PX
   );
 
+  const [showMinimap, setShowMinimapState] = useState(false);
+
   // Offset tool state (default 1cm for seam allowance)
   const [offsetValueCm, setOffsetValueCm] = useState(1);
   const [offsetTargetId, setOffsetTargetId] = useState<string | null>(null);
@@ -349,6 +354,24 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     },
     []
   );
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("inaa:showMinimap");
+      if (raw === "true") setShowMinimapState(true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setShowMinimap = useCallback((show: boolean) => {
+    setShowMinimapState(show);
+    try {
+      localStorage.setItem("inaa:showMinimap", String(show));
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const setMeasureSnapStrengthPx = useCallback(
     (strengthPx: number) => {
@@ -714,6 +737,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
         magnetEnabled,
         setMagnetEnabled,
+
+        showMinimap,
+        setShowMinimap,
 
         measureSnapStrengthPx,
         setMeasureSnapStrengthPx,
