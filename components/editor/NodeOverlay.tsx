@@ -36,6 +36,7 @@ const NodeOverlayRenderer = ({
           key={n.id}
           x={n.x}
           y={n.y}
+          name="inaa-node-point"
           radius={r}
           fill={fill}
           stroke={stroke}

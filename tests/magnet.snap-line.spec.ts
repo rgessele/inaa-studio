@@ -35,7 +35,7 @@ test("imã: linha faz snap no contorno de outra figura", async ({ page }) => {
   const stageCanvas = page
     .getByTestId("editor-stage-container")
     .locator("canvas")
-    .first();
+    .last();
   await expect(stageCanvas).toBeVisible();
   await expect
     .poll(async () => {

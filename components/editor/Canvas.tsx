@@ -3346,6 +3346,7 @@ export default function Canvas() {
                 x={n.x}
                 y={n.y}
                 radius={rNodeHit}
+                name="inaa-node-point"
                 fill="#000000"
                 opacity={0.001}
                 draggable

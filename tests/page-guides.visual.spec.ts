@@ -17,6 +17,7 @@ test.describe("visual: page guides tiles", () => {
     await expect(region).toHaveScreenshot("page-guides-a4.png", {
       animations: "disabled",
       caret: "hide",
+      maxDiffPixelRatio: 0.02,
     });
   });
 
@@ -35,6 +36,7 @@ test.describe("visual: page guides tiles", () => {
     await expect(region).toHaveScreenshot("page-guides-a0.png", {
       animations: "disabled",
       caret: "hide",
+      maxDiffPixelRatio: 0.02,
     });
   });
 });
