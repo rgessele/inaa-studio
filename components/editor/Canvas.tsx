@@ -3306,106 +3306,9 @@ export default function Canvas() {
     return nodes.length ? <>{nodes}</> : null;
   }, [curveDraft, draft, isDark, measureDisplayMode, scale]);
 
-  const seamLabelsOverlay = useMemo(() => {
-    if (measureDisplayMode === "never" && tool !== "offset") return null;
-
-    const fontSize = 11 / scale;
-    const offset = 10 / scale;
-    const textWidth = 240 / scale;
-    const fill = resolveAci7(isDark);
-    const opacity = 0.75;
-
-    const byId = new Map(figures.map((f) => [f.id, f] as const));
-    const labels: React.ReactNode[] = [];
-
-    for (const seam of figures) {
-      if (seam.kind !== "seam" || !seam.parentId) continue;
-      const base = byId.get(seam.parentId) ?? null;
-
-      const flat = figureLocalPolyline(seam, 60);
-      if (flat.length < 4) continue;
-      const pts: Vec2[] = [];
-      for (let i = 0; i < flat.length; i += 2) {
-        pts.push({ x: flat[i], y: flat[i + 1] });
-      }
-
-      if (pts.length >= 2 && dist(pts[0], pts[pts.length - 1]) < 1e-6) {
-        pts.pop();
-      }
-      if (pts.length < 2) continue;
-
-      // Strategy A: pick the longest segment.
-      let bestA: Vec2 | null = null;
-      let bestB: Vec2 | null = null;
-      let bestLen = -1;
-      for (let i = 0; i < pts.length - 1; i++) {
-        const a = pts[i];
-        const b = pts[i + 1];
-        const l = dist(a, b);
-        if (l > bestLen) {
-          bestLen = l;
-          bestA = a;
-          bestB = b;
-        }
-      }
-      if (seam.closed && pts.length >= 2) {
-        const a = pts[pts.length - 1];
-        const b = pts[0];
-        const l = dist(a, b);
-        if (l > bestLen) {
-          bestLen = l;
-          bestA = a;
-          bestB = b;
-        }
-      }
-
-      if (!bestA || !bestB || bestLen <= 1e-6) continue;
-
-      const mid = lerp(bestA, bestB, 0.5);
-      const tangent = sub(bestB, bestA);
-      const n = norm(perp(tangent));
-
-      const centroid = base
-        ? figureCentroidLocal(base)
-        : figureCentroidLocal(seam);
-      const p1 = add(mid, mul(n, offset));
-      const p2 = add(mid, mul(n, -offset));
-      const p = dist(p1, centroid) >= dist(p2, centroid) ? p1 : p2;
-
-      const rawAngleDeg = (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
-      const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
-
-      const label = `Margem de Costura: ${formatSeamLabelCm(seam.offsetCm ?? 0)}`;
-
-      labels.push(
-        <Group
-          key={`seamlabel:${seam.id}`}
-          x={getRuntimeFigureTransform(seam).x}
-          y={getRuntimeFigureTransform(seam).y}
-          rotation={getRuntimeFigureTransform(seam).rotation}
-          listening={false}
-        >
-          <Text
-            x={p.x}
-            y={p.y}
-            offsetX={textWidth / 2}
-            offsetY={fontSize / 2}
-            rotation={angleDeg}
-            width={textWidth}
-            align="center"
-            text={label}
-            fontSize={fontSize}
-            fill={fill}
-            opacity={opacity}
-            listening={false}
-            name="inaa-seam-label"
-          />
-        </Group>
-      );
-    }
-
-    return labels.length ? <>{labels}</> : null;
-  }, [figures, getRuntimeFigureTransform, isDark, measureDisplayMode, scale, tool]);
+  const figuresById = useMemo(() => {
+    return new Map(figures.map((f) => [f.id, f] as const));
+  }, [figures]);
 
   const nodeOverlay = useMemo(() => {
     if (tool !== "node" || !selectedFigure) return null;
@@ -4253,7 +4156,22 @@ export default function Canvas() {
                 fig.id === selectedFigureId ||
                 fig.id === hoveredFigureId);
 
-            const showMeasures = measureDisplayMode !== "never" && fig.kind !== "seam";
+            const showMeasures =
+              measureDisplayMode !== "never" && fig.kind !== "seam";
+
+            const showSeamLabel =
+              fig.kind === "seam" &&
+              (measureDisplayMode !== "never" || tool === "offset");
+
+            const seamBaseCentroidLocal = showSeamLabel
+              ? (() => {
+                  const base = fig.parentId
+                    ? (figuresById.get(fig.parentId) ?? null)
+                    : null;
+                  const c = base ? figureCentroidLocal(base) : figureCentroidLocal(fig);
+                  return c;
+                })()
+              : null;
 
             return (
               <MemoizedFigure
@@ -4280,6 +4198,8 @@ export default function Canvas() {
                 draggable={tool === "select" && selectedIdsSet.has(baseId)}
                 showNodes={showNodes}
                 showMeasures={showMeasures}
+                showSeamLabel={showSeamLabel}
+                seamBaseCentroidLocal={seamBaseCentroidLocal}
                 isDark={isDark}
                 selectedEdge={selectedEdge}
                 hoveredEdge={hoveredMeasureEdge}
@@ -4650,8 +4570,6 @@ export default function Canvas() {
           {curveDraftPreview}
 
           {draftMeasuresOverlay}
-
-          {seamLabelsOverlay}
 
           {edgeHoverOverlay}
 

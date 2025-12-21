@@ -4,6 +4,7 @@ import { Figure } from "./types";
 import { figureLocalPolyline } from "./figurePath";
 import { MemoizedNodeOverlay } from "./NodeOverlay";
 import { MemoizedMeasureOverlay } from "./MeasureOverlay";
+import { MemoizedSeamLabel } from "./SeamLabel";
 import { SelectedEdge } from "./EditorContext";
 
 interface FigureRendererProps {
@@ -27,6 +28,8 @@ interface FigureRendererProps {
   name?: string;
   showNodes?: boolean;
   showMeasures?: boolean;
+  showSeamLabel?: boolean;
+  seamBaseCentroidLocal?: { x: number; y: number } | null;
   isDark?: boolean;
   selectedEdge?: SelectedEdge | null;
   hoveredEdge?: { figureId: string; edgeId: string } | null;
@@ -53,6 +56,8 @@ const FigureRenderer = ({
   name,
   showNodes,
   showMeasures,
+  showSeamLabel,
+  seamBaseCentroidLocal,
   isDark = false,
   selectedEdge = null,
   hoveredEdge = null,
@@ -113,6 +118,15 @@ const FigureRenderer = ({
           hoveredEdge={hoveredEdge}
         />
       )}
+      {figure.kind === "seam" && (
+        <MemoizedSeamLabel
+          seam={figure}
+          baseCentroidLocal={seamBaseCentroidLocal ?? null}
+          scale={scale}
+          isDark={isDark}
+          enabled={!!showSeamLabel}
+        />
+      )}
     </Group>
   );
 };
@@ -132,9 +146,12 @@ const arePropsEqual = (prev: FigureRendererProps, next: FigureRendererProps) => 
     prev.draggable === next.draggable &&
     prev.showNodes === next.showNodes &&
     prev.showMeasures === next.showMeasures &&
+    prev.showSeamLabel === next.showSeamLabel &&
     prev.isDark === next.isDark &&
     prev.selectedEdge === next.selectedEdge &&
     prev.hoveredEdge === next.hoveredEdge &&
+    prev.seamBaseCentroidLocal?.x === next.seamBaseCentroidLocal?.x &&
+    prev.seamBaseCentroidLocal?.y === next.seamBaseCentroidLocal?.y &&
     prev.figure === next.figure && // Reference check for figure
     prev.figure.fill === next.figure.fill && // Check fill specifically
     prev.figure.closed === next.figure.closed && // Check closed specifically
