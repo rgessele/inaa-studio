@@ -12,6 +12,14 @@
     {
       "id": "editor.boot",
       "title": "Editor abre e renderiza",
+    {
+      "feature": "Seleção: clique no preenchimento seleciona figura (tool V)",
+      "tests": ["select.fill-hit.spec.ts"]
+    },
+    {
+      "feature": "Offset: seam label move ao arrastar", 
+      "tests": ["offset.seam-label.drag.spec.ts"]
+    },
       "risk": "high",
       "e2e": ["tests/editor.smoke.spec.ts"],
       "notes": "Cobre bypass E2E, toolbar e canvas."

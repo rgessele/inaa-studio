@@ -625,6 +625,18 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           return 0;
         }
       },
+      getStageNodeAbsolutePositionsByName: (name: string) => {
+        const stage = stageRef.current;
+        if (!stage) return [];
+        try {
+          return stage.find(`.${name}`).map((node) => {
+            const p = node.getAbsolutePosition();
+            return { x: p.x, y: p.y };
+          });
+        } catch {
+          return [];
+        }
+      },
       addTestRectangle,
       loadTestProject,
     };

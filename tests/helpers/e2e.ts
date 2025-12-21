@@ -57,6 +57,9 @@ declare global {
         projectName: string;
       };
       countStageNodesByName?: (name: string) => number;
+      getStageNodeAbsolutePositionsByName?: (
+        name: string
+      ) => Array<{ x: number; y: number }>;
       getFiguresSnapshot?: () => Array<{
         id: string;
         tool: string;
