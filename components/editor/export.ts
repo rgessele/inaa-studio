@@ -8,6 +8,10 @@ import {
 } from "./exportSettings";
 import type { Figure } from "./types";
 import { figureWorldBoundingBox, figureWorldPolyline } from "./figurePath";
+import { figureLocalToWorld } from "./figurePath";
+import type { PointLabelsMode } from "./types";
+import { computeNodeLabels } from "./pointLabels";
+import { figureCentroidLocal } from "./figurePath";
 
 export type {
   ExportSettings,
@@ -21,6 +25,11 @@ export {
 } from "./exportSettings";
 
 type BoundingBox = { x: number; y: number; width: number; height: number };
+
+type PointLabelsExportOptions = {
+  includePointLabels?: boolean;
+  pointLabelsMode?: PointLabelsMode;
+};
 
 // Crop mark size in cm
 function intersectsRect(a: BoundingBox, b: BoundingBox): boolean {
@@ -111,10 +120,19 @@ export async function generateTiledPDF(
   figures: Figure[],
   _hideGrid: () => void,
   _showGrid: () => void,
-  settings?: Partial<ExportSettings>
+  settings?: Partial<ExportSettings>,
+  options?: PointLabelsExportOptions
 ): Promise<void> {
   const resolved = resolveExportSettings(settings);
   const filtered = filterFiguresBySettings(figures, resolved);
+
+  const shouldIncludePointLabels =
+    options?.includePointLabels === true &&
+    options.pointLabelsMode &&
+    options.pointLabelsMode !== "off";
+  const nodeLabelsByFigureId = shouldIncludePointLabels
+    ? computeNodeLabels(filtered, options!.pointLabelsMode!)
+    : new Map<string, Record<string, string>>();
 
   if (filtered.length === 0) {
     alert("Não há nada para exportar. Desenhe algo primeiro.");
@@ -234,6 +252,56 @@ export async function generateTiledPDF(
           lineJoin: "round",
         })
       );
+
+      if (shouldIncludePointLabels) {
+        const labels = nodeLabelsByFigureId.get(figure.id);
+        if (!labels) return;
+
+        const fontSize = 14;
+        const centroid = figureCentroidLocal(figure);
+        const offsetDistLocal = 14;
+
+        for (const node of figure.nodes) {
+          const text = labels[node.id];
+          if (!text) continue;
+
+          const dx = node.x - centroid.x;
+          const dy = node.y - centroid.y;
+          const len = Math.hypot(dx, dy);
+          const dir =
+            len > 1e-6
+              ? { x: dx / len, y: dy / len }
+              : { x: 0.707106781, y: -0.707106781 };
+
+          const posLocal = {
+            x: node.x + dir.x * offsetDistLocal,
+            y: node.y + dir.y * offsetDistLocal,
+          };
+
+          const worldPos = figureLocalToWorld(figure, posLocal);
+          const alignRight = dx < 0;
+          const approxWidth = Math.max(12, text.length * fontSize * 0.62);
+
+          tileLayer.add(
+            new Konva.Text({
+              x: worldPos.x - tileX,
+              y: worldPos.y - tileY,
+              text: text.toUpperCase(),
+              fontSize,
+              fontStyle: "bold",
+              fill: "#000000",
+              opacity: 0.35,
+              rotation: figure.rotation || 0,
+              width: approxWidth,
+              align: alignRight ? "right" : "left",
+              offsetX: alignRight ? approxWidth : 0,
+              offsetY: fontSize / 2,
+              listening: false,
+              name: "inaa-point-label",
+            })
+          );
+        }
+      }
     });
 
     tileLayer.draw();
@@ -265,10 +333,19 @@ export async function generateTiledPDF(
  */
 export function generateSVG(
   figures: Figure[],
-  settings?: Partial<ExportSettings>
+  settings?: Partial<ExportSettings>,
+  options?: PointLabelsExportOptions
 ): void {
   const resolved = resolveExportSettings(settings);
   const filtered = filterFiguresBySettings(figures, resolved);
+
+  const shouldIncludePointLabels =
+    options?.includePointLabels === true &&
+    options.pointLabelsMode &&
+    options.pointLabelsMode !== "off";
+  const nodeLabelsByFigureId = shouldIncludePointLabels
+    ? computeNodeLabels(filtered, options!.pointLabelsMode!)
+    : new Map<string, Record<string, string>>();
 
   if (filtered.length === 0) {
     alert("Não há nada para exportar. Desenhe algo primeiro.");
@@ -305,6 +382,45 @@ export function generateSVG(
     svg += `  <path d="${d}" stroke="#000" stroke-width="${strokeWidth}" fill="none"`;
     if (dashArray) svg += ` stroke-dasharray="${dashArray}"`;
     svg += ` />\n`;
+
+    if (shouldIncludePointLabels) {
+      const labels = nodeLabelsByFigureId.get(fig.id);
+      if (!labels) continue;
+
+      const fontSize = 14;
+      const centroid = figureCentroidLocal(fig);
+      const offsetDistLocal = 14;
+
+      for (const node of fig.nodes) {
+        const text = labels[node.id];
+        if (!text) continue;
+
+        const dx = node.x - centroid.x;
+        const dy = node.y - centroid.y;
+        const len = Math.hypot(dx, dy);
+        const dir =
+          len > 1e-6
+            ? { x: dx / len, y: dy / len }
+            : { x: 0.707106781, y: -0.707106781 };
+
+        const posLocal = {
+          x: node.x + dir.x * offsetDistLocal,
+          y: node.y + dir.y * offsetDistLocal,
+        };
+
+        const worldPos = figureLocalToWorld(fig, posLocal);
+        const rot = fig.rotation || 0;
+        const anchor = dx < 0 ? "end" : "start";
+
+        svg += `  <text class="inaa-point-label" x="${worldPos.x}" y="${worldPos.y}"`;
+        svg += ` font-family="sans-serif" font-size="${fontSize}" font-weight="700"`;
+        svg += ` fill="#000" fill-opacity="0.35" text-anchor="${anchor}" dominant-baseline="middle"`;
+        if (rot) {
+          svg += ` transform="rotate(${rot} ${worldPos.x} ${worldPos.y})"`;
+        }
+        svg += `>${text.toUpperCase()}</text>\n`;
+      }
+    }
   }
 
   svg += `</svg>`;

@@ -14,6 +14,7 @@ import {
   Tool,
   type MeasureDisplayMode,
   type NodesDisplayMode,
+  type PointLabelsMode,
   type PageGuideSettings,
   type GuideLine,
   type GuideOrientation,
@@ -89,6 +90,9 @@ interface EditorContextType {
 
   nodesDisplayMode: NodesDisplayMode;
   setNodesDisplayMode: (mode: NodesDisplayMode) => void;
+
+  pointLabelsMode: PointLabelsMode;
+  setPointLabelsMode: (mode: PointLabelsMode) => void;
 
   magnetEnabled: boolean;
   setMagnetEnabled: (enabled: boolean) => void;
@@ -176,6 +180,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [nodesDisplayMode, setNodesDisplayModeState] = useState<NodesDisplayMode>(
     "never"
   );
+
+  const [pointLabelsMode, setPointLabelsMode] = useState<PointLabelsMode>("off");
 
   const [magnetEnabled, setMagnetEnabledState] = useState(false);
 
@@ -591,6 +597,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         measureSnapStrengthPx,
         measureDisplayMode,
         nodesDisplayMode,
+        pointLabelsMode,
         magnetEnabled,
         guidesCount: guides.length,
         projectId,
@@ -646,6 +653,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     magnetEnabled,
     measureDisplayMode,
     nodesDisplayMode,
+    pointLabelsMode,
     measureSnapStrengthPx,
     pageGuideSettings,
     projectId,
@@ -746,6 +754,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
         nodesDisplayMode,
         setNodesDisplayMode,
+
+        pointLabelsMode,
+        setPointLabelsMode,
 
         magnetEnabled,
         setMagnetEnabled,

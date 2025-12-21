@@ -52,6 +52,12 @@ declare global {
         measureSnapStrengthPx: number;
         measureDisplayMode: "never" | "always" | "hover";
         nodesDisplayMode: "never" | "always" | "hover";
+        pointLabelsMode:
+          | "off"
+          | "numGlobal"
+          | "numPerFigure"
+          | "alphaGlobal"
+          | "alphaPerFigure";
         magnetEnabled: boolean;
         projectId: string | null;
         projectName: string;

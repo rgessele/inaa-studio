@@ -43,6 +43,7 @@ import {
 import { Ruler } from "./Ruler";
 import { Minimap } from "./Minimap";
 import { MemoizedFigure } from "./FigureRenderer";
+import { computeNodeLabels } from "./pointLabels";
 import { MemoizedMeasureOverlay } from "./MeasureOverlay";
 
 const MIN_ZOOM_SCALE = 0.1;
@@ -1213,6 +1214,7 @@ export default function Canvas() {
     measureSnapStrengthPx,
     measureDisplayMode,
     nodesDisplayMode,
+    pointLabelsMode,
     magnetEnabled,
     showRulers,
     guides,
@@ -1229,6 +1231,10 @@ export default function Canvas() {
     showPageGuides,
     pageGuideSettings,
   } = useEditor();
+
+  const nodeLabelsByFigureId = React.useMemo(() => {
+    return computeNodeLabels(figures, pointLabelsMode);
+  }, [figures, pointLabelsMode]);
 
   const prevToolRef = useRef(tool);
 
@@ -4189,6 +4195,8 @@ export default function Canvas() {
                 draggable={tool === "select" && selectedIdsSet.has(baseId)}
                 showNodes={showNodes}
                 showMeasures={showMeasures}
+                pointLabelsMode={pointLabelsMode}
+                pointLabelsByNodeId={nodeLabelsByFigureId.get(fig.id) ?? null}
                 showSeamLabel={showSeamLabel}
                 seamBaseCentroidLocal={seamBaseCentroidLocal}
                 isDark={isDark}

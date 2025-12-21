@@ -1,5 +1,5 @@
 import React from "react";
-import { Group, Line } from "react-konva";
+import { Group, Line, Text } from "react-konva";
 import type Konva from "konva";
 import { Figure } from "./types";
 import { figureLocalPolyline } from "./figurePath";
@@ -7,6 +7,7 @@ import { MemoizedNodeOverlay } from "./NodeOverlay";
 import { MemoizedMeasureOverlay } from "./MeasureOverlay";
 import { MemoizedSeamLabel } from "./SeamLabel";
 import { SelectedEdge } from "./EditorContext";
+import type { PointLabelsMode } from "./types";
 
 interface FigureRendererProps {
   figure: Figure;
@@ -29,11 +30,17 @@ interface FigureRendererProps {
   name?: string;
   showNodes?: boolean;
   showMeasures?: boolean;
+  pointLabelsMode?: PointLabelsMode;
+  pointLabelsByNodeId?: Record<string, string> | null;
   showSeamLabel?: boolean;
   seamBaseCentroidLocal?: { x: number; y: number } | null;
   isDark?: boolean;
   selectedEdge?: SelectedEdge | null;
   hoveredEdge?: { figureId: string; edgeId: string } | null;
+}
+
+function resolveAci7(isDark: boolean): string {
+  return isDark ? "#ffffff" : "#000000";
 }
 
 const FigureRenderer = ({
@@ -57,6 +64,8 @@ const FigureRenderer = ({
   name,
   showNodes,
   showMeasures,
+  pointLabelsMode = "off",
+  pointLabelsByNodeId = null,
   showSeamLabel,
   seamBaseCentroidLocal,
   isDark = false,
@@ -68,6 +77,11 @@ const FigureRenderer = ({
   // Note: figureLocalPolyline depends on figure.nodes and figure.closed.
   // We assume 'figure' prop reference changes when these change.
   const pts = React.useMemo(() => figureLocalPolyline(figure, 60), [figure]);
+
+  const pointLabelFill = resolveAci7(isDark);
+  const pointLabelOpacity = 0.35;
+  const pointLabelFontSize = 15 / scale;
+  const pointLabelOffsetDist = 14 / scale;
 
   return (
     <Group
@@ -119,6 +133,62 @@ const FigureRenderer = ({
           hoveredEdge={hoveredEdge}
         />
       )}
+
+      {figure.kind !== "seam" && pointLabelsMode !== "off" && pointLabelsByNodeId ? (
+        <>
+          {figure.nodes.map((n) => {
+            const text = pointLabelsByNodeId[n.id];
+            if (!text) return null;
+
+            // Place label "outside" the figure: offset away from centroid.
+            const centroid = (() => {
+              if (!figure.nodes.length) return { x: 0, y: 0 };
+              const sum = figure.nodes.reduce(
+                (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
+                { x: 0, y: 0 }
+              );
+              return { x: sum.x / figure.nodes.length, y: sum.y / figure.nodes.length };
+            })();
+
+            const dx = n.x - centroid.x;
+            const dy = n.y - centroid.y;
+            const len = Math.hypot(dx, dy);
+            const dir =
+              len > 1e-6
+                ? { x: dx / len, y: dy / len }
+                : { x: 0.707106781, y: -0.707106781 };
+
+            const px = n.x + dir.x * pointLabelOffsetDist;
+            const py = n.y + dir.y * pointLabelOffsetDist;
+
+            const alignRight = dx < 0;
+            const approxWidth = Math.max(
+              12 / scale,
+              text.length * pointLabelFontSize * 0.62
+            );
+
+            return (
+              <Text
+                key={`pl:${figure.id}:${n.id}`}
+                x={px}
+                y={py}
+                text={text.toUpperCase()}
+                fontSize={pointLabelFontSize}
+                fontStyle="bold"
+                fill={pointLabelFill}
+                opacity={pointLabelOpacity}
+                width={approxWidth}
+                align={alignRight ? "right" : "left"}
+                offsetX={alignRight ? approxWidth : 0}
+                offsetY={pointLabelFontSize / 2}
+                listening={false}
+                name="inaa-point-label"
+              />
+            );
+          })}
+        </>
+      ) : null}
+
       {figure.kind === "seam" && (
         <MemoizedSeamLabel
           seam={figure}
@@ -147,6 +217,8 @@ const arePropsEqual = (prev: FigureRendererProps, next: FigureRendererProps) => 
     prev.draggable === next.draggable &&
     prev.showNodes === next.showNodes &&
     prev.showMeasures === next.showMeasures &&
+    prev.pointLabelsMode === next.pointLabelsMode &&
+    prev.pointLabelsByNodeId === next.pointLabelsByNodeId &&
     prev.showSeamLabel === next.showSeamLabel &&
     prev.isDark === next.isDark &&
     prev.selectedEdge === next.selectedEdge &&

@@ -13,6 +13,13 @@ export type MeasureDisplayMode = "never" | "always" | "hover";
 
 export type NodesDisplayMode = "never" | "always" | "hover";
 
+export type PointLabelsMode =
+  | "off"
+  | "numGlobal"
+  | "numPerFigure"
+  | "alphaGlobal"
+  | "alphaPerFigure";
+
 import type { PaperOrientation, PaperSize } from "./exportSettings";
 
 // =====================

@@ -20,6 +20,7 @@ import {
   type ExportSettings,
 } from "./export";
 import { PAPER_SIZES, PAPER_SIZE_LABELS } from "./exportSettings";
+import { cyclePointLabelsMode } from "./pointLabels";
 
 export function EditorToolbar() {
   const router = useRouter();
@@ -41,6 +42,8 @@ export function EditorToolbar() {
     setMeasureDisplayMode,
     nodesDisplayMode,
     setNodesDisplayMode,
+    pointLabelsMode,
+    setPointLabelsMode,
     magnetEnabled,
     setMagnetEnabled,
     selectedFigureId,
@@ -55,6 +58,7 @@ export function EditorToolbar() {
   const [includePatternName, setIncludePatternName] = useState(true);
   const [includePatternTexts, setIncludePatternTexts] = useState(true);
   const [includeSeamAllowance, setIncludeSeamAllowance] = useState(true);
+  const [includePointLabels, setIncludePointLabels] = useState(false);
   const hasAutoExportedRef = useRef(false);
   const embedded =
     searchParams.get("embedded") === "1" || searchParams.get("embed") === "1";
@@ -127,7 +131,11 @@ export function EditorToolbar() {
         exportShapes,
         () => setShowGrid(false),
         () => setShowGrid(true),
-        resolvedSettings
+        resolvedSettings,
+        {
+          includePointLabels,
+          pointLabelsMode,
+        }
       );
     };
 
@@ -281,6 +289,66 @@ export function EditorToolbar() {
 
   const magnetIcon = <Magnet className="w-5 h-5" strokeWidth={1.5} />;
 
+  const pointLabelsModeIcon = useMemo(() => {
+    const base = "w-5 h-5";
+
+    const badge = (ch: string, showReset: boolean) => (
+      <svg
+        className={base}
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+        viewBox="0 0 24 24"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <text
+          x="12"
+          y="15"
+          textAnchor="middle"
+          fontSize="9"
+          fontWeight="700"
+          fill="currentColor"
+          stroke="none"
+        >
+          {ch}
+        </text>
+        {showReset ? (
+          <path d="M16.5 8.5a4.5 4.5 0 0 0-6.8-1.2" />
+        ) : null}
+        {showReset ? <path d="M9.5 6.4H6.8V9" /> : null}
+      </svg>
+    );
+
+    switch (pointLabelsMode) {
+      case "off":
+        return (
+          <svg
+            className={base}
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="1.5"
+            viewBox="0 0 24 24"
+          >
+            <path d="M5 19L19 5" />
+            <path d="M7 7h7l3 3-7 7-3-3V7z" />
+          </svg>
+        );
+      case "numGlobal":
+        return badge("1", false);
+      case "numPerFigure":
+        return badge("1", true);
+      case "alphaGlobal":
+        return badge("A", false);
+      case "alphaPerFigure":
+      default:
+        return badge("A", true);
+    }
+  }, [pointLabelsMode]);
+
   const isMac = useSyncExternalStore(
     () => () => {
       // no-op: OS does not change during a session
@@ -325,7 +393,11 @@ export function EditorToolbar() {
       exportShapes,
       () => setShowGrid(false),
       () => setShowGrid(true),
-      resolvedSettings
+      resolvedSettings,
+      {
+        includePointLabels,
+        pointLabelsMode,
+      }
     );
   };
 
@@ -341,7 +413,10 @@ export function EditorToolbar() {
       ? figures
       : figures.filter((figure) => figure.kind !== "seam");
 
-    generateSVG(exportShapes, resolvedSettings);
+    generateSVG(exportShapes, resolvedSettings, {
+      includePointLabels,
+      pointLabelsMode,
+    });
   };
 
   const toggleToolFilter = (drawingTool: DrawingTool) => {
@@ -680,6 +755,21 @@ export function EditorToolbar() {
           />
 
           <ToolButton
+            active={pointLabelsMode !== "off"}
+            onClick={() => setPointLabelsMode(cyclePointLabelsMode(pointLabelsMode))}
+            icon="tag"
+            isMac={isMac}
+            title={`Rótulos (${pointLabelsMode === "off" ? "Desligado" : pointLabelsMode === "numGlobal" ? "Num global" : pointLabelsMode === "numPerFigure" ? "Num por figura" : pointLabelsMode === "alphaGlobal" ? "Letras global" : "Letras por figura"})`}
+            details={[
+              "Numera/nomeia os pontos (nós) das figuras.",
+              "Clique para alternar: Desligado → 1 global → 1 por figura → A global → A por figura.",
+              "Aparece no canvas e pode ser incluído na impressão/export.",
+            ]}
+            customIcon={pointLabelsModeIcon}
+            dataTestId="point-labels-mode-button"
+          />
+
+          <ToolButton
             active={magnetEnabled}
             onClick={() => setMagnetEnabled(!magnetEnabled)}
             icon="magnet"
@@ -838,6 +928,11 @@ export function EditorToolbar() {
                     label="Margem de costura"
                     checked={includeSeamAllowance}
                     onCheckedChange={setIncludeSeamAllowance}
+                  />
+                  <SwitchRow
+                    label="Rótulos de pontos"
+                    checked={includePointLabels}
+                    onCheckedChange={setIncludePointLabels}
                   />
                   <SwitchRow
                     label="Páginas em branco"
@@ -1052,6 +1147,7 @@ function SwitchRow({ label, checked, onCheckedChange }: SwitchRowProps) {
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label}
         onClick={() => onCheckedChange(!checked)}
         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
           checked ? "bg-primary" : "bg-gray-200 dark:bg-gray-700"
