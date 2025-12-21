@@ -1,5 +1,6 @@
 import React from "react";
 import { Group, Line } from "react-konva";
+import type Konva from "konva";
 import { Figure } from "./types";
 import { figureLocalPolyline } from "./figurePath";
 import { MemoizedNodeOverlay } from "./NodeOverlay";
@@ -20,11 +21,11 @@ interface FigureRendererProps {
   hitStrokeWidth: number;
   listening?: boolean;
   draggable?: boolean;
-  onPointerDown?: (e: any) => void;
-  onDragStart?: (e: any) => void;
-  onDragMove?: (e: any) => void;
-  onDragEnd?: (e: any) => void;
-  forwardRef?: (node: any) => void;
+  onPointerDown?: (e: Konva.KonvaEventObject<PointerEvent>) => void;
+  onDragStart?: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onDragMove?: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  onDragEnd?: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  forwardRef?: (node: Konva.Group | null) => void;
   name?: string;
   showNodes?: boolean;
   showMeasures?: boolean;

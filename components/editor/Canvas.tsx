@@ -22,9 +22,6 @@ import {
   normalizeUprightAngleDeg,
   perp,
   pointToSegmentDistance,
-  polylineLength,
-  polylinePointAtDistance,
-  sampleCubic,
   sub,
 } from "./figureGeometry";
 import { withComputedFigureMeasures } from "./figureMeasures";
@@ -47,7 +44,6 @@ import { Ruler } from "./Ruler";
 import { Minimap } from "./Minimap";
 import { MemoizedFigure } from "./FigureRenderer";
 import { MemoizedMeasureOverlay } from "./MeasureOverlay";
-import { MemoizedNodeOverlay } from "./NodeOverlay";
 
 const MIN_ZOOM_SCALE = 0.1;
 const MAX_ZOOM_SCALE = 10;
@@ -115,11 +111,6 @@ type MeasureEdgeHover =
       edgeId: string;
     }
   | null;
-
-function formatSeamLabelCm(cm: number): string {
-  const safe = Number.isFinite(cm) ? cm : 0;
-  return `${safe.toFixed(2).replace(".", ",")}cm`;
-}
 
 function seamSourceSignature(base: Figure, offsetCm?: number): string {
   // Exclude computed measures to avoid churn.
@@ -1341,9 +1332,8 @@ export default function Canvas() {
       edgeEditInputRef.current?.select();
     });
     return () => cancelAnimationFrame(id);
-  }, [edgeEditDraft?.edgeId, edgeEditDraft?.figureId]);
+  }, [edgeEditDraft]);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!edgeEditDraft) return;
     if (!selectedEdge) return;
@@ -1670,7 +1660,6 @@ export default function Canvas() {
       setMeasureDraft(null);
     }
   }, [tool]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     const prev = prevToolRef.current;
@@ -2245,7 +2234,7 @@ export default function Canvas() {
       setScale(nextScale);
       setPosition(nextPosition);
     },
-    [position.x, position.y, scale, setPosition, setScale]
+    [position.x, position.y, scheduleCursorBadgeIdleShow, scale, setPosition, setScale]
   );
 
   const parseCmInput = useCallback((raw: string): number | null => {
@@ -3677,7 +3666,9 @@ export default function Canvas() {
     );
   }, [
     aci7,
+    figures,
     handleAccentStroke,
+    mergeFigureNodes,
     nodeMergePreview,
     nodeSelection,
     previewRemoveStroke,
@@ -4119,7 +4110,6 @@ export default function Canvas() {
 
           <Layer id="figures-layer">
           {figures.map((fig) => {
-            const pts = figureLocalPolyline(fig, 60);
             const isSeam = fig.kind === "seam" && !!fig.parentId;
             const baseId = isSeam ? fig.parentId! : fig.id;
             const isSelected = selectedIdsSet.has(baseId);

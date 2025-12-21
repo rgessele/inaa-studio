@@ -1,14 +1,13 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Stage, Layer, Line, Rect } from "react-konva";
+import type Konva from "konva";
 import { useEditor } from "./EditorContext";
 import { figureLocalPolyline } from "./figurePath";
-import type { Figure } from "./types";
 
 const MINIMAP_WIDTH = 240;
 const MINIMAP_HEIGHT = 160;
-const PADDING = 20;
 
 export function Minimap() {
   const {
@@ -123,8 +122,9 @@ export function Minimap() {
     return { x, y, w, h };
   }, [position, scale, stageSize, worldBounds, minimapScale]);
 
-  const handleMapClick = (e: any) => {
+  const handleMapClick = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
     const stage = e.target.getStage();
+    if (!stage) return;
     const ptr = stage.getPointerPosition();
     if (!ptr) return;
 
@@ -145,7 +145,9 @@ export function Minimap() {
     });
   };
 
-  const handleDragViewport = (e: any) => {
+  const handleDragViewport = (
+    e: Konva.KonvaEventObject<DragEvent>
+  ) => {
     // Dragging the viewport rect
     const newX = e.target.x();
     const newY = e.target.y();

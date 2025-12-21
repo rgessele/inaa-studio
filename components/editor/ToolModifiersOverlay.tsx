@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useSyncExternalStore } from "react";
 import { useEditor } from "./EditorContext";
 import {
   detectPlatformKind,
@@ -40,11 +40,17 @@ function ModifierTagChip({
 export function ToolModifiersOverlay() {
   const { tool, modifierKeys, scale } = useEditor();
 
-  // Hydration-safe: render a stable default first, then refine on client.
-  const [platform, setPlatform] = useState<PlatformKind>("win");
-  useEffect(() => {
-    setPlatform(detectPlatformKind());
-  }, []);
+  // Hydration-safe without setState-in-effect: server snapshot is stable,
+  // client snapshot detects platform.
+  const platform = useSyncExternalStore<PlatformKind>(
+    () => {
+      return () => {
+        // no-op
+      };
+    },
+    () => detectPlatformKind(),
+    () => "win"
+  );
   const tags = TOOL_MODIFIER_TAGS[tool] ?? [];
 
   return (
