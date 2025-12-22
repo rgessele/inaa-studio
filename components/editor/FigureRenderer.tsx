@@ -155,25 +155,33 @@ const FigureRenderer = ({
   const nameFill = pointLabelFill;
   const nameOpacity = 0.22;
 
+  const estimateNameWidth = React.useCallback((text: string, fontSize: number) => {
+    // Konva clips to `width`, so keep this generous to avoid truncation.
+    // We allow overflow (no auto-fit), so this width is only for centering/alignment.
+    return Math.max(12, text.length * fontSize * 0.8 + fontSize * 1.5);
+  }, []);
+
+  const estimateNameTightWidth = React.useCallback(
+    (text: string, fontSize: number) => {
+      // Tighter estimate for positioning the drag handle near the text end.
+      return Math.max(12, text.length * fontSize * 0.65);
+    },
+    []
+  );
+
   const nameLayout = React.useMemo(() => {
     if (!figureName) return null;
 
     const localPts = pts;
-    const bbox = pointArrayBoundingBox(localPts) ?? nodesBoundingBox(figure.nodes);
     const centroid = figureCentroidLocal(figure);
 
     const offsetX = Number.isFinite(nameOffsetLocal.x) ? nameOffsetLocal.x : 0;
     const offsetY = Number.isFinite(nameOffsetLocal.y) ? nameOffsetLocal.y : 0;
 
     if (figure.closed) {
-      if (!bbox) return null;
-      const padding = 12;
-      const availW = Math.max(0, bbox.width - 2 * padding);
-      const availH = Math.max(0, bbox.height - 2 * padding);
-      if (availW <= 0 || availH <= 0) return null;
-
       const fontSize = nameFontSizePx;
-      const textWidthApprox = Math.min(availW, figureName.length * fontSize * 0.62);
+      const width = estimateNameWidth(figureName, fontSize);
+      const textTightWidthApprox = estimateNameTightWidth(figureName, fontSize);
 
       return {
         baseX: centroid.x,
@@ -182,8 +190,9 @@ const FigureRenderer = ({
         y: centroid.y + offsetY,
         rotation: 0,
         fontSize,
-        width: availW,
-        textWidthApprox,
+        width,
+        textWidthApprox: width,
+        textTightWidthApprox,
         align: "center" as const,
       };
     }
@@ -204,7 +213,8 @@ const FigureRenderer = ({
         len > 1e-6 ? { x: -dy / len, y: dx / len } : { x: 0, y: -1 };
       const offset = 18;
       const fontSize = nameFontSizePx;
-      const width = Math.max(12, figureName.length * fontSize * 0.62);
+      const width = estimateNameWidth(figureName, fontSize);
+      const textTightWidthApprox = estimateNameTightWidth(figureName, fontSize);
 
       return {
         baseX: px + n.x * offset * -1,
@@ -215,12 +225,14 @@ const FigureRenderer = ({
         fontSize,
         width,
         textWidthApprox: width,
+        textTightWidthApprox,
         align: "center" as const,
       };
     }
 
     const fontSize = nameFontSizePx;
-    const width = Math.max(12, figureName.length * fontSize * 0.62);
+    const width = estimateNameWidth(figureName, fontSize);
+    const textTightWidthApprox = estimateNameTightWidth(figureName, fontSize);
     return {
       baseX: centroid.x,
       baseY: centroid.y - 18,
@@ -230,9 +242,19 @@ const FigureRenderer = ({
       fontSize,
       width,
       textWidthApprox: width,
+      textTightWidthApprox,
       align: "center" as const,
     };
-  }, [figure, figureName, nameFontSizePx, nameOffsetLocal.x, nameOffsetLocal.y, pts]);
+  }, [
+    estimateNameTightWidth,
+    estimateNameWidth,
+    figure,
+    figureName,
+    nameFontSizePx,
+    nameOffsetLocal.x,
+    nameOffsetLocal.y,
+    pts,
+  ]);
 
   const handleSize = 10 / scale;
   const handleGap = 6 / scale;
@@ -365,6 +387,7 @@ const FigureRenderer = ({
           rotation={nameRotationDeg}
           width={nameLayout.width}
           align={nameLayout.align}
+          wrap="none"
           offsetX={nameLayout.width / 2}
           offsetY={nameLayout.fontSize / 2}
           listening={false}
@@ -403,8 +426,8 @@ const FigureRenderer = ({
           }}
         >
           <Rect
-            x={nameLayout.textWidthApprox / 2 + handleGap}
-            y={-nameLayout.fontSize / 2 - handleGap - handleSize}
+            x={nameLayout.textTightWidthApprox / 2 + handleGap}
+            y={-handleSize / 2}
             width={handleSize}
             height={handleSize}
             fill={nameFill}

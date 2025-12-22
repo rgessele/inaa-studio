@@ -143,7 +143,7 @@ export interface Figure {
 
   // Optional user-defined label (watermark) shown on canvas and exports.
   name?: string;
-  // Font size in local px (world units). Closed figures will auto-shrink to fit.
+  // Font size in local px (world units).
   nameFontSizePx?: number;
   // Additional rotation (degrees) applied to the name label, relative to the figure.
   // This is added on top of the figure's rotation.

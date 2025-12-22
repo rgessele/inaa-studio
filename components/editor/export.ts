@@ -54,6 +54,11 @@ function computeFigureNameLayoutLocal(
   const text = rawText.trim();
   if (!text) return null;
 
+  const estimateNameWidth = (t: string, fontSize: number) => {
+    // Konva.Text clips to `width`, so keep it generous to avoid truncation.
+    return Math.max(12, t.length * fontSize * 0.8 + fontSize * 1.5);
+  };
+
   const nameFontSizePx = (() => {
     const v = fig.nameFontSizePx;
     if (!Number.isFinite(v ?? NaN)) return 24;
@@ -62,32 +67,11 @@ function computeFigureNameLayoutLocal(
   const nameOffsetLocal = fig.nameOffsetLocal ?? { x: 0, y: 0 };
 
   const localPts = figureLocalPolyline(fig, 60);
-  const bbox =
-    pointArrayBoundingBox(localPts) ??
-    (fig.nodes.length
-      ? (() => {
-          let minX = fig.nodes[0].x;
-          let minY = fig.nodes[0].y;
-          let maxX = fig.nodes[0].x;
-          let maxY = fig.nodes[0].y;
-          for (let i = 1; i < fig.nodes.length; i++) {
-            minX = Math.min(minX, fig.nodes[i].x);
-            minY = Math.min(minY, fig.nodes[i].y);
-            maxX = Math.max(maxX, fig.nodes[i].x);
-            maxY = Math.max(maxY, fig.nodes[i].y);
-          }
-          return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-        })()
-      : null);
   const centroid = figureCentroidLocal(fig);
 
-  if (fig.closed && bbox) {
-    const padding = 12;
-    const availW = Math.max(0, bbox.width - 2 * padding);
-    const availH = Math.max(0, bbox.height - 2 * padding);
-    if (availW <= 0 || availH <= 0) return null;
-
+  if (fig.closed) {
     const fontSize = nameFontSizePx;
+    const width = estimateNameWidth(text, fontSize);
 
     return {
       posLocal: {
@@ -95,7 +79,7 @@ function computeFigureNameLayoutLocal(
         y: centroid.y + (Number.isFinite(nameOffsetLocal.y) ? nameOffsetLocal.y : 0),
       },
       fontSize,
-      width: availW,
+      width,
     };
   }
 
@@ -114,7 +98,7 @@ function computeFigureNameLayoutLocal(
     const n = len > 1e-6 ? { x: -dy / len, y: dx / len } : { x: 0, y: -1 };
     const offset = 18;
     const fontSize = nameFontSizePx;
-    const width = Math.max(12, text.length * fontSize * 0.62);
+    const width = estimateNameWidth(text, fontSize);
     return {
       posLocal: {
         x:
@@ -132,7 +116,7 @@ function computeFigureNameLayoutLocal(
   }
 
   const fontSize = nameFontSizePx;
-  const width = Math.max(12, text.length * fontSize * 0.62);
+  const width = estimateNameWidth(text, fontSize);
   return {
     posLocal: {
       x: centroid.x + (Number.isFinite(nameOffsetLocal.x) ? nameOffsetLocal.x : 0),
@@ -433,6 +417,7 @@ export async function generateTiledPDF(
               fontStyle: "bold",
               fill: "#000000",
               opacity: 0.22,
+              wrap: "none",
               rotation: (figure.rotation || 0) + extraRot,
               width: layout.width,
               align: "center",
