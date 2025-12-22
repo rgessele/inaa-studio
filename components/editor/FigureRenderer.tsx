@@ -1,8 +1,9 @@
 import React from "react";
-import { Group, Line, Text } from "react-konva";
+import { Group, Line, Rect, Text } from "react-konva";
 import type Konva from "konva";
 import { Figure } from "./types";
 import { figureLocalPolyline } from "./figurePath";
+import { figureCentroidLocal } from "./figurePath";
 import { MemoizedNodeOverlay } from "./NodeOverlay";
 import { MemoizedMeasureOverlay } from "./MeasureOverlay";
 import { MemoizedSeamLabel } from "./SeamLabel";
@@ -37,10 +38,61 @@ interface FigureRendererProps {
   isDark?: boolean;
   selectedEdge?: SelectedEdge | null;
   hoveredEdge?: { figureId: string; edgeId: string } | null;
+
+  // Figure name label handle (drag to reposition)
+  showNameHandle?: boolean;
+  onNameOffsetChange?: (
+    figureId: string,
+    nextOffsetLocal: { x: number; y: number }
+  ) => void;
+  onNameOffsetCommit?: (
+    figureId: string,
+    nextOffsetLocal: { x: number; y: number }
+  ) => void;
 }
 
 function resolveAci7(isDark: boolean): string {
   return isDark ? "#ffffff" : "#000000";
+}
+
+function pointArrayBoundingBox(points: number[]): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} | null {
+  if (points.length < 4) return null;
+  let minX = points[0];
+  let minY = points[1];
+  let maxX = points[0];
+  let maxY = points[1];
+  for (let i = 2; i < points.length; i += 2) {
+    minX = Math.min(minX, points[i]);
+    minY = Math.min(minY, points[i + 1]);
+    maxX = Math.max(maxX, points[i]);
+    maxY = Math.max(maxY, points[i + 1]);
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function nodesBoundingBox(nodes: Array<{ x: number; y: number }> | null): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} | null {
+  if (!nodes || nodes.length === 0) return null;
+  let minX = nodes[0].x;
+  let minY = nodes[0].y;
+  let maxX = nodes[0].x;
+  let maxY = nodes[0].y;
+  for (let i = 1; i < nodes.length; i++) {
+    minX = Math.min(minX, nodes[i].x);
+    minY = Math.min(minY, nodes[i].y);
+    maxX = Math.max(maxX, nodes[i].x);
+    maxY = Math.max(maxY, nodes[i].y);
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
 const FigureRenderer = ({
@@ -71,6 +123,9 @@ const FigureRenderer = ({
   isDark = false,
   selectedEdge = null,
   hoveredEdge = null,
+  showNameHandle,
+  onNameOffsetChange,
+  onNameOffsetCommit,
 }: FigureRendererProps) => {
   // Memoize the polyline calculation so it doesn't run on every render
   // unless the figure geometry changes.
@@ -82,6 +137,105 @@ const FigureRenderer = ({
   const pointLabelOpacity = 0.35;
   const pointLabelFontSize = 15 / scale;
   const pointLabelOffsetDist = 14 / scale;
+
+  const figureName = (figure.name ?? "").trim();
+  const nameFontSizePx = (() => {
+    const v = figure.nameFontSizePx;
+    if (!Number.isFinite(v ?? NaN)) return 24;
+    return Math.max(6, Math.min(256, v as number));
+  })();
+  const nameRotationDeg = (() => {
+    const v = figure.nameRotationDeg;
+    if (!Number.isFinite(v ?? NaN)) return 0;
+    // Keep it bounded (purely for stability/serialization).
+    const m = ((v as number) % 360) + 360;
+    return m % 360;
+  })();
+  const nameOffsetLocal = figure.nameOffsetLocal ?? { x: 0, y: 0 };
+  const nameFill = pointLabelFill;
+  const nameOpacity = 0.22;
+
+  const nameLayout = React.useMemo(() => {
+    if (!figureName) return null;
+
+    const localPts = pts;
+    const bbox = pointArrayBoundingBox(localPts) ?? nodesBoundingBox(figure.nodes);
+    const centroid = figureCentroidLocal(figure);
+
+    const offsetX = Number.isFinite(nameOffsetLocal.x) ? nameOffsetLocal.x : 0;
+    const offsetY = Number.isFinite(nameOffsetLocal.y) ? nameOffsetLocal.y : 0;
+
+    if (figure.closed) {
+      if (!bbox) return null;
+      const padding = 12;
+      const availW = Math.max(0, bbox.width - 2 * padding);
+      const availH = Math.max(0, bbox.height - 2 * padding);
+      if (availW <= 0 || availH <= 0) return null;
+
+      const fontSize = nameFontSizePx;
+      const textWidthApprox = Math.min(availW, figureName.length * fontSize * 0.62);
+
+      return {
+        baseX: centroid.x,
+        baseY: centroid.y,
+        x: centroid.x + offsetX,
+        y: centroid.y + offsetY,
+        rotation: 0,
+        fontSize,
+        width: availW,
+        textWidthApprox,
+        align: "center" as const,
+      };
+    }
+
+    // Open figures: place near the midpoint of the polyline, offset outward.
+    if (localPts.length >= 8) {
+      const midIdx = Math.floor(localPts.length / 4) * 2;
+      const px = localPts[midIdx];
+      const py = localPts[midIdx + 1];
+      const prevX = localPts[Math.max(0, midIdx - 2)];
+      const prevY = localPts[Math.max(1, midIdx - 1)];
+      const nextX = localPts[Math.min(localPts.length - 2, midIdx + 2)];
+      const nextY = localPts[Math.min(localPts.length - 1, midIdx + 3)];
+      const dx = nextX - prevX;
+      const dy = nextY - prevY;
+      const len = Math.hypot(dx, dy);
+      const n =
+        len > 1e-6 ? { x: -dy / len, y: dx / len } : { x: 0, y: -1 };
+      const offset = 18;
+      const fontSize = nameFontSizePx;
+      const width = Math.max(12, figureName.length * fontSize * 0.62);
+
+      return {
+        baseX: px + n.x * offset * -1,
+        baseY: py + n.y * offset * -1,
+        x: px + n.x * offset * -1 + offsetX,
+        y: py + n.y * offset * -1 + offsetY,
+        rotation: 0,
+        fontSize,
+        width,
+        textWidthApprox: width,
+        align: "center" as const,
+      };
+    }
+
+    const fontSize = nameFontSizePx;
+    const width = Math.max(12, figureName.length * fontSize * 0.62);
+    return {
+      baseX: centroid.x,
+      baseY: centroid.y - 18,
+      x: centroid.x + offsetX,
+      y: centroid.y - 18 + offsetY,
+      rotation: 0,
+      fontSize,
+      width,
+      textWidthApprox: width,
+      align: "center" as const,
+    };
+  }, [figure, figureName, nameFontSizePx, nameOffsetLocal.x, nameOffsetLocal.y, pts]);
+
+  const handleSize = 10 / scale;
+  const handleGap = 6 / scale;
 
   return (
     <Group
@@ -197,6 +351,69 @@ const FigureRenderer = ({
           isDark={isDark}
           enabled={!!showSeamLabel}
         />
+      )}
+
+      {nameLayout && (
+        <Text
+          x={nameLayout.x}
+          y={nameLayout.y}
+          text={figureName}
+          fontSize={nameLayout.fontSize}
+          fontStyle="bold"
+          fill={nameFill}
+          opacity={nameOpacity}
+          rotation={nameRotationDeg}
+          width={nameLayout.width}
+          align={nameLayout.align}
+          offsetX={nameLayout.width / 2}
+          offsetY={nameLayout.fontSize / 2}
+          listening={false}
+          name="inaa-figure-name"
+        />
+      )}
+
+      {nameLayout && showNameHandle && (
+        <Group
+          x={nameLayout.x}
+          y={nameLayout.y}
+          rotation={nameRotationDeg}
+          draggable={true}
+          onDragStart={(e) => {
+            e.cancelBubble = true;
+          }}
+          onDragMove={(e) => {
+            e.cancelBubble = true;
+            const nx = e.target.x();
+            const ny = e.target.y();
+            const nextOffsetLocal = {
+              x: nx - nameLayout.baseX,
+              y: ny - nameLayout.baseY,
+            };
+            onNameOffsetChange?.(figure.id, nextOffsetLocal);
+          }}
+          onDragEnd={(e) => {
+            e.cancelBubble = true;
+            const nx = e.target.x();
+            const ny = e.target.y();
+            const nextOffsetLocal = {
+              x: nx - nameLayout.baseX,
+              y: ny - nameLayout.baseY,
+            };
+            onNameOffsetCommit?.(figure.id, nextOffsetLocal);
+          }}
+        >
+          <Rect
+            x={nameLayout.textWidthApprox / 2 + handleGap}
+            y={-nameLayout.fontSize / 2 - handleGap - handleSize}
+            width={handleSize}
+            height={handleSize}
+            fill={nameFill}
+            opacity={0.35}
+            cornerRadius={2 / scale}
+            listening={true}
+            name="inaa-figure-name-handle"
+          />
+        </Group>
       )}
     </Group>
   );

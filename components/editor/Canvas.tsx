@@ -4202,6 +4202,33 @@ export default function Canvas() {
                 isDark={isDark}
                 selectedEdge={selectedEdge}
                 hoveredEdge={hoveredMeasureEdge}
+                showNameHandle={
+                  tool === "select" &&
+                  selectedFigureIds.length === 1 &&
+                  selectedFigureId === baseId &&
+                  fig.kind !== "seam" &&
+                  !!(fig.name ?? "").trim()
+                }
+                onNameOffsetChange={(figureId, nextOffsetLocal) => {
+                  setFigures(
+                    (prev) =>
+                      prev.map((f) =>
+                        f.id === figureId
+                          ? { ...f, nameOffsetLocal: nextOffsetLocal }
+                          : f
+                      ),
+                    false
+                  );
+                }}
+                onNameOffsetCommit={(figureId, nextOffsetLocal) => {
+                  setFigures((prev) =>
+                    prev.map((f) =>
+                      f.id === figureId
+                        ? { ...f, nameOffsetLocal: nextOffsetLocal }
+                        : f
+                    )
+                  );
+                }}
                 onPointerDown={(e) => {
                     const evtAny = e.evt as MouseEvent;
                     const buttons = (evtAny.buttons ?? 0) as number;

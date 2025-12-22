@@ -31,6 +31,7 @@ export function PropertiesPanel() {
   const {
     tool,
     selectedFigureId,
+    selectedFigureIds,
     figures,
     setFigures,
     selectedEdge,
@@ -43,6 +44,27 @@ export function PropertiesPanel() {
     setUnfoldAxis,
   } = useEditor();
   const selectedFigure = figures.find((f) => f.id === selectedFigureId);
+
+  const [figureNameDraft, setFigureNameDraft] = useState<string>("");
+  const [isEditingFigureName, setIsEditingFigureName] = useState(false);
+
+  React.useEffect(() => {
+    if (!selectedFigure) return;
+    if (isEditingFigureName) return;
+    setFigureNameDraft(selectedFigure.name ?? "");
+  }, [isEditingFigureName, selectedFigure?.id, selectedFigure?.name]);
+
+  const applyFigureNameDraft = (raw: string) => {
+    if (!selectedFigure) return;
+    const trimmed = raw.trim();
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id !== selectedFigure.id) return f;
+        return { ...f, name: trimmed.length ? trimmed : undefined };
+      })
+    );
+    setFigureNameDraft(trimmed);
+  };
 
   const curveSelection = selectedFigure?.tool === "curve" ? selectedFigure : null;
   const showCurveStylePanel = tool === "curve" || curveSelection != null;
@@ -895,6 +917,130 @@ export function PropertiesPanel() {
               {showCurveStylePanel ? (
                 renderCurveStylePanel({ showHelp: true })
               ) : null}
+
+              {selectedFigureIds.length === 1 && (
+                <div>
+                  <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
+                    Nome da figura
+                  </label>
+                  <input
+                    className={
+                      "w-full " +
+                      inputBaseClass +
+                      " " +
+                      inputFocusClass +
+                      " !text-left"
+                    }
+                    type="text"
+                    value={figureNameDraft}
+                    placeholder="Ex.: Frente, Manga, Gola…"
+                    onFocus={() => setIsEditingFigureName(true)}
+                    onChange={(e) => setFigureNameDraft(e.target.value)}
+                    onBlur={() => {
+                      setIsEditingFigureName(false);
+                      applyFigureNameDraft(figureNameDraft);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        (e.currentTarget as HTMLInputElement).blur();
+                      }
+                    }}
+                  />
+
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                        Tamanho
+                      </span>
+                      <select
+                        className={
+                          "w-full " +
+                          inputBaseClass +
+                          " " +
+                          inputFocusClass +
+                          " !text-left"
+                        }
+                        value={String(selectedFigure.nameFontSizePx ?? 24)}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          const safe = Number.isFinite(v)
+                            ? Math.max(6, Math.min(256, v))
+                            : 24;
+                          setFigures((prev) =>
+                            prev.map((f) =>
+                              f.id === selectedFigure.id
+                                ? { ...f, nameFontSizePx: safe }
+                                : f
+                            )
+                          );
+                        }}
+                      >
+                        <option value="12">12 px</option>
+                        <option value="16">16 px</option>
+                        <option value="20">20 px</option>
+                        <option value="24">24 px</option>
+                        <option value="32">32 px</option>
+                        <option value="40">40 px</option>
+                        <option value="48">48 px</option>
+                        <option value="64">64 px</option>
+                        <option value="80">80 px</option>
+                        <option value="96">96 px</option>
+                        <option value="128">128 px</option>
+                        <option value="160">160 px</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                        Rotação
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          style={{
+                            height: 27,
+                            width: 40,
+                            padding: 0,
+                            lineHeight: 0,
+                          }}
+                          className={
+                            inputBaseClass +
+                            " " +
+                            inputFocusClass +
+                            " shrink-0 w-10 h-8 flex items-center justify-center" +
+                            " !px-0 !py-0 !text-center"
+                          }
+                          title="Rotacionar 15°"
+                          onClick={() => {
+                            const current = selectedFigure.nameRotationDeg ?? 0;
+                            const next = ((current + 15) % 360 + 360) % 360;
+                            setFigures((prev) =>
+                              prev.map((f) =>
+                                f.id === selectedFigure.id
+                                  ? { ...f, nameRotationDeg: next }
+                                  : f
+                              )
+                            );
+                          }}
+                        >
+                          <span
+                            className="material-symbols-outlined leading-none"
+                            style={{ fontSize: 20 }}
+                          >
+                            rotate_right
+                          </span>
+                        </button>
+
+                        <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+                          {String(((selectedFigure.nameRotationDeg ?? 0) % 360 + 360) % 360)}°
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              )}
 
               {(tool === "offset" || !!seamForSelection) && (
                 <div>

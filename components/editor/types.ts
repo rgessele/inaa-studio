@@ -141,6 +141,17 @@ export interface FigureEdge {
 export interface Figure {
   id: string;
 
+  // Optional user-defined label (watermark) shown on canvas and exports.
+  name?: string;
+  // Font size in local px (world units). Closed figures will auto-shrink to fit.
+  nameFontSizePx?: number;
+  // Additional rotation (degrees) applied to the name label, relative to the figure.
+  // This is added on top of the figure's rotation.
+  nameRotationDeg?: number;
+  // Local offset applied to the computed label anchor point.
+  // Stored in the figure's local coordinates so it moves/rotates with the figure.
+  nameOffsetLocal?: { x: number; y: number };
+
   // Original tool used to create the figure (used by export filters)
   tool: DrawingTool;
 

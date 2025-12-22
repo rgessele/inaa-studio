@@ -9,6 +9,7 @@ import {
 import type { Figure } from "./types";
 import { figureWorldBoundingBox, figureWorldPolyline } from "./figurePath";
 import { figureLocalToWorld } from "./figurePath";
+import { figureLocalPolyline } from "./figurePath";
 import type { PointLabelsMode } from "./types";
 import { computeNodeLabels } from "./pointLabels";
 import { figureCentroidLocal } from "./figurePath";
@@ -30,6 +31,120 @@ type PointLabelsExportOptions = {
   includePointLabels?: boolean;
   pointLabelsMode?: PointLabelsMode;
 };
+
+function pointArrayBoundingBox(points: number[]): BoundingBox | null {
+  if (points.length < 4) return null;
+  let minX = points[0];
+  let minY = points[1];
+  let maxX = points[0];
+  let maxY = points[1];
+  for (let i = 2; i < points.length; i += 2) {
+    minX = Math.min(minX, points[i]);
+    minY = Math.min(minY, points[i + 1]);
+    maxX = Math.max(maxX, points[i]);
+    maxY = Math.max(maxY, points[i + 1]);
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function computeFigureNameLayoutLocal(
+  fig: Figure,
+  rawText: string
+): { posLocal: { x: number; y: number }; fontSize: number; width: number } | null {
+  const text = rawText.trim();
+  if (!text) return null;
+
+  const nameFontSizePx = (() => {
+    const v = fig.nameFontSizePx;
+    if (!Number.isFinite(v ?? NaN)) return 24;
+    return Math.max(6, Math.min(256, v as number));
+  })();
+  const nameOffsetLocal = fig.nameOffsetLocal ?? { x: 0, y: 0 };
+
+  const localPts = figureLocalPolyline(fig, 60);
+  const bbox =
+    pointArrayBoundingBox(localPts) ??
+    (fig.nodes.length
+      ? (() => {
+          let minX = fig.nodes[0].x;
+          let minY = fig.nodes[0].y;
+          let maxX = fig.nodes[0].x;
+          let maxY = fig.nodes[0].y;
+          for (let i = 1; i < fig.nodes.length; i++) {
+            minX = Math.min(minX, fig.nodes[i].x);
+            minY = Math.min(minY, fig.nodes[i].y);
+            maxX = Math.max(maxX, fig.nodes[i].x);
+            maxY = Math.max(maxY, fig.nodes[i].y);
+          }
+          return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+        })()
+      : null);
+  const centroid = figureCentroidLocal(fig);
+
+  if (fig.closed && bbox) {
+    const padding = 12;
+    const availW = Math.max(0, bbox.width - 2 * padding);
+    const availH = Math.max(0, bbox.height - 2 * padding);
+    if (availW <= 0 || availH <= 0) return null;
+
+    const fontSize = nameFontSizePx;
+
+    return {
+      posLocal: {
+        x: centroid.x + (Number.isFinite(nameOffsetLocal.x) ? nameOffsetLocal.x : 0),
+        y: centroid.y + (Number.isFinite(nameOffsetLocal.y) ? nameOffsetLocal.y : 0),
+      },
+      fontSize,
+      width: availW,
+    };
+  }
+
+  // Open figures: near midpoint of polyline with an outward normal offset.
+  if (localPts.length >= 8) {
+    const midIdx = Math.floor(localPts.length / 4) * 2;
+    const px = localPts[midIdx];
+    const py = localPts[midIdx + 1];
+    const prevX = localPts[Math.max(0, midIdx - 2)];
+    const prevY = localPts[Math.max(1, midIdx - 1)];
+    const nextX = localPts[Math.min(localPts.length - 2, midIdx + 2)];
+    const nextY = localPts[Math.min(localPts.length - 1, midIdx + 3)];
+    const dx = nextX - prevX;
+    const dy = nextY - prevY;
+    const len = Math.hypot(dx, dy);
+    const n = len > 1e-6 ? { x: -dy / len, y: dx / len } : { x: 0, y: -1 };
+    const offset = 18;
+    const fontSize = nameFontSizePx;
+    const width = Math.max(12, text.length * fontSize * 0.62);
+    return {
+      posLocal: {
+        x:
+          px +
+          n.x * offset * -1 +
+          (Number.isFinite(nameOffsetLocal.x) ? nameOffsetLocal.x : 0),
+        y:
+          py +
+          n.y * offset * -1 +
+          (Number.isFinite(nameOffsetLocal.y) ? nameOffsetLocal.y : 0),
+      },
+      fontSize,
+      width,
+    };
+  }
+
+  const fontSize = nameFontSizePx;
+  const width = Math.max(12, text.length * fontSize * 0.62);
+  return {
+    posLocal: {
+      x: centroid.x + (Number.isFinite(nameOffsetLocal.x) ? nameOffsetLocal.x : 0),
+      y:
+        centroid.y -
+        18 +
+        (Number.isFinite(nameOffsetLocal.y) ? nameOffsetLocal.y : 0),
+    },
+    fontSize,
+    width,
+  };
+}
 
 // Crop mark size in cm
 function intersectsRect(a: BoundingBox, b: BoundingBox): boolean {
@@ -302,6 +417,33 @@ export async function generateTiledPDF(
           );
         }
       }
+
+      const figureName = (figure.name ?? "").trim();
+      if (figureName) {
+        const layout = computeFigureNameLayoutLocal(figure, figureName);
+        if (layout) {
+          const worldPos = figureLocalToWorld(figure, layout.posLocal);
+          const extraRot = figure.nameRotationDeg || 0;
+          tileLayer.add(
+            new Konva.Text({
+              x: worldPos.x - tileX,
+              y: worldPos.y - tileY,
+              text: figureName,
+              fontSize: layout.fontSize,
+              fontStyle: "bold",
+              fill: "#000000",
+              opacity: 0.22,
+              rotation: (figure.rotation || 0) + extraRot,
+              width: layout.width,
+              align: "center",
+              offsetX: layout.width / 2,
+              offsetY: layout.fontSize / 2,
+              listening: false,
+              name: "inaa-figure-name",
+            })
+          );
+        }
+      }
     });
 
     tileLayer.draw();
@@ -419,6 +561,22 @@ export function generateSVG(
           svg += ` transform="rotate(${rot} ${worldPos.x} ${worldPos.y})"`;
         }
         svg += `>${text.toUpperCase()}</text>\n`;
+      }
+    }
+
+    const figName = (fig.name ?? "").trim();
+    if (figName) {
+      const layout = computeFigureNameLayoutLocal(fig, figName);
+      if (layout) {
+        const worldPos = figureLocalToWorld(fig, layout.posLocal);
+        const rot = (fig.rotation || 0) + (fig.nameRotationDeg || 0);
+        svg += `  <text class="inaa-figure-name" x="${worldPos.x}" y="${worldPos.y}"`;
+        svg += ` font-family="sans-serif" font-size="${layout.fontSize}" font-weight="700"`;
+        svg += ` fill="#000" fill-opacity="0.22" text-anchor="middle" dominant-baseline="middle"`;
+        if (rot) {
+          svg += ` transform="rotate(${rot} ${worldPos.x} ${worldPos.y})"`;
+        }
+        svg += `>${figName}</text>\n`;
       }
     }
   }
