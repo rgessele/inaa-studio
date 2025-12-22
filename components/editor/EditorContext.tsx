@@ -52,6 +52,14 @@ interface EditorContextType {
 
   selectedEdge: SelectedEdge;
   setSelectedEdge: (edge: SelectedEdge) => void;
+
+  // Per-edge anchor preference (session memory)
+  getEdgeAnchorPreference: (figureId: string, edgeId: string) => EdgeAnchor | null;
+  setEdgeAnchorPreference: (
+    figureId: string,
+    edgeId: string,
+    anchor: EdgeAnchor
+  ) => void;
   deleteSelected: () => void;
   scale: number;
   setScale: (scale: number) => void;
@@ -145,6 +153,26 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   }>({ shift: false, alt: false, meta: false, ctrl: false });
   const [selectedFigureIds, setSelectedFigureIdsState] = useState<string[]>([]);
   const [selectedEdge, setSelectedEdge] = useState<SelectedEdge>(null);
+
+  const [edgeAnchorPrefs, setEdgeAnchorPrefs] = useState<
+    Record<string, EdgeAnchor>
+  >({});
+
+  const getEdgeAnchorPreference = useCallback(
+    (figureId: string, edgeId: string): EdgeAnchor | null => {
+      const key = `${figureId}:${edgeId}`;
+      return edgeAnchorPrefs[key] ?? null;
+    },
+    [edgeAnchorPrefs]
+  );
+
+  const setEdgeAnchorPreference = useCallback(
+    (figureId: string, edgeId: string, anchor: EdgeAnchor) => {
+      const key = `${figureId}:${edgeId}`;
+      setEdgeAnchorPrefs((prev) => (prev[key] === anchor ? prev : { ...prev, [key]: anchor }));
+    },
+    []
+  );
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [unit, setUnit] = useState(DEFAULT_UNIT);
@@ -717,6 +745,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
         selectedEdge,
         setSelectedEdge,
+        getEdgeAnchorPreference,
+        setEdgeAnchorPreference,
         deleteSelected,
         scale,
         setScale,

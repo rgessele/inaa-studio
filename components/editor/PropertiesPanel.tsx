@@ -36,6 +36,7 @@ export function PropertiesPanel() {
     setFigures,
     selectedEdge,
     setSelectedEdge,
+    setEdgeAnchorPreference,
     offsetValueCm,
     setOffsetValueCm,
     mirrorAxis,
@@ -1194,10 +1195,17 @@ export function PropertiesPanel() {
                               }}
                               onClick={() =>
                                 selectedEdge
-                                  ? setSelectedEdge({
-                                      ...selectedEdge,
-                                      anchor: opt.key,
-                                    })
+                                  ? (() => {
+                                      setEdgeAnchorPreference(
+                                        selectedEdge.figureId,
+                                        selectedEdge.edgeId,
+                                        opt.key
+                                      );
+                                      setSelectedEdge({
+                                        ...selectedEdge,
+                                        anchor: opt.key,
+                                      });
+                                    })()
                                   : null
                               }
                               className={

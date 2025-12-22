@@ -1206,6 +1206,7 @@ export default function Canvas() {
     toggleSelectedFigureId,
     selectedEdge,
     setSelectedEdge,
+    getEdgeAnchorPreference,
     offsetValueCm,
     setOffsetTargetId,
     mirrorAxis,
@@ -2319,14 +2320,42 @@ export default function Canvas() {
       const hit = findNearestEdge(fig, local);
       if (!hit.best || hit.bestDist > thresholdWorld) return;
 
-      const edge = fig.edges.find((ed) => ed.id === hit.best!.edgeId);
+      // Prefer the currently selected edge (and its anchor) when the user
+      // double-clicks near it. This avoids accidentally re-picking a neighbor
+      // edge/endpoint due to label offsets or close geometry.
+      const SELECTED_EDGE_DBLCLICK_SLOP_PX = 48;
+      const slopWorld = SELECTED_EDGE_DBLCLICK_SLOP_PX / scale;
+
+      const preferredEdge =
+        selectedEdge && selectedEdge.figureId === fig.id
+          ? fig.edges.find((ed) => ed.id === selectedEdge.edgeId) ?? null
+          : null;
+
+      const useSelectedEdge =
+        preferredEdge &&
+        (() => {
+          const selHit = nearestOnEdgeLocal(fig, preferredEdge, local);
+          return !!selHit && selHit.d <= slopWorld;
+        })();
+
+      const edge = useSelectedEdge
+        ? preferredEdge
+        : fig.edges.find((ed) => ed.id === hit.best!.edgeId) ?? null;
       if (!edge) return;
-      const nFrom = fig.nodes.find((n) => n.id === edge.from);
-      const nTo = fig.nodes.find((n) => n.id === edge.to);
-      if (!nFrom || !nTo) return;
-      const dFrom = dist(local, { x: nFrom.x, y: nFrom.y });
-      const dTo = dist(local, { x: nTo.x, y: nTo.y });
-      const anchor = dFrom <= dTo ? "start" : "end";
+
+      const preferredAnchor = getEdgeAnchorPreference(fig.id, edge.id);
+      const anchor: "start" | "end" | "mid" =
+        useSelectedEdge && selectedEdge
+          ? selectedEdge.anchor
+          : preferredAnchor ??
+            (() => {
+              const nFrom = fig.nodes.find((n) => n.id === edge.from);
+              const nTo = fig.nodes.find((n) => n.id === edge.to);
+              if (!nFrom || !nTo) return "end";
+              const dFrom = dist(local, { x: nFrom.x, y: nFrom.y });
+              const dTo = dist(local, { x: nTo.x, y: nTo.y });
+              return dFrom <= dTo ? "start" : "end";
+            })();
 
       setSelectedFigureIds([fig.id]);
       setSelectedEdge({ figureId: fig.id, edgeId: edge.id, anchor });
@@ -2341,10 +2370,12 @@ export default function Canvas() {
     },
     [
       figures,
+      getEdgeAnchorPreference,
       openInlineEdgeEdit,
       position.x,
       position.y,
       scale,
+      selectedEdge,
       setSelectedEdge,
       setSelectedFigureIds,
       tool,
@@ -4290,7 +4321,8 @@ export default function Canvas() {
                       if (!nFrom || !nTo) return;
                       const dFrom = dist(local, { x: nFrom.x, y: nFrom.y });
                       const dTo = dist(local, { x: nTo.x, y: nTo.y });
-                      const anchor = dFrom <= dTo ? "start" : "end";
+                      const preferredAnchor = getEdgeAnchorPreference(baseId, edge.id);
+                      const anchor = preferredAnchor ?? (dFrom <= dTo ? "start" : "end");
 
                       // Keep figure selected for context, but also track the selected edge.
                       setSelectedFigureIds([baseId]);

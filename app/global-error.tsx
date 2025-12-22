@@ -1,0 +1,48 @@
+"use client";
+
+import React, { useEffect } from "react";
+
+export default function GlobalError(
+  props: Readonly<{
+    error: Error & { digest?: string };
+    reset: () => void;
+  }>
+) {
+  const { error, reset } = props;
+
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.error(error);
+  }, [error]);
+
+  return (
+    <html lang="pt-BR">
+      <body className="bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100">
+        <div className="min-h-screen flex items-center justify-center px-6">
+          <div className="w-full max-w-md rounded-lg border border-gray-200 dark:border-gray-800 bg-surface-light dark:bg-surface-dark p-6 shadow-subtle">
+            <h1 className="text-lg font-semibold">Erro inesperado</h1>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              Ocorreu um erro inesperado. Você pode tentar novamente.
+            </p>
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={() => reset()}
+                className="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-md text-sm font-medium"
+              >
+                Tentar novamente
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="border border-gray-300 dark:border-gray-700 px-4 py-2 rounded-md text-sm font-medium"
+              >
+                Recarregar página
+              </button>
+            </div>
+          </div>
+        </div>
+      </body>
+    </html>
+  );
+}

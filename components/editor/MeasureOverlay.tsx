@@ -1,5 +1,5 @@
 import React from "react";
-import { Line, Text } from "react-konva";
+import { Circle, Line, Text } from "react-konva";
 import { Figure, FigureEdge } from "./types";
 import { edgeLocalPoints, figureCentroidLocal } from "./figurePath";
 import {
@@ -39,6 +39,17 @@ const MeasureOverlayRenderer = ({
   const fill = resolveAci7(isDark);
   const opacity = 0.75;
   const highlightStroke = "#2563eb";
+  const anchorStroke = React.useMemo(() => {
+    if (typeof window === "undefined") return "#776a3e";
+    const v = getComputedStyle(document.documentElement)
+      .getPropertyValue("--color-accent-gold")
+      .trim();
+    return v || "#776a3e";
+  }, []);
+  const anchorHaloStroke = React.useMemo(() => {
+    // High-contrast outline behind gold so anchors are visible over any color.
+    return isDark ? "#000000" : "#ffffff";
+  }, [isDark]);
 
   const renderSelectedEdgeHighlight = () => {
     if (!selectedEdge) return null;
@@ -51,17 +62,146 @@ const MeasureOverlayRenderer = ({
     const flat: number[] = [];
     for (const p of pts) flat.push(p.x, p.y);
 
+    const start = pts[0];
+    const end = pts[pts.length - 1];
+    const mt = midAndTangent(pts);
+    const mid = mt?.mid ?? { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    const anchorR = 6 / scale;
+    const anchorStrokeW = 3 / scale;
+    const anchorHaloW = anchorStrokeW + 2 / scale;
+    const labelFs = 10 / scale;
+
+    const isStart = selectedEdge.anchor === "start";
+    const isMid = selectedEdge.anchor === "mid";
+    const isEnd = selectedEdge.anchor === "end";
+
     return (
-      <Line
-        key={`msel:${figure.id}:${edge.id}`}
-        points={flat}
-        stroke={highlightStroke}
-        strokeWidth={3 / scale}
-        opacity={0.9}
-        listening={false}
-        lineCap="round"
-        lineJoin="round"
-      />
+      <React.Fragment key={`msel:${figure.id}:${edge.id}`}
+      >
+        {/* Strong highlight: a wide stroke + a crisp inner stroke (no transparency) */}
+        <Line
+          points={flat}
+          stroke={highlightStroke}
+          strokeWidth={7 / scale}
+          opacity={1}
+          listening={false}
+          lineCap="round"
+          lineJoin="round"
+        />
+        <Line
+          points={flat}
+          stroke={highlightStroke}
+          strokeWidth={3.5 / scale}
+          opacity={1}
+          listening={false}
+          lineCap="round"
+          lineJoin="round"
+        />
+
+        {/* Anchor markers (start / mid / end) */}
+        <Circle
+          x={start.x}
+          y={start.y}
+          radius={anchorR}
+          stroke={anchorHaloStroke}
+          strokeWidth={anchorHaloW}
+          fill={"transparent"}
+          opacity={1}
+          listening={false}
+        />
+        <Circle
+          x={start.x}
+          y={start.y}
+          radius={anchorR}
+          stroke={anchorStroke}
+          strokeWidth={anchorStrokeW}
+          fill={isStart ? anchorStroke : "transparent"}
+          opacity={1}
+          listening={false}
+          name="inaa-edge-anchor-start"
+        />
+        <Text
+          x={start.x}
+          y={start.y - 10 / scale}
+          text="I"
+          fontSize={labelFs}
+          fill={highlightStroke}
+          opacity={isStart ? 1 : 0.75}
+          offsetX={labelFs / 4}
+          offsetY={labelFs / 2}
+          listening={false}
+        />
+
+        {isMid && (
+          <>
+            <Circle
+              x={mid.x}
+              y={mid.y}
+              radius={anchorR}
+              stroke={anchorHaloStroke}
+              strokeWidth={anchorHaloW}
+              fill={"transparent"}
+              opacity={1}
+              listening={false}
+            />
+            <Circle
+              x={mid.x}
+              y={mid.y}
+              radius={anchorR}
+              stroke={anchorStroke}
+              strokeWidth={anchorStrokeW}
+              fill={anchorStroke}
+              opacity={1}
+              listening={false}
+              name="inaa-edge-anchor-mid"
+            />
+            <Text
+              x={mid.x}
+              y={mid.y - 10 / scale}
+              text="M"
+              fontSize={labelFs}
+              fill={highlightStroke}
+              opacity={1}
+              offsetX={labelFs / 2}
+              offsetY={labelFs / 2}
+              listening={false}
+            />
+          </>
+        )}
+
+        <Circle
+          x={end.x}
+          y={end.y}
+          radius={anchorR}
+          stroke={anchorHaloStroke}
+          strokeWidth={anchorHaloW}
+          fill={"transparent"}
+          opacity={1}
+          listening={false}
+        />
+        <Circle
+          x={end.x}
+          y={end.y}
+          radius={anchorR}
+          stroke={anchorStroke}
+          strokeWidth={anchorStrokeW}
+          fill={isEnd ? anchorStroke : "transparent"}
+          opacity={1}
+          listening={false}
+          name="inaa-edge-anchor-end"
+        />
+        <Text
+          x={end.x}
+          y={end.y - 10 / scale}
+          text="F"
+          fontSize={labelFs}
+          fill={highlightStroke}
+          opacity={isEnd ? 1 : 0.75}
+          offsetX={labelFs / 4}
+          offsetY={labelFs / 2}
+          listening={false}
+        />
+      </React.Fragment>
     );
   };
 
