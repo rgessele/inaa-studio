@@ -222,7 +222,7 @@ export function NewProjectButton({
                     Novo Projeto
                   </h2>
 
-                  <div className="mt-10 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_340px]">
+                  <div className="mt-10 grid grid-cols-1 gap-10 md:grid-cols-[1fr_340px]">
                     <div className="space-y-8">
                       <div>
                         <label className="text-sm text-gray-600">
