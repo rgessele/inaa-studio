@@ -4,6 +4,48 @@ import type { Metadata } from "next";
 import { EditorLayout, Canvas } from "@/components/editor";
 import ProjectLoader from "./ProjectLoader";
 
+function getE2ETestProject(id: string) {
+  return {
+    id,
+    name: "Projeto E2E",
+    design_data: {
+      version: 2,
+      pageGuideSettings: {
+        paperSize: "A4",
+        orientation: "portrait",
+        marginCm: 1,
+      },
+      guides: [],
+      figures: [
+        {
+          id: "fig_e2e_rect",
+          tool: "rectangle",
+          x: 0,
+          y: 0,
+          rotation: 0,
+          closed: true,
+          nodes: [
+            { id: "n1", x: 0, y: 0, mode: "corner" },
+            { id: "n2", x: 200, y: 0, mode: "corner" },
+            { id: "n3", x: 200, y: 120, mode: "corner" },
+            { id: "n4", x: 0, y: 120, mode: "corner" },
+          ],
+          edges: [
+            { id: "e1", from: "n1", to: "n2", kind: "line" },
+            { id: "e2", from: "n2", to: "n3", kind: "line" },
+            { id: "e3", from: "n3", to: "n4", kind: "line" },
+            { id: "e4", from: "n4", to: "n1", kind: "line" },
+          ],
+          stroke: "aci7",
+          strokeWidth: 2,
+          fill: "transparent",
+          opacity: 1,
+        },
+      ],
+    },
+  };
+}
+
 interface PageProps {
   params: Promise<{
     id: string;
@@ -44,11 +86,26 @@ export default async function EditorProjectPage({ params }: PageProps) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  const isE2E = process.env.E2E_TESTS === "1";
+  const isProd = process.env.NODE_ENV === "production";
+
+  const { id } = await params;
+
+  // E2E mode: allow opening the editor without auth, with a deterministic
+  // fake project so we can test ProjectLoader flows.
+  if (!user && isE2E && !isProd) {
+    const project = getE2ETestProject(id);
+    return (
+      <EditorLayout>
+        <ProjectLoader project={project} />
+        <Canvas />
+      </EditorLayout>
+    );
+  }
+
   if (!user) {
     redirect("/login");
   }
-
-  const { id } = await params;
 
   // Fetch the project - ensure user owns it
   const { data: project, error } = await supabase

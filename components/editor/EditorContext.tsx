@@ -201,6 +201,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     }
   );
 
+  const pageGuideSettingsRef = useRef<PageGuideSettings>(pageGuideSettings);
+
+  React.useEffect(() => {
+    pageGuideSettingsRef.current = pageGuideSettings;
+  }, [pageGuideSettings]);
+
   const [measureDisplayMode, setMeasureDisplayModeState] = useState<MeasureDisplayMode>(
     "never"
   );
@@ -533,6 +539,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       nextPageGuideSettings?: PageGuideSettings,
       nextGuides?: GuideLine[]
     ) => {
+      const effectivePageGuideSettings =
+        nextPageGuideSettings ?? pageGuideSettingsRef.current;
+
       setFigures(figures, false); // Load without saving to history
       setProjectId(projectId);
       setProjectName(projectName);
@@ -545,14 +554,14 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       setLastSavedSnapshot(
         JSON.stringify({
           figures,
-          pageGuideSettings: nextPageGuideSettings ?? pageGuideSettings,
+          pageGuideSettings: effectivePageGuideSettings,
           guides: Array.isArray(nextGuides) ? nextGuides : [],
         })
       );
       setSelectedFigureIdsState([]);
       setSelectedEdge(null);
     },
-    [pageGuideSettings, setFigures]
+    [setFigures]
   );
 
   const markProjectSaved = useCallback(() => {
