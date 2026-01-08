@@ -13,6 +13,7 @@ import { figureLocalPolyline } from "./figurePath";
 import type { PointLabelsMode } from "./types";
 import { computeNodeLabels } from "./pointLabels";
 import { figureCentroidLocal } from "./figurePath";
+import { toast } from "@/utils/toast";
 
 export type {
   ExportSettings,
@@ -233,14 +234,14 @@ export async function generateTiledPDF(
     ? computeNodeLabels(filtered, options!.pointLabelsMode!)
     : new Map<string, Record<string, string>>();
 
-  if (filtered.length === 0) {
-    alert("Não há nada para exportar. Desenhe algo primeiro.");
+    if (filtered.length === 0) {
+      toast("Não há nada para exportar. Desenhe algo primeiro.", "error");
     return;
   }
 
   const bbox = calculateFiguresBoundingBox(filtered);
   if (!bbox) {
-    alert("Erro ao calcular a área de desenho.");
+    toast("Erro ao calcular a área de desenho.", "error");
     return;
   }
 
@@ -251,7 +252,7 @@ export async function generateTiledPDF(
   const safeHeightCm = paperHeightCm - 2 * marginCm;
 
   if (safeWidthCm <= 0 || safeHeightCm <= 0) {
-    alert("Margens inválidas: a área útil ficou negativa.");
+    toast("Margens inválidas: a área útil ficou negativa.", "error");
     return;
   }
 
@@ -295,7 +296,7 @@ export async function generateTiledPDF(
 
   const totalPages = tiles.length;
   if (totalPages === 0) {
-    alert("Nada para exportar com os filtros selecionados.");
+    toast("Nada para exportar com os filtros selecionados.", "error");
     return;
   }
 
@@ -475,13 +476,13 @@ export function generateSVG(
     : new Map<string, Record<string, string>>();
 
   if (filtered.length === 0) {
-    alert("Não há nada para exportar. Desenhe algo primeiro.");
+    toast("Não há nada para exportar. Desenhe algo primeiro.", "error");
     return;
   }
 
   const bbox = calculateFiguresBoundingBox(filtered);
   if (!bbox) {
-    alert("Erro ao calcular a área de desenho.");
+    toast("Erro ao calcular a área de desenho.", "error");
     return;
   }
 

@@ -21,6 +21,7 @@ import {
 } from "./export";
 import { PAPER_SIZES, PAPER_SIZE_LABELS } from "./exportSettings";
 import { cyclePointLabelsMode } from "./pointLabels";
+import { toast } from "@/utils/toast";
 
 export function EditorToolbar() {
   const router = useRouter();
@@ -50,6 +51,7 @@ export function EditorToolbar() {
     deleteSelected,
   } = useEditor();
   const [showExportModal, setShowExportModal] = useState(false);
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
 
   const [exportSettings, setExportSettings] = useState<ExportSettings>(() =>
     createDefaultExportSettings()
@@ -103,7 +105,6 @@ export function EditorToolbar() {
     }
 
     let cancelled = false;
-
     const tryExport = async () => {
       if (cancelled || hasAutoExportedRef.current) {
         return;
@@ -365,15 +366,25 @@ export function EditorToolbar() {
   const clearTooltip = useDelayedTooltip(true);
 
   const handleClear = () => {
-    if (confirm("Tem certeza que deseja limpar tudo?")) {
-      setFigures([]);
-    }
+    setIsClearConfirmOpen(true);
   };
+
+  useEffect(() => {
+    if (!isClearConfirmOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsClearConfirmOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isClearConfirmOpen]);
 
   const handleExportPDF = async () => {
     const stage = getStage();
     if (!stage) {
-      alert("Canvas ainda não está pronto.");
+      toast("Canvas ainda não está pronto.", "error");
       return;
     }
 
@@ -866,6 +877,67 @@ export function EditorToolbar() {
           </button>
         </aside>
       )}
+
+      {isClearConfirmOpen ? (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+          onClick={() => setIsClearConfirmOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="clear-confirm-title"
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-lg p-8 max-w-lg w-full mx-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-6 mb-4">
+              <div>
+                <h2
+                  id="clear-confirm-title"
+                  className="text-2xl font-semibold text-gray-900 dark:text-white"
+                >
+                  Limpar tudo
+                </h2>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                  Tem certeza que deseja remover todas as formas do projeto?
+                  Esta ação não pode ser desfeita.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors"
+                aria-label="Fechar"
+                onClick={() => setIsClearConfirmOpen(false)}
+              >
+                <span className="material-symbols-outlined text-[20px]">
+                  close
+                </span>
+              </button>
+            </div>
+
+            <div className="mt-8 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsClearConfirmOpen(false)}
+                className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFigures([]);
+                  setIsClearConfirmOpen(false);
+                }}
+                className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+              >
+                Limpar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Export Modal */}
       {isExportModalOpen && (

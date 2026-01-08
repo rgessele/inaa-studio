@@ -2,14 +2,19 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { EditorLayout, Canvas } from "@/components/editor";
+import type { DesignDataV2 } from "@/components/editor/types";
 import ProjectLoader from "./ProjectLoader";
 
-function getE2ETestProject(id: string) {
+function getE2ETestProject(id: string): {
+  id: string;
+  name: string;
+  design_data: Partial<DesignDataV2>;
+} {
   return {
     id,
     name: "Projeto E2E",
     design_data: {
-      version: 2,
+      version: 2 as const,
       pageGuideSettings: {
         paperSize: "A4",
         orientation: "portrait",

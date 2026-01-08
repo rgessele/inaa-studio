@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Project } from "@/lib/projects";
 import { saveProjectAsCopy } from "@/lib/projects";
 import { createDefaultExportSettings } from "@/components/editor/exportSettings";
+import { toast } from "@/utils/toast";
 
 type SortOption = "recent" | "old" | "name";
 type ViewMode = "grid" | "list";
@@ -116,7 +117,16 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   >(null);
   const [printProjectId, setPrintProjectId] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<Project | null>(null);
+  const [nameModal, setNameModal] = useState<
+    | {
+        mode: "duplicate" | "rename";
+        project: Project;
+        value: string;
+      }
+    | null
+  >(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [nameModalError, setNameModalError] = useState<string | null>(null);
   const [tags, setTags] = useState<DashboardTag[]>([]);
   const [tagsError, setTagsError] = useState<string | null>(null);
   const [isTagsModalOpen, setIsTagsModalOpen] = useState(false);
@@ -237,6 +247,26 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   }, [deleteCandidate]);
 
   useEffect(() => {
+    if (!nameModal) return;
+    setOpenMenuForProjectId(null);
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !isWorking) {
+        setNameModal(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isWorking, nameModal]);
+
+  useEffect(() => {
     if (!isTagsModalOpen) return;
     setTagsPage(1);
 
@@ -328,19 +358,16 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
     };
   }, []);
 
-  const handleDuplicate = async (project: Project) => {
-    const suggestedName = `${project.name} (cópia)`;
-    const newName = window.prompt("Nome do projeto (cópia):", suggestedName);
-    if (!newName || !newName.trim()) {
-      return;
-    }
-
+  const runDuplicate = async (
+    project: Project,
+    newName: string
+  ): Promise<boolean> => {
     setIsWorking(true);
     try {
       const defaults = createDefaultExportSettings();
       const result = await saveProjectAsCopy(
         project.id,
-        newName.trim(),
+        newName,
         project.design_data?.figures ?? [],
         project.design_data?.pageGuideSettings ?? {
           paperSize: defaults.paperSize,
@@ -351,8 +378,8 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       );
 
       if (!result.success || !result.projectId) {
-        alert(result.error ?? "Erro ao duplicar projeto.");
-        return;
+        toast(result.error ?? "Erro ao duplicar projeto.", "error");
+        return false;
       }
 
       const supabase = createClient();
@@ -395,22 +422,27 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
 
       if (error || !created) {
         router.refresh();
-        return;
+        return true;
       }
 
       setItems((prev) => [created as DashboardProject, ...prev]);
       setOpenMenuForProjectId(null);
+      return true;
     } finally {
       setIsWorking(false);
     }
   };
 
-  const handleRename = async (project: Project) => {
-    const newName = window.prompt("Novo nome do projeto:", project.name);
-    if (!newName || !newName.trim() || newName.trim() === project.name) {
-      return;
-    }
+  const handleDuplicate = (project: Project) => {
+    const suggestedName = `${project.name} (cópia)`;
+    setNameModalError(null);
+    setNameModal({ mode: "duplicate", project, value: suggestedName });
+  };
 
+  const runRename = async (
+    project: Project,
+    newName: string
+  ): Promise<boolean> => {
     setIsWorking(true);
     try {
       const supabase = createClient();
@@ -420,29 +452,61 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       } = await supabase.auth.getUser();
 
       if (authError || !user) {
-        alert("Usuário não autenticado");
-        return;
+        toast("Usuário não autenticado", "error");
+        return false;
       }
 
       const { error } = await supabase
         .from("projects")
-        .update({ name: newName.trim() })
+        .update({ name: newName })
         .eq("id", project.id)
         .eq("user_id", user.id);
 
       if (error) {
-        alert(error.message);
-        return;
+        toast(error.message, "error");
+        return false;
       }
 
       setItems((prev) =>
         prev.map((p) =>
-          p.id === project.id ? { ...p, name: newName.trim() } : p
+          p.id === project.id ? { ...p, name: newName } : p
         )
       );
       setOpenMenuForProjectId(null);
+      return true;
     } finally {
       setIsWorking(false);
+    }
+  };
+
+  const handleRename = (project: Project) => {
+    setNameModalError(null);
+    setNameModal({ mode: "rename", project, value: project.name });
+  };
+
+  const handleConfirmNameModal = async () => {
+    if (!nameModal) return;
+
+    const trimmed = nameModal.value.trim();
+    if (!trimmed) {
+      setNameModalError("Informe um nome.");
+      return;
+    }
+
+    if (nameModal.mode === "rename" && trimmed === nameModal.project.name) {
+      setNameModal(null);
+      return;
+    }
+
+    setNameModalError(null);
+
+    const ok =
+      nameModal.mode === "duplicate"
+        ? await runDuplicate(nameModal.project, trimmed)
+        : await runRename(nameModal.project, trimmed);
+
+    if (ok) {
+      setNameModal(null);
     }
   };
 
@@ -456,7 +520,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       } = await supabase.auth.getUser();
 
       if (authError || !user) {
-        alert("Usuário não autenticado");
+        toast("Usuário não autenticado", "error");
         return;
       }
 
@@ -478,7 +542,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
         .eq("user_id", user.id);
 
       if (error) {
-        alert(error.message);
+        toast(error.message, "error");
         return;
       }
 
@@ -877,7 +941,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       } = await supabase.auth.getUser();
 
       if (authError || !user) {
-        alert("Usuário não autenticado");
+        toast("Usuário não autenticado", "error");
         return;
       }
 
@@ -892,7 +956,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
         });
 
       if (uploadError) {
-        alert(`Falha ao enviar banner: ${uploadError.message}`);
+        toast(`Falha ao enviar banner: ${uploadError.message}`, "error");
         return;
       }
 
@@ -918,7 +982,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
         .eq("user_id", user.id);
 
       if (error) {
-        alert(error.message);
+        toast(error.message, "error");
         return;
       }
 
@@ -1087,6 +1151,112 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
+      {isClient && nameModal
+        ? createPortal(
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center">
+              <div
+                className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                onClick={() => (!isWorking ? setNameModal(null) : null)}
+              />
+
+              <div className="relative w-[92vw] max-w-lg max-h-[85vh] rounded-2xl bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 shadow-floating overflow-hidden flex flex-col">
+                <button
+                  type="button"
+                  aria-label="Fechar"
+                  onClick={() => (!isWorking ? setNameModal(null) : null)}
+                  className="absolute right-4 top-4 text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+
+                <form
+                  className="p-8"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void handleConfirmNameModal();
+                  }}
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="h-12 w-12 rounded-full bg-gray-500/10 flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-[24px] text-gray-700 dark:text-gray-200">
+                        {nameModal.mode === "duplicate" ? "content_copy" : "edit"}
+                      </span>
+                    </div>
+
+                    <div className="flex-1">
+                      <h2 className="text-2xl font-semibold text-gray-900 dark:text-text-main-dark">
+                        {nameModal.mode === "duplicate"
+                          ? "Duplicar projeto"
+                          : "Renomear projeto"}
+                      </h2>
+                      <p className="mt-2 text-sm text-gray-600 dark:text-text-muted-dark">
+                        {nameModal.mode === "duplicate"
+                          ? "Informe o nome do projeto (cópia)."
+                          : "Informe o novo nome do projeto."}
+                      </p>
+
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-gray-900 dark:text-text-main-dark">
+                          Nome
+                        </label>
+                        <input
+                          autoFocus
+                          value={nameModal.value}
+                          disabled={isWorking}
+                          onChange={(e) => {
+                            setNameModal((prev) =>
+                              prev ? { ...prev, value: e.target.value } : prev
+                            );
+                            if (nameModalError) setNameModalError(null);
+                          }}
+                          className={
+                            "mt-2 w-full rounded-lg border bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700 " +
+                            (nameModalError
+                              ? "border-red-500 focus:ring-red-300 dark:focus:ring-red-800"
+                              : "border-gray-200 dark:border-gray-700")
+                          }
+                          placeholder="Digite um nome"
+                        />
+                      </div>
+
+                      {nameModalError ? (
+                        <div className="mt-4 rounded-lg bg-red-50 dark:bg-red-950/20 p-3 border border-red-200 dark:border-red-900/30">
+                          <p className="text-sm text-red-800 dark:text-red-200">
+                            {nameModalError}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-8 flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      disabled={isWorking}
+                      onClick={() => setNameModal(null)}
+                      className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isWorking}
+                      className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white transition-colors disabled:opacity-60 disabled:pointer-events-none"
+                    >
+                      {isWorking
+                        ? "Salvando..."
+                        : nameModal.mode === "duplicate"
+                          ? "Duplicar"
+                          : "Renomear"}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>,
             document.body
