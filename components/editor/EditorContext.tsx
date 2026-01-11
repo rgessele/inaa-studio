@@ -208,11 +208,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   }, [pageGuideSettings]);
 
   const [measureDisplayMode, setMeasureDisplayModeState] = useState<MeasureDisplayMode>(
-    "never"
+    "always"
   );
 
   const [nodesDisplayMode, setNodesDisplayModeState] = useState<NodesDisplayMode>(
-    "never"
+    "always"
   );
 
   const [pointLabelsMode, setPointLabelsMode] = useState<PointLabelsMode>("off");

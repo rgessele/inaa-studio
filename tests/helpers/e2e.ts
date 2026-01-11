@@ -14,10 +14,10 @@ export async function initE2EState(page: Page) {
         localStorage.setItem("inaa:showPageGuides", "0");
       }
       if (localStorage.getItem("inaa:measureDisplayMode") === null) {
-        localStorage.setItem("inaa:measureDisplayMode", "never");
+        localStorage.setItem("inaa:measureDisplayMode", "always");
       }
       if (localStorage.getItem("inaa:nodesDisplayMode") === null) {
-        localStorage.setItem("inaa:nodesDisplayMode", "never");
+        localStorage.setItem("inaa:nodesDisplayMode", "always");
       }
       if (localStorage.getItem("inaa:magnetEnabled") === null) {
         localStorage.setItem("inaa:magnetEnabled", "0");
