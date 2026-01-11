@@ -17,7 +17,10 @@ export interface ExportSettings {
   includeBlankPages: boolean;
   dashedLines: boolean;
   showBaseSize: boolean;
-  toolFilter: Record<"rectangle" | "circle" | "line" | "curve" | "dart", boolean>;
+  toolFilter: Record<
+    "rectangle" | "circle" | "line" | "curve" | "dart",
+    boolean
+  >;
 }
 
 export const PAPER_SIZE_LABELS: Record<PaperSize, string> = {

@@ -12,7 +12,6 @@ export default function Error(
 
   useEffect(() => {
     // Surface the underlying error in devtools.
-    // eslint-disable-next-line no-console
     console.error(error);
   }, [error]);
 
@@ -21,8 +20,8 @@ export default function Error(
       <div className="w-full max-w-md rounded-lg border border-gray-200 dark:border-gray-800 bg-surface-light dark:bg-surface-dark p-6 shadow-subtle">
         <h1 className="text-lg font-semibold">Algo deu errado</h1>
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          Tente recarregar esta seção. Se continuar acontecendo, veja o console do
-          navegador para mais detalhes.
+          Tente recarregar esta seção. Se continuar acontecendo, veja o console
+          do navegador para mais detalhes.
         </p>
         <div className="mt-4 flex gap-3">
           <button

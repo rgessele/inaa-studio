@@ -94,7 +94,8 @@ function getProjectTags(project: DashboardProject): DashboardTag[] {
     .filter((value): value is DashboardTag => Boolean(value))
     .map((tag) => ({
       ...tag,
-      color: normalizeHexColor((tag as { color?: string | null }).color ?? "") ??
+      color:
+        normalizeHexColor((tag as { color?: string | null }).color ?? "") ??
         DEFAULT_TAG_COLOR,
     }));
 }
@@ -117,14 +118,11 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   >(null);
   const [printProjectId, setPrintProjectId] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<Project | null>(null);
-  const [nameModal, setNameModal] = useState<
-    | {
-        mode: "duplicate" | "rename";
-        project: Project;
-        value: string;
-      }
-    | null
-  >(null);
+  const [nameModal, setNameModal] = useState<{
+    mode: "duplicate" | "rename";
+    project: Project;
+    value: string;
+  } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [nameModalError, setNameModalError] = useState<string | null>(null);
   const [tags, setTags] = useState<DashboardTag[]>([]);
@@ -132,15 +130,16 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   const [isTagsModalOpen, setIsTagsModalOpen] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   const [newTagColor, setNewTagColor] = useState<string>(DEFAULT_TAG_COLOR);
-  const [tagColorDrafts, setTagColorDrafts] = useState<Record<string, string>>({});
+  const [tagColorDrafts, setTagColorDrafts] = useState<Record<string, string>>(
+    {}
+  );
   const [tagsPage, setTagsPage] = useState(1);
   const [isCreatingTag, setIsCreatingTag] = useState(false);
   const [openTagFilter, setOpenTagFilter] = useState(false);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [includeUntagged, setIncludeUntagged] = useState(false);
-  const [tagEditorProject, setTagEditorProject] = useState<
-    DashboardProject | null
-  >(null);
+  const [tagEditorProject, setTagEditorProject] =
+    useState<DashboardProject | null>(null);
   const [tagEditorError, setTagEditorError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -193,7 +192,11 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
         }
 
         const normalized = (withColor.data ?? []).map((tag) => {
-          const row = tag as { id: string; name: string; color?: string | null };
+          const row = tag as {
+            id: string;
+            name: string;
+            color?: string | null;
+          };
           return {
             id: row.id,
             name: row.name,
@@ -311,8 +314,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
   }, [projects]);
 
   const isTagFilterActive = includeUntagged || selectedTagIds.length > 0;
-  const tagFilterCount =
-    selectedTagIds.length + (includeUntagged ? 1 : 0);
+  const tagFilterCount = selectedTagIds.length + (includeUntagged ? 1 : 0);
   const selectedTagsForChips = useMemo(() => {
     const byId = new Map(tags.map((t) => [t.id, t] as const));
     return selectedTagIds
@@ -391,16 +393,15 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
         .eq("id", result.projectId)
         .single();
 
-      const withTagsWithoutColor =
-        withTags.error?.message?.includes("color")
-          ? await supabase
-              .from("projects")
-              .select(
-                "*, project_tags!project_tags_project_id_fkey(tag_id, tags!project_tags_tag_id_fkey(id, name))"
-              )
-              .eq("id", result.projectId)
-              .single()
-          : null;
+      const withTagsWithoutColor = withTags.error?.message?.includes("color")
+        ? await supabase
+            .from("projects")
+            .select(
+              "*, project_tags!project_tags_project_id_fkey(tag_id, tags!project_tags_tag_id_fkey(id, name))"
+            )
+            .eq("id", result.projectId)
+            .single()
+        : null;
 
       const relationshipMissing =
         (withTagsWithoutColor?.error ?? withTags.error)?.message?.includes(
@@ -415,8 +416,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
             .single()
         : null;
 
-      const created =
-        (withoutTags?.data ?? withTagsWithoutColor?.data ?? withTags.data) as unknown;
+      const created = (withoutTags?.data ??
+        withTagsWithoutColor?.data ??
+        withTags.data) as unknown;
       const error =
         withoutTags?.error ?? withTagsWithoutColor?.error ?? withTags.error;
 
@@ -468,9 +470,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       }
 
       setItems((prev) =>
-        prev.map((p) =>
-          p.id === project.id ? { ...p, name: newName } : p
-        )
+        prev.map((p) => (p.id === project.id ? { ...p, name: newName } : p))
       );
       setOpenMenuForProjectId(null);
       return true;
@@ -667,10 +667,15 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
             : [...rows, { tag_id: tagId, tags: null }];
           return { ...p, project_tags: nextRows };
         }
-        return { ...p, project_tags: rows.filter((row) => row.tag_id !== tagId) };
+        return {
+          ...p,
+          project_tags: rows.filter((row) => row.tag_id !== tagId),
+        };
       };
 
-      setItems((prev) => prev.map((p) => (p.id === projectId ? applyToProject(p) : p)));
+      setItems((prev) =>
+        prev.map((p) => (p.id === projectId ? applyToProject(p) : p))
+      );
       setTagEditorProject((prev) =>
         prev && prev.id === projectId ? applyToProject(prev) : prev
       );
@@ -684,7 +689,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
     if (!name || isWorking) return;
 
     const alreadyExists = tags.some(
-      (t) => t.name.trim().toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR")
+      (t) =>
+        t.name.trim().toLocaleLowerCase("pt-BR") ===
+        name.toLocaleLowerCase("pt-BR")
     );
     if (alreadyExists) {
       setTagsError("Já existe uma tag com esse nome.");
@@ -756,7 +763,11 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
         return;
       }
 
-      const createdRow = data as { id: string; name: string; color?: string | null };
+      const createdRow = data as {
+        id: string;
+        name: string;
+        color?: string | null;
+      };
       const created: DashboardTag = {
         id: createdRow.id,
         name: createdRow.name,
@@ -886,7 +897,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
       setItems((prev) =>
         prev.map((p) => ({
           ...p,
-          project_tags: (p.project_tags ?? []).filter((row) => row.tag_id !== tagId),
+          project_tags: (p.project_tags ?? []).filter(
+            (row) => row.tag_id !== tagId
+          ),
         }))
       );
       setTagEditorProject((prev) =>
@@ -906,7 +919,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
 
   const toggleSelectedTag = (tagId: string) => {
     setSelectedTagIds((prev) =>
-      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
+      prev.includes(tagId)
+        ? prev.filter((id) => id !== tagId)
+        : [...prev, tagId]
     );
   };
 
@@ -1185,7 +1200,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                   <div className="flex items-start gap-4">
                     <div className="h-12 w-12 rounded-full bg-gray-500/10 flex items-center justify-center shrink-0">
                       <span className="material-symbols-outlined text-[24px] text-gray-700 dark:text-gray-200">
-                        {nameModal.mode === "duplicate" ? "content_copy" : "edit"}
+                        {nameModal.mode === "duplicate"
+                          ? "content_copy"
+                          : "edit"}
                       </span>
                     </div>
 
@@ -1275,7 +1292,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                 <button
                   type="button"
                   aria-label="Fechar"
-                  onClick={() => (!isWorking ? setIsTagsModalOpen(false) : null)}
+                  onClick={() =>
+                    !isWorking ? setIsTagsModalOpen(false) : null
+                  }
                   className="absolute right-4 top-4 text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
                 >
                   <span className="material-symbols-outlined">close</span>
@@ -1307,7 +1326,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                       <input
                         type="color"
                         aria-label="Escolher cor"
-                        value={normalizeHexColor(newTagColor) ?? DEFAULT_TAG_COLOR}
+                        value={
+                          normalizeHexColor(newTagColor) ?? DEFAULT_TAG_COLOR
+                        }
                         onChange={(e) => setNewTagColor(e.target.value)}
                         className="color-swatch h-9 w-9 rounded-full overflow-hidden cursor-pointer bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-surface-light dark:focus:ring-offset-surface-dark"
                       />
@@ -1383,10 +1404,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                           };
 
                           return (
-                            <li
-                              key={tag.id}
-                              className="px-4 py-2"
-                            >
+                            <li key={tag.id} className="px-4 py-2">
                               <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2 sm:gap-3 items-center">
                                 <div className="min-w-0 flex items-center gap-2">
                                   <span className="material-symbols-outlined text-[18px] text-gray-400">
@@ -1414,7 +1432,10 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                                       ...prev,
                                       [tag.id]: e.target.value,
                                     }));
-                                    void handleUpdateTagColor(tag.id, e.target.value);
+                                    void handleUpdateTagColor(
+                                      tag.id,
+                                      e.target.value
+                                    );
                                   }}
                                   className="color-swatch h-9 w-9 rounded-full overflow-hidden cursor-pointer bg-transparent focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-surface-light dark:focus:ring-offset-surface-dark disabled:opacity-60 disabled:pointer-events-none"
                                 />
@@ -1509,7 +1530,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                 <button
                   type="button"
                   aria-label="Fechar"
-                  onClick={() => (!isWorking ? setTagEditorProject(null) : null)}
+                  onClick={() =>
+                    !isWorking ? setTagEditorProject(null) : null
+                  }
                   className="absolute right-4 top-4 text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white"
                 >
                   <span className="material-symbols-outlined">close</span>
@@ -1543,7 +1566,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                     ) : (
                       <ul className="divide-y divide-gray-200 dark:divide-gray-700">
                         {tags.map((tag) => {
-                          const checked = getProjectTagIds(tagEditorProject).includes(tag.id);
+                          const checked = getProjectTagIds(
+                            tagEditorProject
+                          ).includes(tag.id);
                           return (
                             <li
                               key={tag.id}
@@ -1554,7 +1579,12 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                                   type="checkbox"
                                   checked={checked}
                                   disabled={isWorking}
-                                  onChange={() => void toggleTagForProject(tagEditorProject.id, tag.id)}
+                                  onChange={() =>
+                                    void toggleTagForProject(
+                                      tagEditorProject.id,
+                                      tag.id
+                                    )
+                                  }
                                   className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                                 />
                                 <span className="text-sm font-medium text-gray-900 dark:text-text-main-dark">
@@ -1616,7 +1646,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
               aria-label="Filtrar por tags"
               title="Filtrar por tags"
             >
-              <span className="material-symbols-outlined text-[20px]">sell</span>
+              <span className="material-symbols-outlined text-[20px]">
+                sell
+              </span>
               <span className="hidden sm:inline text-sm">Tags</span>
               {isTagFilterActive ? (
                 <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-xs font-medium bg-primary/15 text-primary dark:text-primary">
@@ -1708,7 +1740,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                     }}
                     className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-60 disabled:pointer-events-none"
                   >
-                    <span className="material-symbols-outlined text-[18px]">settings</span>
+                    <span className="material-symbols-outlined text-[18px]">
+                      settings
+                    </span>
                     Gerenciar
                   </button>
                 </div>
@@ -1760,7 +1794,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
               title="Remover filtro: Sem tag"
             >
               <span className="text-xs">Sem tag</span>
-              <span className="material-symbols-outlined text-[16px]">close</span>
+              <span className="material-symbols-outlined text-[16px]">
+                close
+              </span>
             </button>
           ) : null}
 
@@ -1781,7 +1817,9 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                 aria-hidden="true"
               />
               <span className="text-xs">{tag.name}</span>
-              <span className="material-symbols-outlined text-[16px]">close</span>
+              <span className="material-symbols-outlined text-[16px]">
+                close
+              </span>
             </button>
           ))}
 

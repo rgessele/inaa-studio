@@ -1,7 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { getEditorState, initE2EState } from "./helpers/e2e";
 
-test("page guides: project loader does not revert size/orientation", async ({ page }) => {
+test("page guides: project loader does not revert size/orientation", async ({
+  page,
+}) => {
   await initE2EState(page);
 
   // This route renders ProjectLoader (app/editor/[id]) and, in E2E mode,
@@ -27,7 +29,9 @@ test("page guides: project loader does not revert size/orientation", async ({ pa
     .toBe("A0");
 
   await expect
-    .poll(async () => (await getEditorState(page)).pageGuideSettings.orientation)
+    .poll(
+      async () => (await getEditorState(page)).pageGuideSettings.orientation
+    )
     .toBe("landscape");
 
   // Regression check: previously, changing pageGuideSettings could cause a

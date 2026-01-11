@@ -77,10 +77,7 @@ export function canUnfoldShape(shape: Shape): boolean {
 /**
  * Get a suggested axis position for unfolding based on the shape
  */
-export function getSuggestedUnfoldAxis(
-  shape: Shape,
-  axis: MirrorAxis
-): number {
+export function getSuggestedUnfoldAxis(shape: Shape, axis: MirrorAxis): number {
   if (!shape.points || shape.points.length < 2) {
     return axis === "vertical" ? shape.x : shape.y;
   }

@@ -77,12 +77,10 @@ declare global {
         nodes: Array<{ id: string; x: number; y: number }>;
         edges: Array<{ id: string; from: string; to: string; kind: string }>;
       }>;
-      getSelectedFigureStats?: () =>
-        | {
-            nodesCount: number;
-            edgesCount: number;
-          }
-        | null;
+      getSelectedFigureStats?: () => {
+        nodesCount: number;
+        edgesCount: number;
+      } | null;
       addTestRectangle?: () => void;
       loadTestProject?: (opts?: {
         figures?: unknown[];

@@ -149,7 +149,9 @@ export function EditorToolbar() {
     customMargins,
     exportSettings,
     getStage,
+    includePointLabels,
     includeSeamAllowance,
+    pointLabelsMode,
     searchParams,
     setShowGrid,
     figures,
@@ -315,9 +317,7 @@ export function EditorToolbar() {
         >
           {ch}
         </text>
-        {showReset ? (
-          <path d="M16.5 8.5a4.5 4.5 0 0 0-6.8-1.2" />
-        ) : null}
+        {showReset ? <path d="M16.5 8.5a4.5 4.5 0 0 0-6.8-1.2" /> : null}
         {showReset ? <path d="M9.5 6.4H6.8V9" /> : null}
       </svg>
     );
@@ -517,418 +517,408 @@ export function EditorToolbar() {
                 : "grid grid-cols-1 content-start justify-items-stretch gap-1 flex-1 min-h-0"
             }
           >
-              <button
-                onClick={() => {
-                  if (typeof window === "undefined") return;
-                  window.dispatchEvent(new CustomEvent("inaa:save"));
-                }}
-                onMouseEnter={saveTooltip.onMouseEnter}
-                onMouseLeave={saveTooltip.onMouseLeave}
-                className="group relative w-full aspect-square flex items-center justify-center rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
-                aria-label="Salvar"
-              >
-                <span className="material-symbols-outlined text-[22px]">save</span>
-                <ToolbarTooltip
-                  isMac={isMac}
-                  title="Salvar"
-                  shortcuts={[{ cmdOrCtrl: true, key: "S" }]}
-                  expanded={saveTooltip.expanded}
-                  details={[
-                    "Salva as alterações do projeto.",
-                    "Se ainda não existir, abre o fluxo de Salvar como.",
-                  ]}
-                />
-              </button>
-
-              <button
-                onClick={() => setShowExportModal(true)}
-                onMouseEnter={exportTooltip.onMouseEnter}
-                onMouseLeave={exportTooltip.onMouseLeave}
-                className="group relative w-full aspect-square flex items-center justify-center rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
-                aria-label="Exportar"
-              >
-                <span className="material-symbols-outlined text-[22px]">
-                  download
-                </span>
-                <ToolbarTooltip
-                  isMac={isMac}
-                  title="Exportar"
-                  expanded={exportTooltip.expanded}
-                  details={[
-                    "Abre as opções de exportação e impressão.",
-                    "Use para PDF (paginado) ou SVG.",
-                  ]}
-                />
-              </button>
-
-              <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
-
-              <button
-                onClick={undo}
-                disabled={!canUndo}
-                onMouseEnter={undoTooltip.onMouseEnter}
-                onMouseLeave={undoTooltip.onMouseLeave}
-                className={`group relative w-full aspect-square flex items-center justify-center rounded transition-all ${
-                  !canUndo
-                    ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-                    : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
-                }`}
-                aria-label="Desfazer"
-              >
-                <span className="material-symbols-outlined text-[22px]">undo</span>
-                <ToolbarTooltip
-                  isMac={isMac}
-                  title="Desfazer"
-                  shortcuts={[{ cmdOrCtrl: true, key: "Z" }]}
-                  expanded={undoTooltip.expanded}
-                  details={["Desfaz a última ação."]}
-                />
-              </button>
-
-              <button
-                onClick={redo}
-                disabled={!canRedo}
-                onMouseEnter={redoTooltip.onMouseEnter}
-                onMouseLeave={redoTooltip.onMouseLeave}
-                className={`group relative w-full aspect-square flex items-center justify-center rounded transition-all ${
-                  !canRedo
-                    ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-                    : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
-                }`}
-                aria-label="Refazer"
-              >
-                <span className="material-symbols-outlined text-[22px]">redo</span>
-                <ToolbarTooltip
-                  isMac={isMac}
-                  title="Refazer"
-                  shortcuts={[
-                    { cmdOrCtrl: true, shift: true, key: "Z" },
-                    { cmdOrCtrl: true, key: "Y" },
-                  ]}
-                  expanded={redoTooltip.expanded}
-                  details={["Refaz a última ação desfeita."]}
-                />
-              </button>
-
-              <button
-                type="button"
-                onClick={deleteSelected}
-                disabled={!selectedFigureId}
-                onMouseEnter={eraseTooltip.onMouseEnter}
-                onMouseLeave={eraseTooltip.onMouseLeave}
-                className={`group relative w-full aspect-square flex items-center justify-center rounded transition-all ${
-                  !selectedFigureId
-                    ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
-                    : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
-                }`}
-                aria-label="Borracha"
-              >
-                <span className="material-symbols-outlined text-[22px]">
-                  backspace
-                </span>
-                <ToolbarTooltip
-                  isMac={isMac}
-                  title="Borracha"
-                  shortcuts={[{ key: "Backspace" }]}
-                  expanded={eraseTooltip.expanded}
-                  details={["Apaga a figura selecionada."]}
-                />
-              </button>
-
-              <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
-
-              <ToolButton
-                active={tool === "select"}
-                onClick={() => handleToolChange("select")}
-                icon="arrow_selector_tool"
+            <button
+              onClick={() => {
+                if (typeof window === "undefined") return;
+                window.dispatchEvent(new CustomEvent("inaa:save"));
+              }}
+              onMouseEnter={saveTooltip.onMouseEnter}
+              onMouseLeave={saveTooltip.onMouseLeave}
+              className="group relative w-full aspect-square flex items-center justify-center rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
+              aria-label="Salvar"
+            >
+              <span className="material-symbols-outlined text-[22px]">
+                save
+              </span>
+              <ToolbarTooltip
                 isMac={isMac}
-                title="Selecionar"
-                shortcuts={[{ key: "V" }]}
+                title="Salvar"
+                shortcuts={[{ cmdOrCtrl: true, key: "S" }]}
+                expanded={saveTooltip.expanded}
                 details={[
-                  "Clique em objetos para selecionar.",
-                  "Arraste para mover o objeto selecionado.",
+                  "Salva as alterações do projeto.",
+                  "Se ainda não existir, abre o fluxo de Salvar como.",
                 ]}
               />
+            </button>
 
-              <ToolButton
-                active={tool === "node"}
-                onClick={() => handleToolChange("node")}
-                icon="radio_button_unchecked"
+            <button
+              onClick={() => setShowExportModal(true)}
+              onMouseEnter={exportTooltip.onMouseEnter}
+              onMouseLeave={exportTooltip.onMouseLeave}
+              className="group relative w-full aspect-square flex items-center justify-center rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
+              aria-label="Exportar"
+            >
+              <span className="material-symbols-outlined text-[22px]">
+                download
+              </span>
+              <ToolbarTooltip
                 isMac={isMac}
-                title="Editar nós"
-                shortcuts={[{ key: "N" }]}
+                title="Exportar"
+                expanded={exportTooltip.expanded}
                 details={[
-                  "Clique em uma forma para exibir os nós.",
-                  "Arraste os nós para deformar a geometria.",
-                  "Clique na aresta para inserir um nó (split).",
-                ]}
-                customIcon={
-                  <svg
-                    className="w-5 h-5 stroke-current"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="1.5"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle cx="6" cy="6" r="2"></circle>
-                    <circle cx="18" cy="6" r="2"></circle>
-                    <circle cx="18" cy="18" r="2"></circle>
-                    <circle cx="6" cy="18" r="2"></circle>
-                    <line x1="8" x2="16" y1="6" y2="6"></line>
-                    <line x1="18" x2="18" y1="8" y2="16"></line>
-                    <line x1="16" x2="8" y1="18" y2="18"></line>
-                    <line x1="6" x2="6" y1="16" y2="8"></line>
-                  </svg>
-                }
-              />
-
-              <ToolButton
-                active={tool === "pan"}
-                onClick={() => handleToolChange("pan")}
-                icon="pan_tool"
-                isMac={isMac}
-                title="Mover"
-                shortcuts={[{ key: "H" }]}
-                details={[
-                  "Clique e arraste para mover o canvas.",
-                  "Segure Espaço para pan temporário.",
+                  "Abre as opções de exportação e impressão.",
+                  "Use para PDF (paginado) ou SVG.",
                 ]}
               />
+            </button>
 
-              <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
+            <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
 
-              <ToolButton
-                active={tool === "rectangle"}
-                onClick={() => handleToolChange("rectangle")}
-                icon="rectangle"
+            <button
+              onClick={undo}
+              disabled={!canUndo}
+              onMouseEnter={undoTooltip.onMouseEnter}
+              onMouseLeave={undoTooltip.onMouseLeave}
+              className={`group relative w-full aspect-square flex items-center justify-center rounded transition-all ${
+                !canUndo
+                  ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                  : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+              }`}
+              aria-label="Desfazer"
+            >
+              <span className="material-symbols-outlined text-[22px]">
+                undo
+              </span>
+              <ToolbarTooltip
                 isMac={isMac}
-                title="Retângulo"
-                shortcuts={[{ key: "R" }]}
-                details={[
-                  "Clique e arraste para desenhar.",
-                  "Segure Shift para manter 1:1 (quadrado).",
-                  "Segure Alt para desenhar do centro.",
+                title="Desfazer"
+                shortcuts={[{ cmdOrCtrl: true, key: "Z" }]}
+                expanded={undoTooltip.expanded}
+                details={["Desfaz a última ação."]}
+              />
+            </button>
+
+            <button
+              onClick={redo}
+              disabled={!canRedo}
+              onMouseEnter={redoTooltip.onMouseEnter}
+              onMouseLeave={redoTooltip.onMouseLeave}
+              className={`group relative w-full aspect-square flex items-center justify-center rounded transition-all ${
+                !canRedo
+                  ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                  : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+              }`}
+              aria-label="Refazer"
+            >
+              <span className="material-symbols-outlined text-[22px]">
+                redo
+              </span>
+              <ToolbarTooltip
+                isMac={isMac}
+                title="Refazer"
+                shortcuts={[
+                  { cmdOrCtrl: true, shift: true, key: "Z" },
+                  { cmdOrCtrl: true, key: "Y" },
                 ]}
-                filled
+                expanded={redoTooltip.expanded}
+                details={["Refaz a última ação desfeita."]}
               />
+            </button>
 
-              <ToolButton
-                active={tool === "circle"}
-                onClick={() => handleToolChange("circle")}
-                icon="circle"
+            <button
+              type="button"
+              onClick={deleteSelected}
+              disabled={!selectedFigureId}
+              onMouseEnter={eraseTooltip.onMouseEnter}
+              onMouseLeave={eraseTooltip.onMouseLeave}
+              className={`group relative w-full aspect-square flex items-center justify-center rounded transition-all ${
+                !selectedFigureId
+                  ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                  : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+              }`}
+              aria-label="Borracha"
+            >
+              <span className="material-symbols-outlined text-[22px]">
+                backspace
+              </span>
+              <ToolbarTooltip
                 isMac={isMac}
-                title="Círculo"
-                shortcuts={[{ key: "C" }]}
-                details={[
-                  "Clique e arraste para desenhar por canto (elipse).",
-                  "Segure Shift para círculo perfeito.",
-                  "Segure Alt para desenhar do centro.",
-                ]}
-                filled
+                title="Borracha"
+                shortcuts={[{ key: "Backspace" }]}
+                expanded={eraseTooltip.expanded}
+                details={["Apaga a figura selecionada."]}
               />
+            </button>
 
-              <ToolButton
-                active={tool === "line"}
-                onClick={() => handleToolChange("line")}
-                icon="horizontal_rule" // Using horizontal_rule as line icon replacement or custom svg
-                isMac={isMac}
-                title="Linha"
-                shortcuts={[{ key: "L" }]}
-                details={[
-                  "Clique e arraste para desenhar uma linha.",
-                  "Segure Shift para travar ângulo (15°).",
-                  "Segure Alt para desenhar do centro.",
-                ]}
-                customIcon={getToolIcon("line", "toolbar")}
-              />
+            <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
 
-              <ToolButton
-                active={tool === "curve"}
-                onClick={() => handleToolChange("curve")}
-                icon="timeline"
-                isMac={isMac}
-                title="Curva"
-                shortcuts={[{ key: "U" }]}
-                details={[
-                  "Clique para adicionar pontos (policlick).",
-                  "Enter ou duplo-clique para finalizar.",
-                ]}
-                customIcon={getToolIcon("curve", "toolbar")}
-              />
+            <ToolButton
+              active={tool === "select"}
+              onClick={() => handleToolChange("select")}
+              icon="arrow_selector_tool"
+              isMac={isMac}
+              title="Selecionar"
+              shortcuts={[{ key: "V" }]}
+              details={[
+                "Clique em objetos para selecionar.",
+                "Arraste para mover o objeto selecionado.",
+              ]}
+            />
 
-              <StaticToolbarButton
-                icon="edit"
-                ariaLabel="Caneta"
-                isMac={isMac}
-                tooltipTitle="Caneta"
-                tooltipDetails={["Em breve."]}
-              />
+            <ToolButton
+              active={tool === "node"}
+              onClick={() => handleToolChange("node")}
+              icon="radio_button_unchecked"
+              isMac={isMac}
+              title="Editar nós"
+              shortcuts={[{ key: "N" }]}
+              details={[
+                "Clique em uma forma para exibir os nós.",
+                "Arraste os nós para deformar a geometria.",
+                "Clique na aresta para inserir um nó (split).",
+              ]}
+              customIcon={getToolIcon("node", "toolbar")}
+            />
 
-              <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
+            <ToolButton
+              active={tool === "pan"}
+              onClick={() => handleToolChange("pan")}
+              icon="pan_tool"
+              isMac={isMac}
+              title="Mover"
+              shortcuts={[{ key: "H" }]}
+              details={[
+                "Clique e arraste para mover o canvas.",
+                "Segure Espaço para pan temporário.",
+              ]}
+            />
 
-              <StaticToolbarButton
-                icon="text_fields"
-                ariaLabel="Texto"
-                isMac={isMac}
-                tooltipTitle="Texto"
-                tooltipDetails={["Em breve."]}
-              />
-              <ToolButton
-                active={tool === "measure"}
-                onClick={() => handleToolChange("measure")}
-                icon="straighten"
-                isMac={isMac}
-                title="Medir"
-                shortcuts={[{ key: "M" }]}
-                details={[
-                  "Clique e arraste para medir distância.",
-                  "Aproximar do contorno ativa magnetismo.",
-                ]}
-              />
+            <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
 
-              <ToolButton
-                active={measureDisplayMode !== "never"}
-                onClick={() => {
-                  const next =
-                    measureDisplayMode === "never"
-                      ? "always"
-                      : measureDisplayMode === "always"
-                        ? "hover"
-                        : "never";
-                  setMeasureDisplayMode(next);
-                }}
-                icon="rule"
-                isMac={isMac}
-                title={`Medidas (${measureDisplayMode === "never" ? "Nunca" : measureDisplayMode === "always" ? "Sempre" : "Hover"})`}
-                details={[
-                  "Exibe medidas no canvas (discreto).",
-                  "Clique para alternar: Nunca → Sempre → Hover.",
-                  "No modo Hover: mostra a figura em hover e a selecionada.",
-                ]}
-                customIcon={measuresModeIcon}
-                dataTestId="measures-mode-button"
-              />
+            <ToolButton
+              active={tool === "rectangle"}
+              onClick={() => handleToolChange("rectangle")}
+              icon="rectangle"
+              isMac={isMac}
+              title="Retângulo"
+              shortcuts={[{ key: "R" }]}
+              details={[
+                "Clique e arraste para desenhar.",
+                "Segure Shift para manter 1:1 (quadrado).",
+                "Segure Alt para desenhar do centro.",
+              ]}
+              filled
+            />
 
-              <ToolButton
-                active={nodesDisplayMode !== "never"}
-                onClick={() => {
-                  const next =
-                    nodesDisplayMode === "never"
-                      ? "always"
-                      : nodesDisplayMode === "always"
-                        ? "hover"
-                        : "never";
-                  setNodesDisplayMode(next);
-                }}
-                icon="trip_origin"
-                isMac={isMac}
-                title={`Nós (${nodesDisplayMode === "never" ? "Nunca" : nodesDisplayMode === "always" ? "Sempre" : "Hover"})`}
-                details={[
-                  "Exibe pontinhos (nós) das figuras no canvas.",
-                  "Clique para alternar: Nunca → Sempre → Hover.",
-                  "No modo Hover: mostra a figura em hover e a selecionada.",
-                ]}
-                customIcon={nodesModeIcon}
-                dataTestId="nodes-mode-button"
-              />
+            <ToolButton
+              active={tool === "circle"}
+              onClick={() => handleToolChange("circle")}
+              icon="circle"
+              isMac={isMac}
+              title="Círculo"
+              shortcuts={[{ key: "C" }]}
+              details={[
+                "Clique e arraste para desenhar por canto (elipse).",
+                "Segure Shift para círculo perfeito.",
+                "Segure Alt para desenhar do centro.",
+              ]}
+              filled
+            />
 
-              <ToolButton
-                active={pointLabelsMode !== "off"}
-                onClick={() =>
-                  setPointLabelsMode(cyclePointLabelsMode(pointLabelsMode))
-                }
-                icon="tag"
-                isMac={isMac}
-                title={`Rótulos (${pointLabelsMode === "off" ? "Desligado" : pointLabelsMode === "numGlobal" ? "Num global" : pointLabelsMode === "numPerFigure" ? "Num por figura" : pointLabelsMode === "alphaGlobal" ? "Letras global" : "Letras por figura"})`}
-                details={[
-                  "Numera/nomeia os pontos (nós) das figuras.",
-                  "Clique para alternar: Desligado → 1 global → 1 por figura → A global → A por figura.",
-                  "Aparece no canvas e pode ser incluído na impressão/export.",
-                ]}
-                customIcon={pointLabelsModeIcon}
-                dataTestId="point-labels-mode-button"
-              />
+            <ToolButton
+              active={tool === "line"}
+              onClick={() => handleToolChange("line")}
+              icon="horizontal_rule" // Using horizontal_rule as line icon replacement or custom svg
+              isMac={isMac}
+              title="Linha"
+              shortcuts={[{ key: "L" }]}
+              details={[
+                "Clique e arraste para desenhar uma linha.",
+                "Segure Shift para travar ângulo (15°).",
+                "Segure Alt para desenhar do centro.",
+              ]}
+              customIcon={getToolIcon("line", "toolbar")}
+            />
 
-              <ToolButton
-                active={magnetEnabled}
-                onClick={() => setMagnetEnabled(!magnetEnabled)}
-                icon="magnet"
-                isMac={isMac}
-                title={`Imã (${magnetEnabled ? "Ligado" : "Desligado"})`}
-                details={[
-                  "Ativa magnetismo (snap) para desenhar em cima de outras figuras.",
-                  "Funciona em Linha/Retângulo/Círculo/Curva.",
-                  "A força do snap é configurável no menu Visualizar.",
-                ]}
-                customIcon={magnetIcon}
-                dataTestId="magnet-toggle-button"
-              />
+            <ToolButton
+              active={tool === "curve"}
+              onClick={() => handleToolChange("curve")}
+              icon="timeline"
+              isMac={isMac}
+              title="Curva"
+              shortcuts={[{ key: "U" }]}
+              details={[
+                "Clique para adicionar pontos (policlick).",
+                "Enter ou duplo-clique para finalizar.",
+              ]}
+              customIcon={getToolIcon("curve", "toolbar")}
+            />
 
-              <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
+            <StaticToolbarButton
+              icon="edit"
+              ariaLabel="Caneta"
+              isMac={isMac}
+              tooltipTitle="Caneta"
+              tooltipDetails={["Em breve."]}
+            />
 
-              <ToolButton
-                active={tool === "offset"}
-                onClick={() => handleToolChange("offset")}
-                icon="format_indent_increase"
-                isMac={isMac}
-                title="Margem de costura"
-                shortcuts={[{ key: "O" }]}
-                details={[
-                  "Clique em uma forma para gerar a margem.",
-                  "Use as opções para ajustar a distância.",
-                ]}
-                customIcon={getToolIcon("offset", "toolbar")}
-              />
+            <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
 
-              <ToolButton
-                active={tool === "dart"}
-                onClick={() => handleToolChange("dart")}
-                icon="change_history"
-                isMac={isMac}
-                title="Pence"
-                shortcuts={[{ key: "D" }]}
-                details={[
-                  "1º clique: ponto A na borda.",
-                  "2º clique: ponto B na borda.",
-                  "3º clique: ápice (vértice) da pence.",
-                ]}
-                customIcon={getToolIcon("dart", "toolbar")}
-              />
+            <StaticToolbarButton
+              icon="text_fields"
+              ariaLabel="Texto"
+              isMac={isMac}
+              tooltipTitle="Texto"
+              tooltipDetails={["Em breve."]}
+            />
+            <ToolButton
+              active={tool === "measure"}
+              onClick={() => handleToolChange("measure")}
+              icon="straighten"
+              isMac={isMac}
+              title="Medir"
+              shortcuts={[{ key: "M" }]}
+              details={[
+                "Clique e arraste para medir distância.",
+                "Aproximar do contorno ativa magnetismo.",
+              ]}
+            />
 
-              <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
+            <ToolButton
+              active={measureDisplayMode !== "never"}
+              onClick={() => {
+                const next =
+                  measureDisplayMode === "never"
+                    ? "always"
+                    : measureDisplayMode === "always"
+                      ? "hover"
+                      : "never";
+                setMeasureDisplayMode(next);
+              }}
+              icon="rule"
+              isMac={isMac}
+              title={`Medidas (${measureDisplayMode === "never" ? "Nunca" : measureDisplayMode === "always" ? "Sempre" : "Hover"})`}
+              details={[
+                "Exibe medidas no canvas (discreto).",
+                "Clique para alternar: Nunca → Sempre → Hover.",
+                "No modo Hover: mostra a figura em hover e a selecionada.",
+              ]}
+              customIcon={measuresModeIcon}
+              dataTestId="measures-mode-button"
+            />
 
-              <ToolButton
-                active={tool === "mirror"}
-                onClick={() => handleToolChange("mirror")}
-                icon="flip"
-                isMac={isMac}
-                title="Espelhar"
-                shortcuts={[{ key: "F" }]}
-                details={[
-                  "Clique em uma forma para criar cópia espelhada.",
-                  "Configure o eixo (vertical/horizontal) nas propriedades.",
-                ]}
-                customIcon={getToolIcon("mirror", "toolbar")}
-              />
+            <ToolButton
+              active={nodesDisplayMode !== "never"}
+              onClick={() => {
+                const next =
+                  nodesDisplayMode === "never"
+                    ? "always"
+                    : nodesDisplayMode === "always"
+                      ? "hover"
+                      : "never";
+                setNodesDisplayMode(next);
+              }}
+              icon="trip_origin"
+              isMac={isMac}
+              title={`Nós (${nodesDisplayMode === "never" ? "Nunca" : nodesDisplayMode === "always" ? "Sempre" : "Hover"})`}
+              details={[
+                "Exibe pontinhos (nós) das figuras no canvas.",
+                "Clique para alternar: Nunca → Sempre → Hover.",
+                "No modo Hover: mostra a figura em hover e a selecionada.",
+              ]}
+              customIcon={nodesModeIcon}
+              dataTestId="nodes-mode-button"
+            />
 
-              <ToolButton
-                active={tool === "unfold"}
-                onClick={() => handleToolChange("unfold")}
-                icon="unfold_more"
-                isMac={isMac}
-                title="Desdobrar"
-                shortcuts={[{ key: "G" }]}
-                details={[
-                  "Clique em uma forma pela metade para desdobrar.",
-                  "Duplica, espelha e une as metades numa peça única.",
-                ]}
-                customIcon={getToolIcon("unfold", "toolbar")}
-              />
+            <ToolButton
+              active={pointLabelsMode !== "off"}
+              onClick={() =>
+                setPointLabelsMode(cyclePointLabelsMode(pointLabelsMode))
+              }
+              icon="tag"
+              isMac={isMac}
+              title={`Rótulos (${pointLabelsMode === "off" ? "Desligado" : pointLabelsMode === "numGlobal" ? "Num global" : pointLabelsMode === "numPerFigure" ? "Num por figura" : pointLabelsMode === "alphaGlobal" ? "Letras global" : "Letras por figura"})`}
+              details={[
+                "Numera/nomeia os pontos (nós) das figuras.",
+                "Clique para alternar: Desligado → 1 global → 1 por figura → A global → A por figura.",
+                "Aparece no canvas e pode ser incluído na impressão/export.",
+              ]}
+              customIcon={pointLabelsModeIcon}
+              dataTestId="point-labels-mode-button"
+            />
+
+            <ToolButton
+              active={magnetEnabled}
+              onClick={() => setMagnetEnabled(!magnetEnabled)}
+              icon="magnet"
+              isMac={isMac}
+              title={`Imã (${magnetEnabled ? "Ligado" : "Desligado"})`}
+              details={[
+                "Ativa magnetismo (snap) para desenhar em cima de outras figuras.",
+                "Funciona em Linha/Retângulo/Círculo/Curva.",
+                "A força do snap é configurável no menu Visualizar.",
+              ]}
+              customIcon={magnetIcon}
+              dataTestId="magnet-toggle-button"
+            />
+
+            <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
+
+            <ToolButton
+              active={tool === "offset"}
+              onClick={() => handleToolChange("offset")}
+              icon="format_indent_increase"
+              isMac={isMac}
+              title="Margem de costura"
+              shortcuts={[{ key: "O" }]}
+              details={[
+                "Clique em uma forma para gerar a margem.",
+                "Use as opções para ajustar a distância.",
+              ]}
+              customIcon={getToolIcon("offset", "toolbar")}
+            />
+
+            <ToolButton
+              active={tool === "dart"}
+              onClick={() => handleToolChange("dart")}
+              icon="change_history"
+              isMac={isMac}
+              title="Pence"
+              shortcuts={[{ key: "D" }]}
+              details={[
+                "1º clique: ponto A na borda.",
+                "2º clique: ponto B na borda.",
+                "3º clique: ápice (vértice) da pence.",
+              ]}
+              customIcon={getToolIcon("dart", "toolbar")}
+            />
+
+            <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
+
+            <ToolButton
+              active={tool === "mirror"}
+              onClick={() => handleToolChange("mirror")}
+              icon="flip"
+              isMac={isMac}
+              title="Espelhar"
+              shortcuts={[{ key: "F" }]}
+              details={[
+                "Clique em uma forma para criar cópia espelhada.",
+                "Configure o eixo (vertical/horizontal) nas propriedades.",
+              ]}
+              customIcon={getToolIcon("mirror", "toolbar")}
+            />
+
+            <ToolButton
+              active={tool === "unfold"}
+              onClick={() => handleToolChange("unfold")}
+              icon="unfold_more"
+              isMac={isMac}
+              title="Desdobrar"
+              shortcuts={[{ key: "G" }]}
+              details={[
+                "Clique em uma forma pela metade para desdobrar.",
+                "Duplica, espelha e une as metades numa peça única.",
+              ]}
+              customIcon={getToolIcon("unfold", "toolbar")}
+            />
           </div>
 
-          <div ref={toolbarBottomRef} className="pt-2 flex items-center justify-center">
+          <div
+            ref={toolbarBottomRef}
+            className="pt-2 flex items-center justify-center"
+          >
             <button
               onMouseEnter={clearTooltip.onMouseEnter}
               onMouseLeave={clearTooltip.onMouseLeave}
@@ -1402,7 +1392,9 @@ function StaticToolbarButton({
   tooltipShortcuts?: ToolbarShortcut[];
   tooltipDetails?: string[];
 }) {
-  const tooltip = useDelayedTooltip(Boolean(tooltipDetails && tooltipDetails.length > 0));
+  const tooltip = useDelayedTooltip(
+    Boolean(tooltipDetails && tooltipDetails.length > 0)
+  );
 
   return (
     <button
@@ -1486,7 +1478,9 @@ function ToolbarTooltip({
         <span className="inline-flex items-center gap-2">
           <span>{title}</span>
           {shortcutContent ? (
-            <span className="inline-flex items-center gap-2">{shortcutContent}</span>
+            <span className="inline-flex items-center gap-2">
+              {shortcutContent}
+            </span>
           ) : null}
         </span>
         {expanded && hasDetails ? (

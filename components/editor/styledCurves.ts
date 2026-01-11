@@ -68,7 +68,8 @@ export function restoreCurveCustomSnapshot(figure: Figure): Figure {
   if (figure.tool !== "curve") return figure;
   const withSnapshot = ensureCurveCustomSnapshot(figure);
   const snap = withSnapshot.customSnapshot;
-  if (!snap) return { ...withSnapshot, curveType: "custom", styledData: undefined };
+  if (!snap)
+    return { ...withSnapshot, curveType: "custom", styledData: undefined };
 
   return {
     ...withSnapshot,
@@ -81,7 +82,10 @@ export function restoreCurveCustomSnapshot(figure: Figure): Figure {
   };
 }
 
-export const TECHNICAL_CURVE_TEMPLATES: Record<TechnicalCurveId, TechnicalTemplate> = {
+export const TECHNICAL_CURVE_TEMPLATES: Record<
+  TechnicalCurveId,
+  TechnicalTemplate
+> = {
   ARC_LOW: {
     id: "ARC_LOW",
     label: "Arco Baixo",
@@ -707,7 +711,9 @@ function makeId(prefix: string): string {
     : `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 }
 
-function curveEndpointsNodeIds(figure: Figure): { startId: string; endId: string } | null {
+function curveEndpointsNodeIds(
+  figure: Figure
+): { startId: string; endId: string } | null {
   if (!figure.edges.length || !figure.nodes.length) return null;
 
   const degree = new Map<string, number>();
@@ -724,7 +730,10 @@ function curveEndpointsNodeIds(figure: Figure): { startId: string; endId: string
 
   // Fallback to node order.
   if (figure.nodes.length >= 2) {
-    return { startId: figure.nodes[0].id, endId: figure.nodes[figure.nodes.length - 1].id };
+    return {
+      startId: figure.nodes[0].id,
+      endId: figure.nodes[figure.nodes.length - 1].id,
+    };
   }
 
   return null;
@@ -734,7 +743,10 @@ function getNode(nodes: FigureNode[], id: string): FigureNode | null {
   return nodes.find((n) => n.id === id) ?? null;
 }
 
-function applyParamsToNormalizedPoint(p: Vec2, params: StyledCurveParams): Vec2 {
+function applyParamsToNormalizedPoint(
+  p: Vec2,
+  params: StyledCurveParams
+): Vec2 {
   let x = p.x;
   let y = p.y;
 
@@ -779,15 +791,19 @@ export function applySemanticStyleToCurveFigure(opts: {
 }): { figure: Figure } | { error: string } {
   const { figure, semanticId } = opts;
   if (figure.tool !== "curve") return { error: "Selecione uma curva." };
-  if (figure.closed) return { error: "Curvas fechadas não suportam estilo (por enquanto)." };
+  if (figure.closed)
+    return { error: "Curvas fechadas não suportam estilo (por enquanto)." };
 
   // If we are applying a style to a custom curve (first time), capture baseline.
   const baseline =
-    !figure.customSnapshot && !figure.styledData && figure.curveType !== "styled"
+    !figure.customSnapshot &&
+    !figure.styledData &&
+    figure.curveType !== "styled"
       ? ensureCurveCustomSnapshot(figure)
       : figure;
 
-  const preset = SEMANTIC_CURVE_PRESETS.find((p) => p.id === semanticId) ?? null;
+  const preset =
+    SEMANTIC_CURVE_PRESETS.find((p) => p.id === semanticId) ?? null;
   if (!preset) return { error: "Preset de curva inválido." };
 
   const template = TECHNICAL_CURVE_TEMPLATES[preset.technicalId] ?? null;
@@ -875,7 +891,10 @@ export function breakStyledLinkIfNeeded(figure: Figure): Figure {
   if (!figure.styledData && figure.curveType !== "styled") return figure;
 
   const derivedFrom = figure.styledData
-    ? { semanticId: figure.styledData.semanticId, technicalId: figure.styledData.technicalId }
+    ? {
+        semanticId: figure.styledData.semanticId,
+        technicalId: figure.styledData.technicalId,
+      }
     : figure.derivedFrom;
 
   const next: Figure = {

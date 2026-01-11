@@ -64,7 +64,7 @@ Line with Dart:
                 ╱    ╲  ← Depth (Profundidade)
                ╱      ╲
               A (Apex)
-              
+
     |←── Opening ───→|
        (Abertura)
 ```
@@ -72,19 +72,26 @@ Line with Dart:
 ### Points Array Transformation
 
 **Before:**
+
 ```javascript
-points: [P1.x, P1.y, P2.x, P2.y]  // 2 vertices, 4 numbers
+points: [P1.x, P1.y, P2.x, P2.y]; // 2 vertices, 4 numbers
 ```
 
 **After:**
+
 ```javascript
 points: [
-  P1.x, P1.y,    // Start point
-  L.x,  L.y,     // Left base
-  A.x,  A.y,     // Apex (dart point)
-  R.x,  R.y,     // Right base
-  P2.x, P2.y     // End point
-]  // 5 vertices, 10 numbers
+  P1.x,
+  P1.y, // Start point
+  L.x,
+  L.y, // Left base
+  A.x,
+  A.y, // Apex (dart point)
+  R.x,
+  R.y, // Right base
+  P2.x,
+  P2.y, // End point
+]; // 5 vertices, 10 numbers
 ```
 
 ## Dart on Different Shapes
@@ -130,6 +137,7 @@ With Dart:
 ## Parameter Examples
 
 ### Shallow Wide Dart (Bust Dart)
+
 ```
 Profundidade: 8 cm
 Abertura: 4 cm
@@ -143,6 +151,7 @@ Abertura: 4 cm
 ```
 
 ### Deep Narrow Dart (Waist Dart)
+
 ```
 Profundidade: 12 cm
 Abertura: 2 cm
@@ -158,6 +167,7 @@ Abertura: 2 cm
 ```
 
 ### Small Dart (Shoulder Adjustment)
+
 ```
 Profundidade: 3 cm
 Abertura: 1.5 cm
@@ -208,6 +218,7 @@ Screen Coordinates:
 ### Normal Vector Calculation
 
 For horizontal line from (0,0) to (100,0):
+
 ```
 Edge Vector: (100, 0)
 Normal Vector: (0, -100)  [points downward/inward]
@@ -217,6 +228,7 @@ Scaled by depth (113px): (0, -113)
 ```
 
 For vertical line from (0,0) to (0,100):
+
 ```
 Edge Vector: (0, 100)
 Normal Vector: (100, 0)  [points right/inward]
@@ -255,6 +267,7 @@ In the export modal:
 ## Integration with Other Tools
 
 ### With Node Tool (N)
+
 ```
 All dart vertices become editable:
     P1 ● ●L ●A ●R ● P2
@@ -263,6 +276,7 @@ All dart vertices become editable:
 ```
 
 ### With Select Tool (V)
+
 ```
 Entire shape (including dart) moves together:
     ┌──────────────────┐
@@ -272,6 +286,7 @@ Entire shape (including dart) moves together:
 ```
 
 ### With Measure Tool (M)
+
 ```
 Can measure dart dimensions:
     ←─── Opening ───→
@@ -294,18 +309,21 @@ Cmd+Y - Redo dart operation
 ## Common Use Cases
 
 ### 1. Waist Dart on Skirt Pattern
+
 ```
 Click on waistline → Dart inserted
 Typical: Depth 10-12cm, Opening 2-3cm
 ```
 
 ### 2. Bust Dart on Bodice
+
 ```
 Click on side seam → Dart inserted
 Typical: Depth 8-10cm, Opening 3-4cm
 ```
 
 ### 3. Shoulder Dart
+
 ```
 Click on shoulder seam → Dart inserted
 Typical: Depth 3-5cm, Opening 1-2cm
@@ -322,4 +340,4 @@ Typical: Depth 3-5cm, Opening 1-2cm
 
 ---
 
-*This visual guide corresponds to the implementation in PR copilot/add-crease-tool-functionality*
+_This visual guide corresponds to the implementation in PR copilot/add-crease-tool-functionality_

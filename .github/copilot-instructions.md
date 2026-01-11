@@ -212,6 +212,7 @@ When adding or editing inputs, follow this UX contract to keep the UI consistent
   - Avoid closing inline editors when clicking related controls (e.g. anchor buttons) by preventing focus steal on pointer down.
 
 Reference implementations:
+
 - `components/editor/PropertiesPanel.tsx` (numeric inputs + focus/error/disabled patterns)
 - `components/editor/Canvas.tsx` (inline edge length edit + anchor sync)
 

@@ -26,4 +26,5 @@ O workflow `Playwright Tests` executa:
 - Enforcement: se mexer em `components/editor/` ou `app/editor/` ou `lib/projects.ts`, exige atualizar `tests/catalog.json`
 
 Arquivo do workflow:
+
 - `.github/workflows/playwright.yml`

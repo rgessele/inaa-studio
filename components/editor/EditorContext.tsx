@@ -54,7 +54,10 @@ interface EditorContextType {
   setSelectedEdge: (edge: SelectedEdge) => void;
 
   // Per-edge anchor preference (session memory)
-  getEdgeAnchorPreference: (figureId: string, edgeId: string) => EdgeAnchor | null;
+  getEdgeAnchorPreference: (
+    figureId: string,
+    edgeId: string
+  ) => EdgeAnchor | null;
   setEdgeAnchorPreference: (
     figureId: string,
     edgeId: string,
@@ -169,7 +172,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const setEdgeAnchorPreference = useCallback(
     (figureId: string, edgeId: string, anchor: EdgeAnchor) => {
       const key = `${figureId}:${edgeId}`;
-      setEdgeAnchorPrefs((prev) => (prev[key] === anchor ? prev : { ...prev, [key]: anchor }));
+      setEdgeAnchorPrefs((prev) =>
+        prev[key] === anchor ? prev : { ...prev, [key]: anchor }
+      );
     },
     []
   );
@@ -207,15 +212,14 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     pageGuideSettingsRef.current = pageGuideSettings;
   }, [pageGuideSettings]);
 
-  const [measureDisplayMode, setMeasureDisplayModeState] = useState<MeasureDisplayMode>(
-    "always"
-  );
+  const [measureDisplayMode, setMeasureDisplayModeState] =
+    useState<MeasureDisplayMode>("always");
 
-  const [nodesDisplayMode, setNodesDisplayModeState] = useState<NodesDisplayMode>(
-    "always"
-  );
+  const [nodesDisplayMode, setNodesDisplayModeState] =
+    useState<NodesDisplayMode>("always");
 
-  const [pointLabelsMode, setPointLabelsMode] = useState<PointLabelsMode>("off");
+  const [pointLabelsMode, setPointLabelsMode] =
+    useState<PointLabelsMode>("off");
 
   const [magnetEnabled, setMagnetEnabledState] = useState(false);
 
@@ -256,7 +260,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       const raw = localStorage.getItem("inaa:measureDisplayMode");
       if (!raw) return;
       const normalized = raw.trim().toLowerCase();
-      if (normalized === "never" || normalized === "always" || normalized === "hover") {
+      if (
+        normalized === "never" ||
+        normalized === "always" ||
+        normalized === "hover"
+      ) {
         setMeasureDisplayModeState(normalized);
       }
     } catch {
@@ -278,7 +286,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       const raw = localStorage.getItem("inaa:nodesDisplayMode");
       if (!raw) return;
       const normalized = raw.trim().toLowerCase();
-      if (normalized === "never" || normalized === "always" || normalized === "hover") {
+      if (
+        normalized === "never" ||
+        normalized === "always" ||
+        normalized === "hover"
+      ) {
         setNodesDisplayModeState(normalized);
       }
     } catch {
@@ -338,9 +350,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const MEASURE_SNAP_MIN_PX = 12;
-  const [measureSnapStrengthPx, setMeasureSnapStrengthPxState] = useState(
-    MEASURE_SNAP_MIN_PX
-  );
+  const [measureSnapStrengthPx, setMeasureSnapStrengthPxState] =
+    useState(MEASURE_SNAP_MIN_PX);
 
   const [showMinimap, setShowMinimapState] = useState(false);
 
@@ -382,18 +393,15 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const setGridContrast = useCallback(
-    (contrast01: number) => {
-      const safe = Math.max(0, Math.min(1, contrast01));
-      setGridContrastState(safe);
-      try {
-        localStorage.setItem("inaa:gridContrast", String(safe));
-      } catch {
-        // ignore
-      }
-    },
-    []
-  );
+  const setGridContrast = useCallback((contrast01: number) => {
+    const safe = Math.max(0, Math.min(1, contrast01));
+    setGridContrastState(safe);
+    try {
+      localStorage.setItem("inaa:gridContrast", String(safe));
+    } catch {
+      // ignore
+    }
+  }, []);
 
   React.useEffect(() => {
     try {
@@ -472,9 +480,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   );
 
   const updateGuide = useCallback((id: string, valuePx: number) => {
-    setGuides((prev) =>
-      prev.map((g) => (g.id === id ? { ...g, valuePx } : g))
-    );
+    setGuides((prev) => prev.map((g) => (g.id === id ? { ...g, valuePx } : g)));
   }, []);
 
   const removeGuide = useCallback((id: string) => {
@@ -482,11 +488,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setFigures = useCallback(
-    (
-      next: Figure[] | ((prev: Figure[]) => Figure[]),
-      saveHistory = true
-    ) => {
-      const computeAll = (figs: Figure[]) => figs.map(withComputedFigureMeasures);
+    (next: Figure[] | ((prev: Figure[]) => Figure[]), saveHistory = true) => {
+      const computeAll = (figs: Figure[]) =>
+        figs.map(withComputedFigureMeasures);
 
       if (typeof next === "function") {
         setFiguresState(
@@ -650,7 +654,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           y: f.y,
           rotation: f.rotation || 0,
           nodes: f.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y })),
-          edges: f.edges.map((e) => ({ id: e.id, from: e.from, to: e.to, kind: e.kind })),
+          edges: f.edges.map((e) => ({
+            id: e.id,
+            from: e.from,
+            to: e.to,
+            kind: e.kind,
+          })),
         }));
       },
       getSelectedFigureStats: () => {
@@ -726,7 +735,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       // Deleting base figures also deletes derived seams.
       return prev.filter((f) => {
         if (idsToDelete.has(f.id)) return false;
-        if (f.kind === "seam" && f.parentId && idsToDelete.has(f.parentId)) return false;
+        if (f.kind === "seam" && f.parentId && idsToDelete.has(f.parentId))
+          return false;
         return true;
       });
     });

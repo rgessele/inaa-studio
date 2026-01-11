@@ -8,8 +8,8 @@
 
 ## O que mudou?
 
-- 
+-
 
 ## Como validar?
 
-- 
+-

@@ -60,7 +60,8 @@ export async function saveProject(
         figures,
         pageGuideSettings:
           pageGuideSettings ??
-          (existing?.design_data as DesignDataV2 | undefined)?.pageGuideSettings,
+          (existing?.design_data as DesignDataV2 | undefined)
+            ?.pageGuideSettings,
         guides,
         meta: (existing?.design_data as DesignDataV2 | undefined)?.meta,
       };

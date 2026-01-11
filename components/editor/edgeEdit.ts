@@ -226,8 +226,8 @@ export function setEdgeTargetLengthPx(opts: {
     const baseLen = cubicArcLengthPx(base.p0, base.p1, base.p2, base.p3);
     const k = baseLen > 1e-6 ? desired / baseLen : 1;
 
-    const deltaA = mul(chordDir, -(k - 1) * len(chord) / 2);
-    const deltaB = mul(chordDir, (k - 1) * len(chord) / 2);
+    const deltaA = mul(chordDir, (-(k - 1) * len(chord)) / 2);
+    const deltaB = mul(chordDir, ((k - 1) * len(chord)) / 2);
     moveNodeById(fromNode.id, deltaA);
     moveNodeById(toNode.id, deltaB);
 
@@ -248,7 +248,10 @@ export function setEdgeTargetLengthPx(opts: {
       dir: len(tangent) > 1e-6 ? tangent : chord,
       targetLengthPx,
     });
-    moveNodeById(toNode.id, mul(norm(len(tangent) > 1e-6 ? tangent : chord), s));
+    moveNodeById(
+      toNode.id,
+      mul(norm(len(tangent) > 1e-6 ? tangent : chord), s)
+    );
   } else {
     const base = edgeControlPoints("cubic", fromNode, toNode);
     const tangent = sub(base.p1, base.p0);
@@ -260,7 +263,10 @@ export function setEdgeTargetLengthPx(opts: {
       dir: len(tangent) > 1e-6 ? tangent : mul(chord, -1),
       targetLengthPx,
     });
-    moveNodeById(fromNode.id, mul(norm(len(tangent) > 1e-6 ? tangent : mul(chord, -1)), s));
+    moveNodeById(
+      fromNode.id,
+      mul(norm(len(tangent) > 1e-6 ? tangent : mul(chord, -1)), s)
+    );
   }
 
   return {

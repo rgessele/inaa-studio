@@ -26,7 +26,11 @@ export function ToastHost() {
       const custom = evt as CustomEvent<{ message: string; type: ToastType }>;
       const detail = custom.detail;
       if (!detail?.message) return;
-      setToastState({ message: detail.message, type: detail.type, isVisible: true });
+      setToastState({
+        message: detail.message,
+        type: detail.type,
+        isVisible: true,
+      });
     };
 
     window.addEventListener(TOAST_EVENT_NAME, onToast);

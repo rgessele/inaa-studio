@@ -19,4 +19,5 @@
     - **Fix**: Added `rect: { widthPx: number; heightPx: number }` to the `FigureMeasures` type in `types.ts` and `figureMeasures.ts`. Implemented the logic to compute rectangle dimensions in `computeFigureMeasures`.
 
 ## Result
+
 The build (`npm run build`) now completes successfully.

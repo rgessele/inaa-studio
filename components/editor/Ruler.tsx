@@ -8,20 +8,24 @@ interface RulerProps {
 }
 
 export function Ruler({ orientation }: RulerProps) {
-  const { scale, position, unit, pixelsPerUnit, addGuide, updateGuide, removeGuide } =
-    useEditor();
+  const {
+    scale,
+    position,
+    unit,
+    pixelsPerUnit,
+    addGuide,
+    updateGuide,
+    removeGuide,
+  } = useEditor();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = React.useState({ width: 0, height: 0 });
   const TICK_SIZE = 10;
   const LABEL_OFFSET = 4;
 
-  const dragRef = useRef<
-    | {
-        pointerId: number;
-        guideId: string | null;
-      }
-    | null
-  >(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    guideId: string | null;
+  } | null>(null);
 
   const updateFromClient = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -219,12 +223,14 @@ export function Ruler({ orientation }: RulerProps) {
         }
 
         const onMove = (evt: PointerEvent) => {
-          if (!dragRef.current || dragRef.current.pointerId !== evt.pointerId) return;
+          if (!dragRef.current || dragRef.current.pointerId !== evt.pointerId)
+            return;
           updateFromClient(evt.clientX, evt.clientY);
         };
 
         const onUp = (evt: PointerEvent) => {
-          if (!dragRef.current || dragRef.current.pointerId !== evt.pointerId) return;
+          if (!dragRef.current || dragRef.current.pointerId !== evt.pointerId)
+            return;
           window.removeEventListener("pointermove", onMove);
           window.removeEventListener("pointerup", onUp);
           endDrag(evt.clientX, evt.clientY);
@@ -241,4 +247,3 @@ export function Ruler({ orientation }: RulerProps) {
     />
   );
 }
-

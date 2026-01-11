@@ -1,9 +1,28 @@
 "use client";
 
-import { bumpNumericValue, formatPtBrDecimalFixed, parsePtBrDecimal } from "@/utils/numericInput";
+import {
+  bumpNumericValue,
+  formatPtBrDecimalFixed,
+  parsePtBrDecimal,
+} from "@/utils/numericInput";
 import { getToolIcon, isToolCursorOverlayEnabled } from "./ToolCursorIcons";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Circle, Group, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  Circle,
+  Group,
+  Layer,
+  Line,
+  Rect,
+  Stage,
+  Text,
+  Transformer,
+} from "react-konva";
 import Konva from "konva";
 import { useEditor } from "./EditorContext";
 import type { Figure, FigureEdge, FigureNode, GuideLine } from "./types";
@@ -54,50 +73,40 @@ type Vec2 = { x: number; y: number };
 
 type BoundingBox = { x: number; y: number; width: number; height: number };
 
-type NodeSelection =
-  | {
-      figureId: string;
-      nodeId: string;
-      handle: "in" | "out" | null;
-    }
-  | null;
+type NodeSelection = {
+  figureId: string;
+  nodeId: string;
+  handle: "in" | "out" | null;
+} | null;
 
-type EdgeHover =
-  | {
-      figureId: string;
-      edgeId: string;
-      t: number;
-      pointLocal: Vec2;
-      snapKind?: "mid";
-    }
-  | null;
+type EdgeHover = {
+  figureId: string;
+  edgeId: string;
+  t: number;
+  pointLocal: Vec2;
+  snapKind?: "mid";
+} | null;
 
-type DartDraft =
-  | {
-      figureId: string;
-      step: "pickA" | "pickB" | "pickApex";
-      a: EdgeHover;
-      b: EdgeHover;
-      currentWorld: Vec2;
-    }
-  | null;
+type DartDraft = {
+  figureId: string;
+  step: "pickA" | "pickB" | "pickApex";
+  a: EdgeHover;
+  b: EdgeHover;
+  currentWorld: Vec2;
+} | null;
 
-type MeasureDraft =
-  | {
-      startWorld: Vec2;
-      endWorld: Vec2;
-      snappedEndWorld: Vec2;
-      isSnapped: boolean;
-    }
-  | null;
+type MeasureDraft = {
+  startWorld: Vec2;
+  endWorld: Vec2;
+  snappedEndWorld: Vec2;
+  isSnapped: boolean;
+} | null;
 
-type MarqueeDraft =
-  | {
-      startWorld: Vec2;
-      currentWorld: Vec2;
-      additive: boolean;
-    }
-  | null;
+type MarqueeDraft = {
+  startWorld: Vec2;
+  currentWorld: Vec2;
+  additive: boolean;
+} | null;
 
 function id(prefix: string): string {
   // crypto.randomUUID() is available in modern browsers; fallback for safety.
@@ -106,12 +115,10 @@ function id(prefix: string): string {
     : `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 }
 
-type MeasureEdgeHover =
-  | {
-      figureId: string;
-      edgeId: string;
-    }
-  | null;
+type MeasureEdgeHover = {
+  figureId: string;
+  edgeId: string;
+} | null;
 
 function seamSourceSignature(base: Figure, offsetCm?: number): string {
   // Exclude computed measures to avoid churn.
@@ -151,7 +158,7 @@ function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
     const b = poly[j];
 
     const intersects =
-      (a.y > p.y) !== (b.y > p.y) &&
+      a.y > p.y !== b.y > p.y &&
       p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x;
     if (intersects) inside = !inside;
   }
@@ -225,7 +232,10 @@ function resolveAci7(isDark: boolean): string {
   return isDark ? "#ffffff" : "#000000";
 }
 
-function resolveStrokeColor(stroke: string | undefined, isDark: boolean): string {
+function resolveStrokeColor(
+  stroke: string | undefined,
+  isDark: boolean
+): string {
   if (!stroke) return resolveAci7(isDark);
   const s = stroke.toLowerCase();
   if (s === "aci7") return resolveAci7(isDark);
@@ -290,7 +300,10 @@ function splitPolylineAtPoint(
   };
 }
 
-function nearestOnPolylineWorld(pWorld: Vec2, poly: number[]): { d: number; point: Vec2 } | null {
+function nearestOnPolylineWorld(
+  pWorld: Vec2,
+  poly: number[]
+): { d: number; point: Vec2 } | null {
   if (poly.length < 4) return null;
   let bestD = Number.POSITIVE_INFINITY;
   let bestPoint: Vec2 = { x: poly[0], y: poly[1] };
@@ -329,7 +342,8 @@ function snapWorldPoint(
   }
 ): SnapResult {
   const threshold = Math.max(0, opts.thresholdWorld);
-  if (!Number.isFinite(threshold) || threshold <= 0) return { isSnapped: false };
+  if (!Number.isFinite(threshold) || threshold <= 0)
+    return { isSnapped: false };
 
   const excludeSeams = opts.excludeSeams !== false;
   const includeNodes = opts.includeNodes !== false;
@@ -356,7 +370,12 @@ function snapWorldPoint(
     }
 
     if (bestPoint && bestFigureId && bestD <= threshold) {
-      return { isSnapped: true, pointWorld: bestPoint, kind: "node", figureId: bestFigureId };
+      return {
+        isSnapped: true,
+        pointWorld: bestPoint,
+        kind: "node",
+        figureId: bestFigureId,
+      };
     }
   }
 
@@ -417,7 +436,12 @@ function snapWorldPoint(
   }
 
   if (bestPoint && bestFigureId && bestD <= threshold) {
-    return { isSnapped: true, pointWorld: bestPoint, kind: "edge", figureId: bestFigureId };
+    return {
+      isSnapped: true,
+      pointWorld: bestPoint,
+      kind: "edge",
+      figureId: bestFigureId,
+    };
   }
 
   return { isSnapped: false };
@@ -455,7 +479,10 @@ function nearestOnEdgeLocal(
   return { d: bestD, t: bestT, pointLocal: bestPoint };
 }
 
-function findNearestEdge(figure: Figure, pLocal: Vec2): { best: EdgeHover; bestDist: number } {
+function findNearestEdge(
+  figure: Figure,
+  pLocal: Vec2
+): { best: EdgeHover; bestDist: number } {
   let best: EdgeHover = null;
   let bestDist = Number.POSITIVE_INFINITY;
   for (const edge of figure.edges) {
@@ -474,7 +501,11 @@ function findNearestEdge(figure: Figure, pLocal: Vec2): { best: EdgeHover; bestD
   return { best, bestDist };
 }
 
-function splitFigureEdge(figure: Figure, edgeId: string, t: number): { figure: Figure; newNodeId?: string } {
+function splitFigureEdge(
+  figure: Figure,
+  edgeId: string,
+  t: number
+): { figure: Figure; newNodeId?: string } {
   const edgeIndex = figure.edges.findIndex((e) => e.id === edgeId);
   if (edgeIndex === -1) return { figure };
   const edge = figure.edges[edgeIndex];
@@ -492,10 +523,25 @@ function splitFigureEdge(figure: Figure, edgeId: string, t: number): { figure: F
   if (edge.kind === "line") {
     const mid = lerp(p0, p3, safeT);
     const newNodeId = id("n");
-    const newNode: FigureNode = { id: newNodeId, x: mid.x, y: mid.y, mode: "corner" };
+    const newNode: FigureNode = {
+      id: newNodeId,
+      x: mid.x,
+      y: mid.y,
+      mode: "corner",
+    };
 
-    const e1: FigureEdge = { id: id("e"), from: fromNode.id, to: newNodeId, kind: "line" };
-    const e2: FigureEdge = { id: id("e"), from: newNodeId, to: toNode.id, kind: "line" };
+    const e1: FigureEdge = {
+      id: id("e"),
+      from: fromNode.id,
+      to: newNodeId,
+      kind: "line",
+    };
+    const e2: FigureEdge = {
+      id: id("e"),
+      from: newNodeId,
+      to: toNode.id,
+      kind: "line",
+    };
 
     const nextEdges = [...figure.edges];
     nextEdges.splice(edgeIndex, 1, e1, e2);
@@ -515,7 +561,9 @@ function splitFigureEdge(figure: Figure, edgeId: string, t: number): { figure: F
   const p1: Vec2 = fromNode.outHandle
     ? { x: fromNode.outHandle.x, y: fromNode.outHandle.y }
     : p0;
-  const p2: Vec2 = toNode.inHandle ? { x: toNode.inHandle.x, y: toNode.inHandle.y } : p3;
+  const p2: Vec2 = toNode.inHandle
+    ? { x: toNode.inHandle.x, y: toNode.inHandle.y }
+    : p3;
 
   // De Casteljau split
   const p01 = lerp(p0, p1, safeT);
@@ -551,8 +599,18 @@ function splitFigureEdge(figure: Figure, edgeId: string, t: number): { figure: F
     return n;
   });
 
-  const e1: FigureEdge = { id: id("e"), from: fromNode.id, to: newNodeId, kind: "cubic" };
-  const e2: FigureEdge = { id: id("e"), from: newNodeId, to: toNode.id, kind: "cubic" };
+  const e1: FigureEdge = {
+    id: id("e"),
+    from: fromNode.id,
+    to: newNodeId,
+    kind: "cubic",
+  };
+  const e2: FigureEdge = {
+    id: id("e"),
+    from: newNodeId,
+    to: toNode.id,
+    kind: "cubic",
+  };
   const nextEdges = [...figure.edges];
   nextEdges.splice(edgeIndex, 1, e1, e2);
 
@@ -670,7 +728,11 @@ function mirrorValue(value: number, axisPos: number): number {
   return axisPos - d;
 }
 
-function mirrorVec2(p: Vec2, axis: "vertical" | "horizontal", axisPos: number): Vec2 {
+function mirrorVec2(
+  p: Vec2,
+  axis: "vertical" | "horizontal",
+  axisPos: number
+): Vec2 {
   if (axis === "vertical") return { x: mirrorValue(p.x, axisPos), y: p.y };
   return { x: p.x, y: mirrorValue(p.y, axisPos) };
 }
@@ -771,12 +833,7 @@ function normalize(v: Vec2): Vec2 {
   return { x: v.x / l, y: v.y / l };
 }
 
-function lineIntersection(
-  p1: Vec2,
-  p2: Vec2,
-  p3: Vec2,
-  p4: Vec2
-): Vec2 | null {
+function lineIntersection(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2): Vec2 | null {
   const x1 = p1.x;
   const y1 = p1.y;
   const x2 = p2.x;
@@ -790,11 +847,9 @@ function lineIntersection(
   if (Math.abs(den) < 1e-9) return null;
 
   const px =
-    ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) /
-    den;
+    ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / den;
   const py =
-    ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) /
-    den;
+    ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / den;
   return { x: px, y: py };
 }
 
@@ -967,7 +1022,12 @@ function makeRectFigure(a: Vec2, b: Vec2, stroke: string): Figure {
   };
 }
 
-function makeEllipseFigure(center: Vec2, rx: number, ry: number, stroke: string): Figure {
+function makeEllipseFigure(
+  center: Vec2,
+  rx: number,
+  ry: number,
+  stroke: string
+): Figure {
   const safeRx = Math.max(0, rx);
   const safeRy = Math.max(0, ry);
   const { nodes } = ellipseAsCubics(safeRx, safeRy);
@@ -1019,7 +1079,11 @@ function snapAngleRad(angleRad: number, stepDeg: number): number {
   return Math.round(angleRad / step) * step;
 }
 
-function computeRectLikeCorners(start: Vec2, raw: Vec2, mods: DraftMods): { a: Vec2; b: Vec2 } {
+function computeRectLikeCorners(
+  start: Vec2,
+  raw: Vec2,
+  mods: DraftMods
+): { a: Vec2; b: Vec2 } {
   const dx = raw.x - start.x;
   const dy = raw.y - start.y;
 
@@ -1048,7 +1112,11 @@ function computeRectLikeCorners(start: Vec2, raw: Vec2, mods: DraftMods): { a: V
   return { a: start, b: { x: bx, y: by } };
 }
 
-function computeLineEndpoints(start: Vec2, raw: Vec2, mods: DraftMods): { a: Vec2; b: Vec2 } {
+function computeLineEndpoints(
+  start: Vec2,
+  raw: Vec2,
+  mods: DraftMods
+): { a: Vec2; b: Vec2 } {
   const v = sub(raw, start);
   const length = len(v);
   if (length === 0) return { a: start, b: start };
@@ -1064,23 +1132,19 @@ function computeLineEndpoints(start: Vec2, raw: Vec2, mods: DraftMods): { a: Vec
   return { a: start, b: add(start, v2) };
 }
 
-type Draft =
-  | {
-      tool: "line" | "rectangle" | "circle";
-      startWorld: Vec2;
-      currentWorld: Vec2;
-      effectiveAWorld: Vec2;
-      effectiveBWorld: Vec2;
-      mods: DraftMods;
-    }
-  | null;
+type Draft = {
+  tool: "line" | "rectangle" | "circle";
+  startWorld: Vec2;
+  currentWorld: Vec2;
+  effectiveAWorld: Vec2;
+  effectiveBWorld: Vec2;
+  mods: DraftMods;
+} | null;
 
-type CurveDraft =
-  | {
-      pointsWorld: Vec2[];
-      currentWorld: Vec2;
-    }
-  | null;
+type CurveDraft = {
+  pointsWorld: Vec2[];
+  currentWorld: Vec2;
+} | null;
 
 function makeCurveFromPoints(
   points: Vec2[],
@@ -1125,8 +1189,8 @@ function makeCurveFromPoints(
     const p2 = getPoint(i2);
     const p3 = getPoint(i3);
 
-    const c1 = add(p1, mul(sub(p2, p0), (tension / 6)));
-    const c2 = add(p2, mul(sub(p1, p3), (tension / 6)));
+    const c1 = add(p1, mul(sub(p2, p0), tension / 6));
+    const c2 = add(p2, mul(sub(p1, p3), tension / 6));
 
     // Clamp handles to avoid extreme overshoot (keeps it "CAD-ish" and stable)
     const segLen = dist(p1, p2);
@@ -1135,7 +1199,7 @@ function makeCurveFromPoints(
     const c2Clamped = clampHandle(p2, c2, maxHandle);
 
     const fromIndex = i1;
-    const toIndex = closed ? (i2 % count) : i2;
+    const toIndex = closed ? i2 % count : i2;
 
     // Open curve endpoints: no inHandle on first, no outHandle on last.
     if (!closed && fromIndex === 0) {
@@ -1164,7 +1228,10 @@ function makeCurveFromPoints(
   if (!closed) {
     // Remove unused handles for clean semantics.
     nodes[0] = { ...nodes[0], inHandle: undefined };
-    nodes[nodes.length - 1] = { ...nodes[nodes.length - 1], outHandle: undefined };
+    nodes[nodes.length - 1] = {
+      ...nodes[nodes.length - 1],
+      outHandle: undefined,
+    };
   }
 
   return {
@@ -1257,21 +1324,16 @@ export default function Canvas() {
       .trim();
     return v || "#a855f7";
   }, []);
-  const gridStroke = useMemo(
-    () => {
-      const t = clamp(gridContrast, 0, 1);
+  const gridStroke = useMemo(() => {
+    const t = clamp(gridContrast, 0, 1);
 
-      // Match previous defaults at t=0.5:
-      // dark: 0.07, light: 0.05.
-      const darkAlpha = 0.03 + t * (0.11 - 0.03);
-      const lightAlpha = 0.02 + t * (0.08 - 0.02);
-      const alpha = isDark ? darkAlpha : lightAlpha;
-      return isDark
-        ? `rgba(255,255,255,${alpha})`
-        : `rgba(0,0,0,${alpha})`;
-    },
-    [gridContrast, isDark]
-  );
+    // Match previous defaults at t=0.5:
+    // dark: 0.07, light: 0.05.
+    const darkAlpha = 0.03 + t * (0.11 - 0.03);
+    const lightAlpha = 0.02 + t * (0.08 - 0.02);
+    const alpha = isDark ? darkAlpha : lightAlpha;
+    return isDark ? `rgba(255,255,255,${alpha})` : `rgba(0,0,0,${alpha})`;
+  }, [gridContrast, isDark]);
   const pageGuideStroke = useMemo(
     () => (isDark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.25)"),
     [isDark]
@@ -1298,7 +1360,8 @@ export default function Canvas() {
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const [containerClientRect, setContainerClientRect] = useState<DOMRect | null>(null);
+  const [containerClientRect, setContainerClientRect] =
+    useState<DOMRect | null>(null);
 
   const stageRef = useRef<Konva.Stage | null>(null);
   const transformerRef = useRef<Konva.Transformer | null>(null);
@@ -1309,16 +1372,14 @@ export default function Canvas() {
     [modifierKeys.alt, modifierKeys.shift]
   );
 
-  type EdgeEditDraft =
-    | {
-        figureId: string;
-        edgeId: string;
-        anchor: "start" | "end" | "mid";
-        value: string;
-        x: number;
-        y: number;
-      }
-    | null;
+  type EdgeEditDraft = {
+    figureId: string;
+    edgeId: string;
+    anchor: "start" | "end" | "mid";
+    value: string;
+    x: number;
+    y: number;
+  } | null;
 
   const [edgeEditDraft, setEdgeEditDraft] = useState<EdgeEditDraft>(null);
   const edgeEditInputRef = useRef<HTMLInputElement | null>(null);
@@ -1347,7 +1408,9 @@ export default function Canvas() {
     if (selectedEdge.figureId !== edgeEditDraft.figureId) return;
     if (selectedEdge.edgeId !== edgeEditDraft.edgeId) return;
     if (selectedEdge.anchor === edgeEditDraft.anchor) return;
-    setEdgeEditDraft((prev) => (prev ? { ...prev, anchor: selectedEdge.anchor } : prev));
+    setEdgeEditDraft((prev) =>
+      prev ? { ...prev, anchor: selectedEdge.anchor } : prev
+    );
   }, [edgeEditDraft, selectedEdge]);
 
   useEffect(() => {
@@ -1358,23 +1421,21 @@ export default function Canvas() {
   const [draft, setDraft] = useState<Draft>(null);
   const [curveDraft, setCurveDraft] = useState<CurveDraft>(null);
   const [nodeSelection, setNodeSelection] = useState<NodeSelection>(null);
-  const [nodeMergePreview, setNodeMergePreview] = useState<
-    | { figureId: string; fromNodeId: string; toNodeId: string }
-    | null
-  >(null);
+  const [nodeMergePreview, setNodeMergePreview] = useState<{
+    figureId: string;
+    fromNodeId: string;
+    toNodeId: string;
+  } | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<EdgeHover>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredFigureId, setHoveredFigureId] = useState<string | null>(null);
   const [hoveredOffsetBaseId, setHoveredOffsetBaseId] = useState<string | null>(
     null
   );
-  const [cursorBadge, setCursorBadge] = useState<
-    | {
-        x: number;
-        y: number;
-      }
-    | null
-  >(null);
+  const [cursorBadge, setCursorBadge] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   const offsetHoverPreview = useMemo(() => {
     if (tool !== "offset") return null;
@@ -1407,10 +1468,12 @@ export default function Canvas() {
   const [dartDraft, setDartDraft] = useState<DartDraft>(null);
   const [measureDraft, setMeasureDraft] = useState<MeasureDraft>(null);
   const [marqueeDraft, setMarqueeDraft] = useState<MarqueeDraft>(null);
-  const [hoveredMeasureEdge, setHoveredMeasureEdge] = useState<MeasureEdgeHover>(null);
-  const [magnetSnap, setMagnetSnap] = useState<
-    { pointWorld: Vec2; kind: "node" | "edge" | "guide" } | null
-  >(null);
+  const [hoveredMeasureEdge, setHoveredMeasureEdge] =
+    useState<MeasureEdgeHover>(null);
+  const [magnetSnap, setMagnetSnap] = useState<{
+    pointWorld: Vec2;
+    kind: "node" | "edge" | "guide";
+  } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const lastPointerRef = useRef<Vec2 | null>(null);
   const lastPanClientRef = useRef<{ x: number; y: number } | null>(null);
@@ -1473,7 +1536,12 @@ export default function Canvas() {
 
   useEffect(() => {
     // If the tool changes to one where the overlay is disabled, hide immediately.
-    if (tool === "select" || tool === "pan" || isPanning || !isToolCursorOverlayEnabled(tool)) {
+    if (
+      tool === "select" ||
+      tool === "pan" ||
+      isPanning ||
+      !isToolCursorOverlayEnabled(tool)
+    ) {
       clearCursorBadgeIdleTimeout();
       setCursorBadge(null);
     }
@@ -1562,19 +1630,17 @@ export default function Canvas() {
     el.style.cursor = "";
   }, [figures, hoveredOffsetBaseId, isPanning, tool]);
 
-  const selectionDragSyncRef = useRef<
-    | {
-        anchorFigureId: string;
-        affectedIds: string[];
-        startPositions: Map<string, Vec2>;
-        startBounds: BoundingBox | null;
-      }
-    | null
-  >(null);
+  const selectionDragSyncRef = useRef<{
+    anchorFigureId: string;
+    affectedIds: string[];
+    startPositions: Map<string, Vec2>;
+    startBounds: BoundingBox | null;
+  } | null>(null);
 
-  const [dragPreviewPositions, setDragPreviewPositions] = useState<
-    Map<string, Vec2> | null
-  >(null);
+  const [dragPreviewPositions, setDragPreviewPositions] = useState<Map<
+    string,
+    Vec2
+  > | null>(null);
   const dragPreviewPendingRef = useRef<Map<string, Vec2> | null>(null);
   const dragPreviewRafRef = useRef<number | null>(null);
 
@@ -1598,17 +1664,14 @@ export default function Canvas() {
     [dragPreviewPositions]
   );
 
-  const dragNodeRef = useRef<
-    | {
-        figureId: string;
-        nodeId: string;
-        startNode: Vec2;
-        startIn?: Vec2;
-        startOut?: Vec2;
-        snappedToNodeId?: string | null;
-      }
-    | null
-  >(null);
+  const dragNodeRef = useRef<{
+    figureId: string;
+    nodeId: string;
+    startNode: Vec2;
+    startIn?: Vec2;
+    startOut?: Vec2;
+    snappedToNodeId?: string | null;
+  } | null>(null);
 
   const mergeFigureNodes = useCallback(
     (figure: Figure, fromNodeId: string, toNodeId: string): Figure => {
@@ -1637,14 +1700,11 @@ export default function Canvas() {
     []
   );
 
-  const dragHandleRef = useRef<
-    | {
-        figureId: string;
-        nodeId: string;
-        which: "in" | "out";
-      }
-    | null
-  >(null);
+  const dragHandleRef = useRef<{
+    figureId: string;
+    nodeId: string;
+    which: "in" | "out";
+  } | null>(null);
 
   useEffect(() => {
     // When leaving node tool, clear node selection.
@@ -1699,7 +1759,9 @@ export default function Canvas() {
   }, [setFigures, tool]);
 
   const selectedFigure = useMemo(() => {
-    return selectedFigureId ? figures.find((f) => f.id === selectedFigureId) : null;
+    return selectedFigureId
+      ? figures.find((f) => f.id === selectedFigureId)
+      : null;
   }, [figures, selectedFigureId]);
 
   const selectedIdsSet = useMemo(() => {
@@ -1716,7 +1778,8 @@ export default function Canvas() {
 
     for (const f of figures) {
       const isTarget =
-        selected.has(f.id) || (f.kind === "seam" && f.parentId && selected.has(f.parentId));
+        selected.has(f.id) ||
+        (f.kind === "seam" && f.parentId && selected.has(f.parentId));
       if (!isTarget) continue;
       if (seen.has(f.id)) continue;
       seen.add(f.id);
@@ -1803,7 +1866,9 @@ export default function Canvas() {
                 ...n,
                 x: n.x * sx,
                 y: n.y * sy,
-                inHandle: n.inHandle ? { x: n.inHandle.x * sx, y: n.inHandle.y * sy } : undefined,
+                inHandle: n.inHandle
+                  ? { x: n.inHandle.x * sx, y: n.inHandle.y * sy }
+                  : undefined,
                 outHandle: n.outHandle
                   ? { x: n.outHandle.x * sx, y: n.outHandle.y * sy }
                   : undefined,
@@ -1811,7 +1876,9 @@ export default function Canvas() {
             };
 
             // Scaling changes curve geometry; break styled link and mark snapshot dirty if applicable.
-            next = markCurveCustomSnapshotDirtyIfPresent(breakStyledLinkIfNeeded(next));
+            next = markCurveCustomSnapshotDirtyIfPresent(
+              breakStyledLinkIfNeeded(next)
+            );
           }
 
           return next;
@@ -1827,7 +1894,10 @@ export default function Canvas() {
     ): { world: Vec2; snap: SnapResult } => {
       // Imã affects drawing tools (line/rect/circle/curve). Measure always has snapping (existing behavior).
       const isDrawingTool =
-        tool === "line" || tool === "rectangle" || tool === "circle" || tool === "curve";
+        tool === "line" ||
+        tool === "rectangle" ||
+        tool === "circle" ||
+        tool === "curve";
       const isMeasure = tool === "measure";
 
       const shouldSnap = (magnetEnabled && isDrawingTool) || isMeasure;
@@ -1853,9 +1923,12 @@ export default function Canvas() {
     [figures, guides, magnetEnabled, measureSnapStrengthPx, scale, tool]
   );
 
-
   const snapSelectionDeltaToGuides = useCallback(
-    (startBounds: BoundingBox | null, dx: number, dy: number): { dx: number; dy: number } => {
+    (
+      startBounds: BoundingBox | null,
+      dx: number,
+      dy: number
+    ): { dx: number; dy: number } => {
       if (!magnetEnabled) return { dx, dy };
       if (!guides.length) return { dx, dy };
       if (!startBounds) return { dx, dy };
@@ -1948,45 +2021,42 @@ export default function Canvas() {
 
     if (!toRemove.size && !toUpdate.size) return;
 
-    setFigures(
-      (prev) => {
-        let changed = false;
-        const byId = new Map(prev.map((f) => [f.id, f] as const));
+    setFigures((prev) => {
+      let changed = false;
+      const byId = new Map(prev.map((f) => [f.id, f] as const));
 
-        const next: typeof prev = [];
-        for (const f of prev) {
-          if (toRemove.has(f.id)) {
-            changed = true;
-            continue;
-          }
-
-          if (f.kind !== "seam" || !f.parentId || !toUpdate.has(f.id)) {
-            next.push(f);
-            continue;
-          }
-
-          const base = byId.get(f.parentId);
-          if (!base) {
-            next.push(f);
-            continue;
-          }
-
-          const offsetCm = f.offsetCm ?? 1;
-          const updated = recomputeSeamFigure(base, f, offsetCm);
-          if (!updated) {
-            // If we can't recompute now, keep as-is (but we already gated calls
-            // so this should be rare).
-            next.push(f);
-            continue;
-          }
+      const next: typeof prev = [];
+      for (const f of prev) {
+        if (toRemove.has(f.id)) {
           changed = true;
-          next.push(updated);
+          continue;
         }
 
-        return changed ? next : prev;
-      },
-      false
-    );
+        if (f.kind !== "seam" || !f.parentId || !toUpdate.has(f.id)) {
+          next.push(f);
+          continue;
+        }
+
+        const base = byId.get(f.parentId);
+        if (!base) {
+          next.push(f);
+          continue;
+        }
+
+        const offsetCm = f.offsetCm ?? 1;
+        const updated = recomputeSeamFigure(base, f, offsetCm);
+        if (!updated) {
+          // If we can't recompute now, keep as-is (but we already gated calls
+          // so this should be rare).
+          next.push(f);
+          continue;
+        }
+        changed = true;
+        next.push(updated);
+      }
+
+      return changed ? next : prev;
+    }, false);
   }, [figures, setFigures]);
 
   useEffect(() => {
@@ -2016,9 +2086,10 @@ export default function Canvas() {
 
   const guidePreviewPendingRef = useRef<Map<string, number> | null>(null);
   const guidePreviewRafRef = useRef<number | null>(null);
-  const [guidePreviewValues, setGuidePreviewValues] = useState<Map<string, number> | null>(
-    null
-  );
+  const [guidePreviewValues, setGuidePreviewValues] = useState<Map<
+    string,
+    number
+  > | null>(null);
 
   const requestGuidePreviewRender = useCallback(() => {
     if (guidePreviewRafRef.current != null) return;
@@ -2042,20 +2113,28 @@ export default function Canvas() {
     const RULER_SIZE_PX = 24;
     const containerRect = containerClientRect;
 
-    const shouldDeleteGuide = (g: GuideLine, clientX: number, clientY: number) => {
+    const shouldDeleteGuide = (
+      g: GuideLine,
+      clientX: number,
+      clientY: number
+    ) => {
       if (!showRulers) return false;
       if (!containerRect) return false;
 
       if (g.orientation === "horizontal") {
-        const inX = clientX >= containerRect.left && clientX <= containerRect.right;
+        const inX =
+          clientX >= containerRect.left && clientX <= containerRect.right;
         const inY =
-          clientY >= containerRect.top - RULER_SIZE_PX && clientY <= containerRect.top;
+          clientY >= containerRect.top - RULER_SIZE_PX &&
+          clientY <= containerRect.top;
         return inX && inY;
       }
 
-      const inY = clientY >= containerRect.top && clientY <= containerRect.bottom;
+      const inY =
+        clientY >= containerRect.top && clientY <= containerRect.bottom;
       const inX =
-        clientX >= containerRect.left - RULER_SIZE_PX && clientX <= containerRect.left;
+        clientX >= containerRect.left - RULER_SIZE_PX &&
+        clientX <= containerRect.left;
       return inX && inY;
     };
 
@@ -2241,7 +2320,14 @@ export default function Canvas() {
       setScale(nextScale);
       setPosition(nextPosition);
     },
-    [position.x, position.y, scheduleCursorBadgeIdleShow, scale, setPosition, setScale]
+    [
+      position.x,
+      position.y,
+      scheduleCursorBadgeIdleShow,
+      scale,
+      setPosition,
+      setScale,
+    ]
   );
 
   const parseCmInput = useCallback((raw: string): number | null => {
@@ -2251,7 +2337,13 @@ export default function Canvas() {
   }, []);
 
   const openInlineEdgeEdit = useCallback(
-    (opts: { figureId: string; edgeId: string; anchor: "start" | "end" | "mid"; clientX: number; clientY: number }) => {
+    (opts: {
+      figureId: string;
+      edgeId: string;
+      anchor: "start" | "end" | "mid";
+      clientX: number;
+      clientY: number;
+    }) => {
       const fig = figures.find((f) => f.id === opts.figureId);
       if (!fig) return;
       const hit = fig.measures?.perEdge?.find((m) => m.edgeId === opts.edgeId);
@@ -2274,7 +2366,14 @@ export default function Canvas() {
   );
 
   const applyEdgeLengthEdit = useCallback(
-    (draft: { figureId: string; edgeId: string; anchor: "start" | "end" | "mid" }, rawCm: string) => {
+    (
+      draft: {
+        figureId: string;
+        edgeId: string;
+        anchor: "start" | "end" | "mid";
+      },
+      rawCm: string
+    ) => {
       const cm = parseCmInput(rawCm);
       if (cm == null) return;
 
@@ -2328,7 +2427,7 @@ export default function Canvas() {
 
       const preferredEdge =
         selectedEdge && selectedEdge.figureId === fig.id
-          ? fig.edges.find((ed) => ed.id === selectedEdge.edgeId) ?? null
+          ? (fig.edges.find((ed) => ed.id === selectedEdge.edgeId) ?? null)
           : null;
 
       const useSelectedEdge =
@@ -2340,14 +2439,14 @@ export default function Canvas() {
 
       const edge = useSelectedEdge
         ? preferredEdge
-        : fig.edges.find((ed) => ed.id === hit.best!.edgeId) ?? null;
+        : (fig.edges.find((ed) => ed.id === hit.best!.edgeId) ?? null);
       if (!edge) return;
 
       const preferredAnchor = getEdgeAnchorPreference(fig.id, edge.id);
       const anchor: "start" | "end" | "mid" =
         useSelectedEdge && selectedEdge
           ? selectedEdge.anchor
-          : preferredAnchor ??
+          : (preferredAnchor ??
             (() => {
               const nFrom = fig.nodes.find((n) => n.id === edge.from);
               const nTo = fig.nodes.find((n) => n.id === edge.to);
@@ -2355,7 +2454,7 @@ export default function Canvas() {
               const dFrom = dist(local, { x: nFrom.x, y: nFrom.y });
               const dTo = dist(local, { x: nTo.x, y: nTo.y });
               return dFrom <= dTo ? "start" : "end";
-            })();
+            })());
 
       setSelectedFigureIds([fig.id]);
       setSelectedEdge({ figureId: fig.id, edgeId: edge.id, anchor });
@@ -2382,495 +2481,531 @@ export default function Canvas() {
     ]
   );
 
-  const handlePointerDown = (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
-      // Konva/React can fire both Pointer and Mouse events for the same click.
-      // When that happens, our handlers run twice and tools like Curve can degrade to straight/duplicated segments.
-      const evt = e.evt;
-      const isPointer = typeof (window as unknown as { PointerEvent?: unknown }).PointerEvent !== "undefined" &&
-        evt instanceof PointerEvent;
-      const isMouse = evt instanceof MouseEvent && !isPointer;
-      const now = Date.now();
-      if (isPointer) {
-        lastPointerDownAtRef.current = now;
-      } else if (isMouse) {
-        // If a pointer event just happened, ignore the synthetic mouse event.
-        if (now - lastPointerDownAtRef.current < 60) {
-          return;
-        }
-      }
-
-      const stage = stageRef.current;
-      if (!stage) return;
-
-      // Cursor badge should never show while pointer is down.
-      isPointerDownRef.current = true;
-      hideCursorBadge();
-
-      // Ensure Konva updates pointer position even when clicking on empty stage.
-      stage.setPointersPositions(e.evt);
-      const pos = stage.getPointerPosition();
-      if (!pos) return;
-
-      const evtAny = e.evt as MouseEvent;
-      const buttons = (evtAny.buttons ?? 0) as number;
-      const button = (evtAny.button ?? 0) as number;
-      const isMiddlePressed = (buttons & 4) === 4 || button === 1;
-      const isRightClick = button === 2;
-      const isLeftClick = (buttons & 1) === 1 || button === 0;
-
-      // Pan tool or middle mouse
-      if ((tool === "pan" && isLeftClick && !isRightClick) || (isMiddlePressed && !isRightClick)) {
-        e.evt.preventDefault();
-        // Prefer pointer capture so panning continues even when leaving the stage.
-        if (e.evt instanceof PointerEvent) {
-          try {
-            stage.container().setPointerCapture(e.evt.pointerId);
-          } catch {
-            // ignore (not supported in some environments)
-          }
-        }
-        setIsPanning(true);
-        lastPointerRef.current = { x: pos.x, y: pos.y };
-        lastPanClientRef.current = {
-          x: (e.evt as MouseEvent).clientX,
-          y: (e.evt as MouseEvent).clientY,
-        };
-        panPositionRef.current = positionRef.current;
+  const handlePointerDown = (
+    e: Konva.KonvaEventObject<PointerEvent | MouseEvent>
+  ) => {
+    // Konva/React can fire both Pointer and Mouse events for the same click.
+    // When that happens, our handlers run twice and tools like Curve can degrade to straight/duplicated segments.
+    const evt = e.evt;
+    const isPointer =
+      typeof (window as unknown as { PointerEvent?: unknown }).PointerEvent !==
+        "undefined" && evt instanceof PointerEvent;
+    const isMouse = evt instanceof MouseEvent && !isPointer;
+    const now = Date.now();
+    if (isPointer) {
+      lastPointerDownAtRef.current = now;
+    } else if (isMouse) {
+      // If a pointer event just happened, ignore the synthetic mouse event.
+      if (now - lastPointerDownAtRef.current < 60) {
         return;
       }
+    }
 
-      const world = {
-        x: (pos.x - position.x) / scale,
-        y: (pos.y - position.y) / scale,
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    // Cursor badge should never show while pointer is down.
+    isPointerDownRef.current = true;
+    hideCursorBadge();
+
+    // Ensure Konva updates pointer position even when clicking on empty stage.
+    stage.setPointersPositions(e.evt);
+    const pos = stage.getPointerPosition();
+    if (!pos) return;
+
+    const evtAny = e.evt as MouseEvent;
+    const buttons = (evtAny.buttons ?? 0) as number;
+    const button = (evtAny.button ?? 0) as number;
+    const isMiddlePressed = (buttons & 4) === 4 || button === 1;
+    const isRightClick = button === 2;
+    const isLeftClick = (buttons & 1) === 1 || button === 0;
+
+    // Pan tool or middle mouse
+    if (
+      (tool === "pan" && isLeftClick && !isRightClick) ||
+      (isMiddlePressed && !isRightClick)
+    ) {
+      e.evt.preventDefault();
+      // Prefer pointer capture so panning continues even when leaving the stage.
+      if (e.evt instanceof PointerEvent) {
+        try {
+          stage.container().setPointerCapture(e.evt.pointerId);
+        } catch {
+          // ignore (not supported in some environments)
+        }
+      }
+      setIsPanning(true);
+      lastPointerRef.current = { x: pos.x, y: pos.y };
+      lastPanClientRef.current = {
+        x: (e.evt as MouseEvent).clientX,
+        y: (e.evt as MouseEvent).clientY,
       };
+      panPositionRef.current = positionRef.current;
+      return;
+    }
 
-      const isBackground = e.target === stage || e.target === backgroundRef.current;
+    const world = {
+      x: (pos.x - position.x) / scale,
+      y: (pos.y - position.y) / scale,
+    };
 
-      // Select tool: allow forgiving click selection (hit slop) and marquee selection.
-      if (tool === "select" && isBackground && isLeftClick) {
-        const HIT_SLOP_PX = 10;
-        const thresholdWorld = HIT_SLOP_PX / scale;
-        const hitId = findHoveredFigureId(figures, world, thresholdWorld);
+    const isBackground =
+      e.target === stage || e.target === backgroundRef.current;
 
-        if (hitId) {
-          if (e.evt.shiftKey) {
-            toggleSelectedFigureId(hitId);
-          } else {
-            setSelectedFigureIds([hitId]);
-          }
-          setMarqueeDraft(null);
-          return;
+    // Select tool: allow forgiving click selection (hit slop) and marquee selection.
+    if (tool === "select" && isBackground && isLeftClick) {
+      const HIT_SLOP_PX = 10;
+      const thresholdWorld = HIT_SLOP_PX / scale;
+      const hitId = findHoveredFigureId(figures, world, thresholdWorld);
+
+      if (hitId) {
+        if (e.evt.shiftKey) {
+          toggleSelectedFigureId(hitId);
+        } else {
+          setSelectedFigureIds([hitId]);
         }
+        setMarqueeDraft(null);
+        return;
+      }
 
-        setMarqueeDraft({
-          startWorld: world,
+      setMarqueeDraft({
+        startWorld: world,
+        currentWorld: world,
+        additive: e.evt.shiftKey,
+      });
+      return;
+    }
+
+    // Background click clears selection (all other tools)
+    if (isBackground) {
+      setSelectedFigureIds([]);
+    }
+
+    const resolvedDown = getSnappedWorldForTool(world, "down");
+    const worldForTool = resolvedDown.world;
+    if (resolvedDown.snap.isSnapped && magnetEnabled && tool !== "measure") {
+      setMagnetSnap({
+        pointWorld: resolvedDown.snap.pointWorld,
+        kind: resolvedDown.snap.kind,
+      });
+    } else if (magnetSnap) {
+      setMagnetSnap(null);
+    }
+
+    // Curve tool: right click undoes the last placed point.
+    if (tool === "curve" && e.evt.button === 2) {
+      e.evt.preventDefault();
+      if (!curveDraft) return;
+
+      setCurveDraft((prev) => {
+        if (!prev) return prev;
+        const nextPoints = prev.pointsWorld.slice(0, -1);
+        if (nextPoints.length === 0) return null;
+        return { pointsWorld: nextPoints, currentWorld: world };
+      });
+      return;
+    }
+
+    if (tool === "measure") {
+      setMeasureDraft({
+        startWorld: worldForTool,
+        endWorld: world,
+        snappedEndWorld: worldForTool,
+        isSnapped: resolvedDown.snap.isSnapped,
+      });
+      return;
+    }
+
+    if (tool === "dart") {
+      if (!selectedFigure) return;
+      const local = worldToFigureLocal(selectedFigure, world);
+
+      if (!dartDraft) {
+        if (!hoveredEdge || hoveredEdge.figureId !== selectedFigure.id) return;
+        setDartDraft({
+          figureId: selectedFigure.id,
+          step: "pickB",
+          a: hoveredEdge,
+          b: null,
           currentWorld: world,
-          additive: e.evt.shiftKey,
         });
         return;
       }
 
-      // Background click clears selection (all other tools)
-      if (isBackground) {
-        setSelectedFigureIds([]);
-      }
-
-      const resolvedDown = getSnappedWorldForTool(world, "down");
-      const worldForTool = resolvedDown.world;
-      if (resolvedDown.snap.isSnapped && magnetEnabled && tool !== "measure") {
-        setMagnetSnap({
-          pointWorld: resolvedDown.snap.pointWorld,
-          kind: resolvedDown.snap.kind,
-        });
-      } else if (magnetSnap) {
-        setMagnetSnap(null);
-      }
-
-      // Curve tool: right click undoes the last placed point.
-      if (tool === "curve" && e.evt.button === 2) {
-        e.evt.preventDefault();
-        if (!curveDraft) return;
-
-        setCurveDraft((prev) => {
-          if (!prev) return prev;
-          const nextPoints = prev.pointsWorld.slice(0, -1);
-          if (nextPoints.length === 0) return null;
-          return { pointsWorld: nextPoints, currentWorld: world };
+      if (dartDraft.step === "pickB") {
+        if (!hoveredEdge || hoveredEdge.figureId !== selectedFigure.id) return;
+        if (dist(dartDraft.a!.pointLocal, hoveredEdge.pointLocal) < 6) return;
+        setDartDraft({
+          ...dartDraft,
+          step: "pickApex",
+          b: hoveredEdge,
+          currentWorld: world,
         });
         return;
       }
 
-      if (tool === "measure") {
-        setMeasureDraft({
-          startWorld: worldForTool,
-          endWorld: world,
-          snappedEndWorld: worldForTool,
-          isSnapped: resolvedDown.snap.isSnapped,
-        });
-        return;
-      }
+      // pickApex
+      const aLocal = dartDraft.a!.pointLocal;
+      const bLocal = dartDraft.b!.pointLocal;
+      const apexLocal = local;
 
-      if (tool === "dart") {
-        if (!selectedFigure) return;
-        const local = worldToFigureLocal(selectedFigure, world);
+      setFigures((prev) =>
+        prev.map((f) => {
+          if (f.id !== selectedFigure.id) return f;
+          const next = insertDartIntoFigure(f, aLocal, bLocal, apexLocal);
+          return next ?? f;
+        })
+      );
+      setDartDraft(null);
+      return;
+    }
 
-        if (!dartDraft) {
-          if (!hoveredEdge || hoveredEdge.figureId !== selectedFigure.id) return;
-          setDartDraft({
-            figureId: selectedFigure.id,
-            step: "pickB",
-            a: hoveredEdge,
-            b: null,
-            currentWorld: world,
-          });
-          return;
-        }
+    if (
+      tool === "node" &&
+      hoveredNodeId &&
+      selectedFigureId &&
+      selectedFigure &&
+      selectedFigure.id === selectedFigureId
+    ) {
+      setNodeSelection({
+        figureId: selectedFigureId,
+        nodeId: hoveredNodeId,
+        handle: null,
+      });
+      setHoveredEdge(null);
+      return;
+    }
 
-        if (dartDraft.step === "pickB") {
-          if (!hoveredEdge || hoveredEdge.figureId !== selectedFigure.id) return;
-          if (dist(dartDraft.a!.pointLocal, hoveredEdge.pointLocal) < 6) return;
-          setDartDraft({
-            ...dartDraft,
-            step: "pickApex",
-            b: hoveredEdge,
-            currentWorld: world,
-          });
-          return;
-        }
-
-        // pickApex
-        const aLocal = dartDraft.a!.pointLocal;
-        const bLocal = dartDraft.b!.pointLocal;
-        const apexLocal = local;
-
-        setFigures((prev) =>
-          prev.map((f) => {
-            if (f.id !== selectedFigure.id) return f;
-            const next = insertDartIntoFigure(f, aLocal, bLocal, apexLocal);
-            return next ?? f;
-          })
-        );
-        setDartDraft(null);
-        return;
-      }
-
-      if (
-        tool === "node" &&
-        hoveredNodeId &&
-        selectedFigureId &&
-        selectedFigure &&
-        selectedFigure.id === selectedFigureId
-      ) {
+    if (
+      tool === "node" &&
+      hoveredEdge &&
+      selectedFigureId &&
+      selectedFigure &&
+      hoveredEdge.figureId === selectedFigureId
+    ) {
+      // Avoid calling setState (Canvas) inside the figures state updater (EditorProvider).
+      const res = splitFigureEdge(
+        selectedFigure,
+        hoveredEdge.edgeId,
+        hoveredEdge.t
+      );
+      setFigures((prev) =>
+        prev.map((f) => (f.id === selectedFigureId ? res.figure : f))
+      );
+      if (res.newNodeId) {
         setNodeSelection({
           figureId: selectedFigureId,
-          nodeId: hoveredNodeId,
+          nodeId: res.newNodeId,
           handle: null,
         });
         setHoveredEdge(null);
+      }
+      return;
+    }
+
+    if (tool === "curve") {
+      // Multi-click cubic: click to add points, double-click to finish.
+      if (e.evt.detail >= 2 && curveDraft) {
+        const pts = curveDraft.pointsWorld;
+        const first = pts[0];
+        const distToStart = len(sub(world, first));
+        const closed = pts.length >= 3 && distToStart < 12;
+        const finalized = makeCurveFromPoints(pts, closed, "aci7");
+        if (finalized) {
+          setFigures((prev) => [...prev, finalized]);
+          setSelectedFigureId(finalized.id);
+        }
+        setCurveDraft(null);
         return;
       }
 
-      if (
-        tool === "node" &&
-        hoveredEdge &&
-        selectedFigureId &&
-        selectedFigure &&
-        hoveredEdge.figureId === selectedFigureId
-      ) {
-        // Avoid calling setState (Canvas) inside the figures state updater (EditorProvider).
-        const res = splitFigureEdge(selectedFigure, hoveredEdge.edgeId, hoveredEdge.t);
-        setFigures((prev) =>
-          prev.map((f) => (f.id === selectedFigureId ? res.figure : f))
-        );
-        if (res.newNodeId) {
-          setNodeSelection({
-            figureId: selectedFigureId,
-            nodeId: res.newNodeId,
-            handle: null,
-          });
-          setHoveredEdge(null);
-        }
-        return;
-      }
-
-      if (tool === "curve") {
-        // Multi-click cubic: click to add points, double-click to finish.
-        if (e.evt.detail >= 2 && curveDraft) {
-          const pts = curveDraft.pointsWorld;
-          const first = pts[0];
-          const distToStart = len(sub(world, first));
-          const closed = pts.length >= 3 && distToStart < 12;
-          const finalized = makeCurveFromPoints(pts, closed, "aci7");
-          if (finalized) {
-            setFigures((prev) => [...prev, finalized]);
-            setSelectedFigureId(finalized.id);
-          }
-          setCurveDraft(null);
-          return;
-        }
-
-        if (!curveDraft) {
-          setCurveDraft({ pointsWorld: [worldForTool], currentWorld: worldForTool });
-          return;
-        }
-
-        setCurveDraft((prev) =>
-          prev
-            ? {
-                pointsWorld: [...prev.pointsWorld, worldForTool],
-                currentWorld: worldForTool,
-              }
-            : { pointsWorld: [worldForTool], currentWorld: worldForTool }
-        );
-        return;
-      }
-
-      if (tool === "line" || tool === "rectangle" || tool === "circle") {
-        const mods: DraftMods = { shift: e.evt.shiftKey, alt: e.evt.altKey };
-        let effective = { a: worldForTool, b: worldForTool };
-        if (tool === "line") effective = computeLineEndpoints(worldForTool, worldForTool, mods);
-        if (tool === "rectangle" || tool === "circle") {
-          effective = computeRectLikeCorners(worldForTool, worldForTool, mods);
-        }
-        setDraft({
-          tool,
-          startWorld: worldForTool,
+      if (!curveDraft) {
+        setCurveDraft({
+          pointsWorld: [worldForTool],
           currentWorld: worldForTool,
-          effectiveAWorld: effective.a,
-          effectiveBWorld: effective.b,
-          mods,
         });
-      }
-  };
-
-  const handlePointerMove = (e: Konva.KonvaEventObject<PointerEvent | MouseEvent>) => {
-      const stage = stageRef.current;
-      if (!stage) return;
-
-      stage.setPointersPositions(e.evt);
-      const pos = stage.getPointerPosition();
-      if (!pos) return;
-
-      if (isPanning) {
-        e.evt.preventDefault();
-        // Movement is handled by global pointer/mouse move listeners while panning.
         return;
       }
 
-      const world = {
-        x: (pos.x - position.x) / scale,
-        y: (pos.y - position.y) / scale,
-      };
-
-      // Cursor badge: keep native cursor, but show a small tool icon near it.
-      const activeEl = document.activeElement;
-      const isTyping =
-        activeEl instanceof HTMLElement &&
-        (activeEl.tagName === "INPUT" ||
-          activeEl.tagName === "TEXTAREA" ||
-          activeEl.tagName === "SELECT" ||
-          activeEl.isContentEditable);
-
-      const shouldShowCursorBadge =
-        isToolCursorOverlayEnabled(tool) &&
-        !isPanning &&
-        !isTyping &&
-        !isPointerDownRef.current;
-
-      if (shouldShowCursorBadge) {
-        cursorBadgeLastPosRef.current = { x: pos.x, y: pos.y };
-        // Hide immediately on move if visible
-        setCursorBadge((prev) => (prev ? null : prev));
-        // Schedule show after delay
-        scheduleCursorBadgeIdleShow();
-      } else {
-        cursorBadgeLastPosRef.current = null;
-        hideCursorBadge();
-      }
-
-      if (tool === "offset") {
-        const thresholdWorld = 10 / scale;
-        const hitId = findHoveredFigureId(figures, world, thresholdWorld);
-
-        const hit = hitId ? figures.find((f) => f.id === hitId) ?? null : null;
-        const hitBaseId = hit?.kind === "seam" ? hit.parentId ?? null : hitId;
-
-        // If we didn't hit an edge/line, allow hover anywhere inside a closed figure.
-        const insideId = hitBaseId
-          ? null
-          : findHoveredClosedFigureOrSeamBaseId(figures, world, 60);
-
-        const baseId = hitBaseId ?? insideId;
-        setHoveredOffsetBaseId((prev) => (prev === baseId ? prev : baseId));
-      } else if (hoveredOffsetBaseId) {
-        setHoveredOffsetBaseId(null);
-      }
-
-      if (measureDisplayMode !== "never") {
-        const thresholdWorld = 10 / scale;
-        const figId = findHoveredFigureId(figures, world, thresholdWorld);
-        const fig = figId ? figures.find((f) => f.id === figId) : null;
-
-        if (fig) {
-          const local = worldToFigureLocal(fig, world);
-          const hit = findNearestEdge(fig, local);
-          setHoveredMeasureEdge(
-            hit.best && hit.bestDist <= thresholdWorld
-              ? { figureId: fig.id, edgeId: hit.best.edgeId }
-              : null
-          );
-        } else if (hoveredMeasureEdge) {
-          setHoveredMeasureEdge(null);
-        }
-      } else if (hoveredMeasureEdge) {
-        setHoveredMeasureEdge(null);
-      }
-
-      if (tool === "select" && marqueeDraft) {
-        setMarqueeDraft((prev) =>
-          prev ? { ...prev, currentWorld: world } : prev
-        );
-        return;
-      }
-
-      const resolvedMove = getSnappedWorldForTool(world, "move");
-      const worldForTool = resolvedMove.world;
-
-      if (tool !== "measure") {
-        if (resolvedMove.snap.isSnapped && magnetEnabled && (tool === "line" || tool === "rectangle" || tool === "circle" || tool === "curve")) {
-          setMagnetSnap({
-            pointWorld: resolvedMove.snap.pointWorld,
-            kind: resolvedMove.snap.kind,
-          });
-        } else if (magnetSnap) {
-          setMagnetSnap(null);
-        }
-      }
-
-      if (measureDisplayMode === "hover") {
-        const thresholdWorld = 10 / scale;
-        setHoveredFigureId(findHoveredFigureId(figures, world, thresholdWorld));
-      } else if (nodesDisplayMode === "hover") {
-        const thresholdWorld = 10 / scale;
-        setHoveredFigureId(findHoveredFigureId(figures, world, thresholdWorld));
-      } else if (hoveredFigureId) {
-        setHoveredFigureId(null);
-      }
-
-      if ((tool === "node" || tool === "dart") && selectedFigure) {
-        const local = worldToFigureLocal(selectedFigure, world);
-
-        if (tool === "dart") {
-          setDartDraft((prev) => (prev ? { ...prev, currentWorld: world } : prev));
-        }
-
-        // In node tool: if we're near an existing node, prioritize it over edge splitting.
-        if (tool === "node") {
-          const threshold = 10 / scale;
-          let bestId: string | null = null;
-          let bestD = Number.POSITIVE_INFINITY;
-          for (const n of selectedFigure.nodes) {
-            const d = dist(local, { x: n.x, y: n.y });
-            if (d < bestD) {
-              bestD = d;
-              bestId = n.id;
+      setCurveDraft((prev) =>
+        prev
+          ? {
+              pointsWorld: [...prev.pointsWorld, worldForTool],
+              currentWorld: worldForTool,
             }
-          }
+          : { pointsWorld: [worldForTool], currentWorld: worldForTool }
+      );
+      return;
+    }
 
-          if (bestId && bestD <= threshold) {
-            if (hoveredNodeId !== bestId) setHoveredNodeId(bestId);
-            if (hoveredEdge) setHoveredEdge(null);
-            return;
-          }
-
-          if (hoveredNodeId) setHoveredNodeId(null);
-        }
-
-        const hit = findNearestEdge(selectedFigure, local);
-        const threshold = 10 / scale;
-
-        if (!hit.best || hit.bestDist > threshold) {
-          setHoveredEdge(null);
-          return;
-        }
-
-        // Node tool: Option/Alt locks split preview to the midpoint of a straight edge.
-        if (tool === "node" && e.evt.altKey) {
-          const edge = selectedFigure.edges.find((ed) => ed.id === hit.best!.edgeId);
-          if (edge) {
-            const a = getNodeById(selectedFigure.nodes, edge.from);
-            const b = getNodeById(selectedFigure.nodes, edge.to);
-            if (a && b) {
-              if (edge.kind === "line") {
-                const mid = lerp({ x: a.x, y: a.y }, { x: b.x, y: b.y }, 0.5);
-                setHoveredEdge({
-                  figureId: selectedFigure.id,
-                  edgeId: edge.id,
-                  t: 0.5,
-                  pointLocal: mid,
-                  snapKind: "mid",
-                });
-                return;
-              }
-
-              // Cubic: lock to parameter midpoint t=0.5 (good visual midpoint; not arc-length midpoint).
-              const p0: Vec2 = { x: a.x, y: a.y };
-              const p3: Vec2 = { x: b.x, y: b.y };
-              const p1: Vec2 = a.outHandle ? { x: a.outHandle.x, y: a.outHandle.y } : p0;
-              const p2: Vec2 = b.inHandle ? { x: b.inHandle.x, y: b.inHandle.y } : p3;
-              const t = 0.5;
-              const p01 = lerp(p0, p1, t);
-              const p12 = lerp(p1, p2, t);
-              const p23 = lerp(p2, p3, t);
-              const p012 = lerp(p01, p12, t);
-              const p123 = lerp(p12, p23, t);
-              const p0123 = lerp(p012, p123, t);
-
-              setHoveredEdge({
-                figureId: selectedFigure.id,
-                edgeId: edge.id,
-                t,
-                pointLocal: p0123,
-                snapKind: "mid",
-              });
-              return;
-            }
-          }
-        }
-
-        setHoveredEdge(hit.best);
-      }
-
-      if (tool === "measure" && measureDraft) {
-        setMeasureDraft((prev) =>
-          prev
-            ? {
-                ...prev,
-                endWorld: world,
-                snappedEndWorld: worldForTool,
-                isSnapped: resolvedMove.snap.isSnapped,
-              }
-            : prev
-        );
-        return;
-      }
-
-      if (!draft) return;
-
+    if (tool === "line" || tool === "rectangle" || tool === "circle") {
       const mods: DraftMods = { shift: e.evt.shiftKey, alt: e.evt.altKey };
-      let effective = { a: draft.startWorld, b: worldForTool };
-      if (draft.tool === "line") effective = computeLineEndpoints(draft.startWorld, worldForTool, mods);
-      if (draft.tool === "rectangle" || draft.tool === "circle") {
-        effective = computeRectLikeCorners(draft.startWorld, worldForTool, mods);
+      let effective = { a: worldForTool, b: worldForTool };
+      if (tool === "line")
+        effective = computeLineEndpoints(worldForTool, worldForTool, mods);
+      if (tool === "rectangle" || tool === "circle") {
+        effective = computeRectLikeCorners(worldForTool, worldForTool, mods);
       }
-
       setDraft({
-        ...draft,
+        tool,
+        startWorld: worldForTool,
         currentWorld: worldForTool,
         effectiveAWorld: effective.a,
         effectiveBWorld: effective.b,
         mods,
       });
+    }
+  };
+
+  const handlePointerMove = (
+    e: Konva.KonvaEventObject<PointerEvent | MouseEvent>
+  ) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    stage.setPointersPositions(e.evt);
+    const pos = stage.getPointerPosition();
+    if (!pos) return;
+
+    if (isPanning) {
+      e.evt.preventDefault();
+      // Movement is handled by global pointer/mouse move listeners while panning.
+      return;
+    }
+
+    const world = {
+      x: (pos.x - position.x) / scale,
+      y: (pos.y - position.y) / scale,
+    };
+
+    // Cursor badge: keep native cursor, but show a small tool icon near it.
+    const activeEl = document.activeElement;
+    const isTyping =
+      activeEl instanceof HTMLElement &&
+      (activeEl.tagName === "INPUT" ||
+        activeEl.tagName === "TEXTAREA" ||
+        activeEl.tagName === "SELECT" ||
+        activeEl.isContentEditable);
+
+    const shouldShowCursorBadge =
+      isToolCursorOverlayEnabled(tool) &&
+      !isPanning &&
+      !isTyping &&
+      !isPointerDownRef.current;
+
+    if (shouldShowCursorBadge) {
+      cursorBadgeLastPosRef.current = { x: pos.x, y: pos.y };
+      // Hide immediately on move if visible
+      setCursorBadge((prev) => (prev ? null : prev));
+      // Schedule show after delay
+      scheduleCursorBadgeIdleShow();
+    } else {
+      cursorBadgeLastPosRef.current = null;
+      hideCursorBadge();
+    }
+
+    if (tool === "offset") {
+      const thresholdWorld = 10 / scale;
+      const hitId = findHoveredFigureId(figures, world, thresholdWorld);
+
+      const hit = hitId ? (figures.find((f) => f.id === hitId) ?? null) : null;
+      const hitBaseId = hit?.kind === "seam" ? (hit.parentId ?? null) : hitId;
+
+      // If we didn't hit an edge/line, allow hover anywhere inside a closed figure.
+      const insideId = hitBaseId
+        ? null
+        : findHoveredClosedFigureOrSeamBaseId(figures, world, 60);
+
+      const baseId = hitBaseId ?? insideId;
+      setHoveredOffsetBaseId((prev) => (prev === baseId ? prev : baseId));
+    } else if (hoveredOffsetBaseId) {
+      setHoveredOffsetBaseId(null);
+    }
+
+    if (measureDisplayMode !== "never") {
+      const thresholdWorld = 10 / scale;
+      const figId = findHoveredFigureId(figures, world, thresholdWorld);
+      const fig = figId ? figures.find((f) => f.id === figId) : null;
+
+      if (fig) {
+        const local = worldToFigureLocal(fig, world);
+        const hit = findNearestEdge(fig, local);
+        setHoveredMeasureEdge(
+          hit.best && hit.bestDist <= thresholdWorld
+            ? { figureId: fig.id, edgeId: hit.best.edgeId }
+            : null
+        );
+      } else if (hoveredMeasureEdge) {
+        setHoveredMeasureEdge(null);
+      }
+    } else if (hoveredMeasureEdge) {
+      setHoveredMeasureEdge(null);
+    }
+
+    if (tool === "select" && marqueeDraft) {
+      setMarqueeDraft((prev) =>
+        prev ? { ...prev, currentWorld: world } : prev
+      );
+      return;
+    }
+
+    const resolvedMove = getSnappedWorldForTool(world, "move");
+    const worldForTool = resolvedMove.world;
+
+    if (tool !== "measure") {
+      if (
+        resolvedMove.snap.isSnapped &&
+        magnetEnabled &&
+        (tool === "line" ||
+          tool === "rectangle" ||
+          tool === "circle" ||
+          tool === "curve")
+      ) {
+        setMagnetSnap({
+          pointWorld: resolvedMove.snap.pointWorld,
+          kind: resolvedMove.snap.kind,
+        });
+      } else if (magnetSnap) {
+        setMagnetSnap(null);
+      }
+    }
+
+    if (measureDisplayMode === "hover" || nodesDisplayMode === "hover") {
+      const thresholdWorld = 10 / scale;
+      const hitId = findHoveredFigureId(figures, world, thresholdWorld);
+      // If we didn't hit the contour, allow hover anywhere inside a closed figure.
+      const insideId = hitId
+        ? null
+        : findHoveredClosedFigureOrSeamBaseId(figures, world, 60);
+      const nextHoveredId = hitId ?? insideId;
+      setHoveredFigureId((prev) => (prev === nextHoveredId ? prev : nextHoveredId));
+    } else if (hoveredFigureId) {
+      setHoveredFigureId(null);
+    }
+
+    if ((tool === "node" || tool === "dart") && selectedFigure) {
+      const local = worldToFigureLocal(selectedFigure, world);
+
+      if (tool === "dart") {
+        setDartDraft((prev) =>
+          prev ? { ...prev, currentWorld: world } : prev
+        );
+      }
+
+      // In node tool: if we're near an existing node, prioritize it over edge splitting.
+      if (tool === "node") {
+        const threshold = 10 / scale;
+        let bestId: string | null = null;
+        let bestD = Number.POSITIVE_INFINITY;
+        for (const n of selectedFigure.nodes) {
+          const d = dist(local, { x: n.x, y: n.y });
+          if (d < bestD) {
+            bestD = d;
+            bestId = n.id;
+          }
+        }
+
+        if (bestId && bestD <= threshold) {
+          if (hoveredNodeId !== bestId) setHoveredNodeId(bestId);
+          if (hoveredEdge) setHoveredEdge(null);
+          return;
+        }
+
+        if (hoveredNodeId) setHoveredNodeId(null);
+      }
+
+      const hit = findNearestEdge(selectedFigure, local);
+      const threshold = 10 / scale;
+
+      if (!hit.best || hit.bestDist > threshold) {
+        setHoveredEdge(null);
+        return;
+      }
+
+      // Node tool: Option/Alt locks split preview to the midpoint of a straight edge.
+      if (tool === "node" && e.evt.altKey) {
+        const edge = selectedFigure.edges.find(
+          (ed) => ed.id === hit.best!.edgeId
+        );
+        if (edge) {
+          const a = getNodeById(selectedFigure.nodes, edge.from);
+          const b = getNodeById(selectedFigure.nodes, edge.to);
+          if (a && b) {
+            if (edge.kind === "line") {
+              const mid = lerp({ x: a.x, y: a.y }, { x: b.x, y: b.y }, 0.5);
+              setHoveredEdge({
+                figureId: selectedFigure.id,
+                edgeId: edge.id,
+                t: 0.5,
+                pointLocal: mid,
+                snapKind: "mid",
+              });
+              return;
+            }
+
+            // Cubic: lock to parameter midpoint t=0.5 (good visual midpoint; not arc-length midpoint).
+            const p0: Vec2 = { x: a.x, y: a.y };
+            const p3: Vec2 = { x: b.x, y: b.y };
+            const p1: Vec2 = a.outHandle
+              ? { x: a.outHandle.x, y: a.outHandle.y }
+              : p0;
+            const p2: Vec2 = b.inHandle
+              ? { x: b.inHandle.x, y: b.inHandle.y }
+              : p3;
+            const t = 0.5;
+            const p01 = lerp(p0, p1, t);
+            const p12 = lerp(p1, p2, t);
+            const p23 = lerp(p2, p3, t);
+            const p012 = lerp(p01, p12, t);
+            const p123 = lerp(p12, p23, t);
+            const p0123 = lerp(p012, p123, t);
+
+            setHoveredEdge({
+              figureId: selectedFigure.id,
+              edgeId: edge.id,
+              t,
+              pointLocal: p0123,
+              snapKind: "mid",
+            });
+            return;
+          }
+        }
+      }
+
+      setHoveredEdge(hit.best);
+    }
+
+    if (tool === "measure" && measureDraft) {
+      setMeasureDraft((prev) =>
+        prev
+          ? {
+              ...prev,
+              endWorld: world,
+              snappedEndWorld: worldForTool,
+              isSnapped: resolvedMove.snap.isSnapped,
+            }
+          : prev
+      );
+      return;
+    }
+
+    if (!draft) return;
+
+    const mods: DraftMods = { shift: e.evt.shiftKey, alt: e.evt.altKey };
+    let effective = { a: draft.startWorld, b: worldForTool };
+    if (draft.tool === "line")
+      effective = computeLineEndpoints(draft.startWorld, worldForTool, mods);
+    if (draft.tool === "rectangle" || draft.tool === "circle") {
+      effective = computeRectLikeCorners(draft.startWorld, worldForTool, mods);
+    }
+
+    setDraft({
+      ...draft,
+      currentWorld: worldForTool,
+      effectiveAWorld: effective.a,
+      effectiveBWorld: effective.b,
+      mods,
+    });
   };
 
   const handleCurvePointerMove = useCallback(
@@ -2888,7 +3023,9 @@ export default function Canvas() {
       };
 
       const resolved = getSnappedWorldForTool(world, "move");
-      setCurveDraft((prev) => (prev ? { ...prev, currentWorld: resolved.world } : prev));
+      setCurveDraft((prev) =>
+        prev ? { ...prev, currentWorld: resolved.world } : prev
+      );
     },
     [curveDraft, getSnappedWorldForTool, position.x, position.y, scale]
   );
@@ -2932,7 +3069,12 @@ export default function Canvas() {
         return;
       }
 
-      const intersects = (bb: { x: number; y: number; width: number; height: number }) => {
+      const intersects = (bb: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }) => {
         return !(
           bb.x + bb.width < x0 ||
           bb.x > x1 ||
@@ -2946,7 +3088,8 @@ export default function Canvas() {
         const bb = figureWorldBoundingBox(fig);
         if (!bb) continue;
         if (!intersects(bb)) continue;
-        const baseId = fig.kind === "seam" && fig.parentId ? fig.parentId : fig.id;
+        const baseId =
+          fig.kind === "seam" && fig.parentId ? fig.parentId : fig.id;
         hitIds.add(baseId);
       }
 
@@ -2985,7 +3128,8 @@ export default function Canvas() {
 
     setFigures((prev) => {
       const next = [...prev];
-      if (draft.tool === "line") next.push(makeLineFigure(a, b, "line", "aci7"));
+      if (draft.tool === "line")
+        next.push(makeLineFigure(a, b, "line", "aci7"));
       if (draft.tool === "rectangle") next.push(makeRectFigure(a, b, "aci7"));
       if (draft.tool === "circle") {
         const center: Vec2 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -3047,7 +3191,12 @@ export default function Canvas() {
   const magnetOverlay = useMemo(() => {
     if (!magnetEnabled) return null;
     if (!magnetSnap) return null;
-    if (tool !== "line" && tool !== "rectangle" && tool !== "circle" && tool !== "curve") {
+    if (
+      tool !== "line" &&
+      tool !== "rectangle" &&
+      tool !== "circle" &&
+      tool !== "curve"
+    ) {
       return null;
     }
 
@@ -3110,7 +3259,8 @@ export default function Canvas() {
 
     // Safety: when zoomed very far out, drawing every page can be too heavy.
     const MAX_TILES = 600;
-    const stride = totalTiles > MAX_TILES ? Math.ceil(Math.sqrt(totalTiles / MAX_TILES)) : 1;
+    const stride =
+      totalTiles > MAX_TILES ? Math.ceil(Math.sqrt(totalTiles / MAX_TILES)) : 1;
 
     const showWatermark = stride === 1;
     const watermarkText = pageGuideSettings.paperSize;
@@ -3418,14 +3568,18 @@ export default function Canvas() {
                     let bestD = Infinity;
                     for (const other of fig.nodes) {
                       if (other.id === ref.nodeId) continue;
-                      const d = dist({ x: nx, y: ny }, { x: other.x, y: other.y });
+                      const d = dist(
+                        { x: nx, y: ny },
+                        { x: other.x, y: other.y }
+                      );
                       if (d < bestD) {
                         bestD = d;
                         bestId = other.id;
                       }
                     }
                     if (bestId && bestD <= snapR) {
-                      const other = fig.nodes.find((n2) => n2.id === bestId) ?? null;
+                      const other =
+                        fig.nodes.find((n2) => n2.id === bestId) ?? null;
                       if (other) {
                         nx = other.x;
                         ny = other.y;
@@ -3724,7 +3878,11 @@ export default function Canvas() {
     const edge = selectedFigure.edges.find((e) => e.id === hoveredEdge.edgeId);
     if (!edge) return null;
 
-    const pts = edgeLocalPoints(selectedFigure, edge, edge.kind === "line" ? 1 : 60);
+    const pts = edgeLocalPoints(
+      selectedFigure,
+      edge,
+      edge.kind === "line" ? 1 : 60
+    );
     if (pts.length < 2) return null;
     const flat: number[] = [];
     for (const p of pts) flat.push(p.x, p.y);
@@ -3777,7 +3935,11 @@ export default function Canvas() {
     if (!edge) return null;
 
     // Use a denser sampling for a stable arc-length preview on curves.
-    const pts = edgeLocalPoints(selectedFigure, edge, edge.kind === "line" ? 1 : 120);
+    const pts = edgeLocalPoints(
+      selectedFigure,
+      edge,
+      edge.kind === "line" ? 1 : 120
+    );
     if (pts.length < 2) return null;
 
     const split = splitPolylineAtPoint(pts, hoveredEdge.pointLocal);
@@ -3811,12 +3973,16 @@ export default function Canvas() {
       const p2 = add(mt.mid, mul(n, -offset));
       const p = dist(p1, centroid) >= dist(p2, centroid) ? p1 : p2;
 
-      const rawAngleDeg = (Math.atan2(mt.tangent.y, mt.tangent.x) * 180) / Math.PI;
+      const rawAngleDeg =
+        (Math.atan2(mt.tangent.y, mt.tangent.x) * 180) / Math.PI;
       const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
 
       const label = formatCm(pxToCm(lengthPx), 2);
 
-      const chordLenLocal = dist(segmentPts[0], segmentPts[segmentPts.length - 1]);
+      const chordLenLocal = dist(
+        segmentPts[0],
+        segmentPts[segmentPts.length - 1]
+      );
       const chordLenScreenPx = chordLenLocal * scale;
       const SHORT_EDGE_THRESHOLD_PX = 42;
       const isShort = chordLenScreenPx < SHORT_EDGE_THRESHOLD_PX;
@@ -3885,7 +4051,10 @@ export default function Canvas() {
 
     const a = dartDraft.a?.pointLocal;
     const b = dartDraft.b?.pointLocal;
-    const apexLocal = worldToFigureLocal(selectedFigure, dartDraft.currentWorld);
+    const apexLocal = worldToFigureLocal(
+      selectedFigure,
+      dartDraft.currentWorld
+    );
 
     const stroke = previewStroke;
     const dash = [6 / scale, 6 / scale];
@@ -3897,9 +4066,13 @@ export default function Canvas() {
         rotation={selectedFigure.rotation || 0}
         listening={false}
       >
-        {a ? <Circle x={a.x} y={a.y} radius={4 / scale} fill={previewStroke} /> : null}
+        {a ? (
+          <Circle x={a.x} y={a.y} radius={4 / scale} fill={previewStroke} />
+        ) : null}
 
-        {b ? <Circle x={b.x} y={b.y} radius={4 / scale} fill={previewStroke} /> : null}
+        {b ? (
+          <Circle x={b.x} y={b.y} radius={4 / scale} fill={previewStroke} />
+        ) : null}
 
         {a && b && dartDraft.step === "pickApex" ? (
           <>
@@ -3989,7 +4162,9 @@ export default function Canvas() {
                 value={edgeEditDraft.value}
                 onChange={(evt) => {
                   const next = evt.target.value;
-                  setEdgeEditDraft((prev) => (prev ? { ...prev, value: next } : prev));
+                  setEdgeEditDraft((prev) =>
+                    prev ? { ...prev, value: next } : prev
+                  );
                 }}
                 onKeyDown={(evt) => {
                   const applyDraft =
@@ -4047,7 +4222,9 @@ export default function Canvas() {
                     min: 0.01,
                   });
                   const nextStr = formatPtBrDecimalFixed(next, 2);
-                  setEdgeEditDraft((prev) => (prev ? { ...prev, value: nextStr } : prev));
+                  setEdgeEditDraft((prev) =>
+                    prev ? { ...prev, value: nextStr } : prev
+                  );
                   const applyDraft =
                     selectedEdge &&
                     selectedEdge.figureId === edgeEditDraft.figureId &&
@@ -4121,146 +4298,158 @@ export default function Canvas() {
           }}
         >
           <Layer id="grid-layer">
-          {/* Background hit target */}
-          <Rect
-            ref={backgroundRef}
-            x={-100000}
-            y={-100000}
-            width={200000}
-            height={200000}
-            fill="#000000"
-            opacity={0.01}
-            listening
-          />
-
-          {gridLines.map((l, idx) => (
-            <Line
-              key={idx}
-              points={l.points}
-              stroke={gridStroke}
-              strokeWidth={1 / scale}
-              listening={false}
+            {/* Background hit target */}
+            <Rect
+              ref={backgroundRef}
+              x={-100000}
+              y={-100000}
+              width={200000}
+              height={200000}
+              fill="#000000"
+              opacity={0.01}
+              listening
             />
-          ))}
 
-          {pageGuides}
+            {gridLines.map((l, idx) => (
+              <Line
+                key={idx}
+                points={l.points}
+                stroke={gridStroke}
+                strokeWidth={1 / scale}
+                listening={false}
+              />
+            ))}
+
+            {pageGuides}
           </Layer>
 
           <Layer id="figures-layer">
-          {figures.map((fig) => {
-            const isSeam = fig.kind === "seam" && !!fig.parentId;
-            const baseId = isSeam ? fig.parentId! : fig.id;
-            const isSelected = selectedIdsSet.has(baseId);
-            const isRemovePreview =
-              tool === "offset" &&
-              hoveredOffsetBaseId != null &&
-              isSeam &&
-              fig.parentId === hoveredOffsetBaseId;
-            const stroke = isRemovePreview
-              ? previewRemoveStroke
-              : isSelected
-                ? "#2563eb"
-                : resolveStrokeColor(fig.stroke, isDark);
-            const hasSelectedEdge =
-              !!selectedEdge && selectedEdge.figureId === baseId;
-            const dimFactor = hasSelectedEdge ? (isSeam ? 0.5 : 0.25) : 1;
-            const opacity = isRemovePreview
-              ? 0.95
-              : (fig.opacity ?? 1) * (isSeam ? 0.7 : 1) * dimFactor;
-            const strokeWidth = (fig.strokeWidth || 1) / scale;
-            const dash = fig.dash ? fig.dash.map((d) => d / scale) : undefined;
+            {figures.map((fig) => {
+              const isSeam = fig.kind === "seam" && !!fig.parentId;
+              const baseId = isSeam ? fig.parentId! : fig.id;
+              const isSelected = selectedIdsSet.has(baseId);
+              const isRemovePreview =
+                tool === "offset" &&
+                hoveredOffsetBaseId != null &&
+                isSeam &&
+                fig.parentId === hoveredOffsetBaseId;
+              const stroke = isRemovePreview
+                ? previewRemoveStroke
+                : isSelected
+                  ? "#2563eb"
+                  : resolveStrokeColor(fig.stroke, isDark);
+              const hasSelectedEdge =
+                !!selectedEdge && selectedEdge.figureId === baseId;
+              const dimFactor = hasSelectedEdge ? (isSeam ? 0.5 : 0.25) : 1;
+              const opacity = isRemovePreview
+                ? 0.95
+                : (fig.opacity ?? 1) * (isSeam ? 0.7 : 1) * dimFactor;
+              const strokeWidth = (fig.strokeWidth || 1) / scale;
+              const dash = fig.dash
+                ? fig.dash.map((d) => d / scale)
+                : undefined;
 
-            const hitStrokeWidth =
-              tool === "select" && selectedIdsSet.has(baseId)
-                ? 24 / scale
-                : 10 / scale;
+              const hitStrokeWidth =
+                tool === "select" && selectedIdsSet.has(baseId)
+                  ? 24 / scale
+                  : 10 / scale;
 
-            const tr = getRuntimeFigureTransform(fig);
+              const tr = getRuntimeFigureTransform(fig);
 
-            const showNodes =
-              nodesDisplayMode !== "never" &&
-              fig.kind !== "seam" &&
-              (nodesDisplayMode === "always" ||
-                fig.id === selectedFigureId ||
-                fig.id === hoveredFigureId);
+              const showNodes =
+                nodesDisplayMode !== "never" &&
+                fig.kind !== "seam" &&
+                (nodesDisplayMode === "always" ||
+                  fig.id === selectedFigureId ||
+                  fig.id === hoveredFigureId);
 
-            const showMeasures =
-              measureDisplayMode !== "never" && fig.kind !== "seam";
+              const showMeasures =
+                measureDisplayMode !== "never" &&
+                fig.kind !== "seam" &&
+                (measureDisplayMode === "always" ||
+                  fig.id === selectedFigureId ||
+                  fig.id === hoveredFigureId);
 
-            const showSeamLabel =
-              fig.kind === "seam" &&
-              (measureDisplayMode !== "never" || tool === "offset");
+              const showSeamLabel =
+                fig.kind === "seam" &&
+                (tool === "offset" ||
+                  measureDisplayMode === "always" ||
+                  (measureDisplayMode === "hover" &&
+                    (baseId === selectedFigureId ||
+                      baseId === hoveredFigureId)));
 
-            const seamBaseCentroidLocal = showSeamLabel
-              ? (() => {
-                  const base = fig.parentId
-                    ? (figuresById.get(fig.parentId) ?? null)
-                    : null;
-                  const c = base ? figureCentroidLocal(base) : figureCentroidLocal(fig);
-                  return c;
-                })()
-              : null;
+              const seamBaseCentroidLocal = showSeamLabel
+                ? (() => {
+                    const base = fig.parentId
+                      ? (figuresById.get(fig.parentId) ?? null)
+                      : null;
+                    const c = base
+                      ? figureCentroidLocal(base)
+                      : figureCentroidLocal(fig);
+                    return c;
+                  })()
+                : null;
 
-            return (
-              <MemoizedFigure
-                key={fig.id}
-                name={`fig_${fig.id}`}
-                forwardRef={(node) => {
-                  if (node) {
-                    figureNodeRefs.current.set(fig.id, node);
-                    node.setAttr("figureId", fig.id);
-                  } else {
-                    figureNodeRefs.current.delete(fig.id);
+              return (
+                <MemoizedFigure
+                  key={fig.id}
+                  name={`fig_${fig.id}`}
+                  forwardRef={(node) => {
+                    if (node) {
+                      figureNodeRefs.current.set(fig.id, node);
+                      node.setAttr("figureId", fig.id);
+                    } else {
+                      figureNodeRefs.current.delete(fig.id);
+                    }
+                  }}
+                  figure={fig}
+                  x={tr.x}
+                  y={tr.y}
+                  rotation={tr.rotation}
+                  scale={scale}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  opacity={opacity}
+                  dash={dash}
+                  hitStrokeWidth={hitStrokeWidth}
+                  draggable={tool === "select" && selectedIdsSet.has(baseId)}
+                  showNodes={showNodes}
+                  showMeasures={showMeasures}
+                  pointLabelsMode={pointLabelsMode}
+                  pointLabelsByNodeId={nodeLabelsByFigureId.get(fig.id) ?? null}
+                  showSeamLabel={showSeamLabel}
+                  seamBaseCentroidLocal={seamBaseCentroidLocal}
+                  isDark={isDark}
+                  selectedEdge={selectedEdge}
+                  hoveredEdge={hoveredMeasureEdge}
+                  showNameHandle={
+                    tool === "select" &&
+                    selectedFigureIds.length === 1 &&
+                    selectedFigureId === baseId &&
+                    fig.kind !== "seam" &&
+                    !!(fig.name ?? "").trim()
                   }
-                }}
-                figure={fig}
-                x={tr.x}
-                y={tr.y}
-                rotation={tr.rotation}
-                scale={scale}
-                stroke={stroke}
-                strokeWidth={strokeWidth}
-                opacity={opacity}
-                dash={dash}
-                hitStrokeWidth={hitStrokeWidth}
-                draggable={tool === "select" && selectedIdsSet.has(baseId)}
-                showNodes={showNodes}
-                showMeasures={showMeasures}
-                pointLabelsMode={pointLabelsMode}
-                pointLabelsByNodeId={nodeLabelsByFigureId.get(fig.id) ?? null}
-                showSeamLabel={showSeamLabel}
-                seamBaseCentroidLocal={seamBaseCentroidLocal}
-                isDark={isDark}
-                selectedEdge={selectedEdge}
-                hoveredEdge={hoveredMeasureEdge}
-                showNameHandle={
-                  tool === "select" &&
-                  selectedFigureIds.length === 1 &&
-                  selectedFigureId === baseId &&
-                  fig.kind !== "seam" &&
-                  !!(fig.name ?? "").trim()
-                }
-                onNameOffsetChange={(figureId, nextOffsetLocal) => {
-                  setFigures(
-                    (prev) =>
+                  onNameOffsetChange={(figureId, nextOffsetLocal) => {
+                    setFigures(
+                      (prev) =>
+                        prev.map((f) =>
+                          f.id === figureId
+                            ? { ...f, nameOffsetLocal: nextOffsetLocal }
+                            : f
+                        ),
+                      false
+                    );
+                  }}
+                  onNameOffsetCommit={(figureId, nextOffsetLocal) => {
+                    setFigures((prev) =>
                       prev.map((f) =>
                         f.id === figureId
                           ? { ...f, nameOffsetLocal: nextOffsetLocal }
                           : f
-                      ),
-                    false
-                  );
-                }}
-                onNameOffsetCommit={(figureId, nextOffsetLocal) => {
-                  setFigures((prev) =>
-                    prev.map((f) =>
-                      f.id === figureId
-                        ? { ...f, nameOffsetLocal: nextOffsetLocal }
-                        : f
-                    )
-                  );
-                }}
-                onPointerDown={(e) => {
+                      )
+                    );
+                  }}
+                  onPointerDown={(e) => {
                     const evtAny = e.evt as MouseEvent;
                     const buttons = (evtAny.buttons ?? 0) as number;
                     const button = (evtAny.button ?? 0) as number;
@@ -4314,19 +4503,29 @@ export default function Canvas() {
                         return;
                       }
 
-                      const edge = base.edges.find((ed) => ed.id === hit.best!.edgeId);
+                      const edge = base.edges.find(
+                        (ed) => ed.id === hit.best!.edgeId
+                      );
                       if (!edge) return;
                       const nFrom = base.nodes.find((n) => n.id === edge.from);
                       const nTo = base.nodes.find((n) => n.id === edge.to);
                       if (!nFrom || !nTo) return;
                       const dFrom = dist(local, { x: nFrom.x, y: nFrom.y });
                       const dTo = dist(local, { x: nTo.x, y: nTo.y });
-                      const preferredAnchor = getEdgeAnchorPreference(baseId, edge.id);
-                      const anchor = preferredAnchor ?? (dFrom <= dTo ? "start" : "end");
+                      const preferredAnchor = getEdgeAnchorPreference(
+                        baseId,
+                        edge.id
+                      );
+                      const anchor =
+                        preferredAnchor ?? (dFrom <= dTo ? "start" : "end");
 
                       // Keep figure selected for context, but also track the selected edge.
                       setSelectedFigureIds([baseId]);
-                      setSelectedEdge({ figureId: baseId, edgeId: edge.id, anchor });
+                      setSelectedEdge({
+                        figureId: baseId,
+                        edgeId: edge.id,
+                        anchor,
+                      });
                       return;
                     }
 
@@ -4350,8 +4549,12 @@ export default function Canvas() {
                       const bb = figureWorldBoundingBox(base);
                       const axisPos =
                         mirrorAxis === "vertical"
-                          ? (bb ? bb.x + bb.width / 2 : base.x)
-                          : (bb ? bb.y + bb.height / 2 : base.y);
+                          ? bb
+                            ? bb.x + bb.width / 2
+                            : base.x
+                          : bb
+                            ? bb.y + bb.height / 2
+                            : base.y;
                       const mirrored = mirrorFigure(base, mirrorAxis, axisPos);
                       setFigures((prev) => [...prev, mirrored]);
                       return;
@@ -4382,7 +4585,12 @@ export default function Canvas() {
                       // Keep same id (preserves selection) and drop old seams (need re-create)
                       const nextUnfolded: Figure = { ...unfolded, id: base.id };
                       setFigures((prev) =>
-                        prev.filter((f) => !(f.kind === "seam" && f.parentId === base.id)).map((f) => (f.id === base.id ? nextUnfolded : f))
+                        prev
+                          .filter(
+                            (f) =>
+                              !(f.kind === "seam" && f.parentId === base.id)
+                          )
+                          .map((f) => (f.id === base.id ? nextUnfolded : f))
                       );
                       return;
                     }
@@ -4411,251 +4619,292 @@ export default function Canvas() {
 
                     setSelectedFigureId(baseId);
                   }}
-                onDragStart={() => {
-                  if (tool !== "select") return;
-                  if (!selectedIdsSet.has(baseId)) return;
+                  onDragStart={() => {
+                    if (tool !== "select") return;
+                    if (!selectedIdsSet.has(baseId)) return;
 
-                  if (dragPreviewRafRef.current != null) {
-                    cancelAnimationFrame(dragPreviewRafRef.current);
-                    dragPreviewRafRef.current = null;
-                  }
-                  dragPreviewPendingRef.current = null;
-                  setDragPreviewPositions(null);
-
-                  const stage = stageRef.current;
-                  if (!stage) return;
-
-                  const affectedIds = figures
-                    .filter(
-                      (f) =>
-                        selectedIdsSet.has(f.id) ||
-                        (f.kind === "seam" && f.parentId && selectedIdsSet.has(f.parentId))
-                    )
-                    .map((f) => f.id);
-
-                  let startBounds: BoundingBox | null = null;
-                  for (const f of figures) {
-                    if (!affectedIds.includes(f.id)) continue;
-                    const bb = figureWorldBoundingBox(f);
-                    if (!bb) continue;
-                    if (!startBounds) {
-                      startBounds = { ...bb };
-                    } else {
-                      const x0 = Math.min(startBounds.x, bb.x);
-                      const y0 = Math.min(startBounds.y, bb.y);
-                      const x1 = Math.max(startBounds.x + startBounds.width, bb.x + bb.width);
-                      const y1 = Math.max(startBounds.y + startBounds.height, bb.y + bb.height);
-                      startBounds = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+                    if (dragPreviewRafRef.current != null) {
+                      cancelAnimationFrame(dragPreviewRafRef.current);
+                      dragPreviewRafRef.current = null;
                     }
-                  }
-
-                  const startPositions = new Map<string, Vec2>();
-                  for (const id of affectedIds) {
-                    const node = stage.findOne(`.fig_${id}`);
-                    if (!node) continue;
-                    startPositions.set(id, { x: node.x(), y: node.y() });
-                  }
-
-                  selectionDragSyncRef.current = {
-                    anchorFigureId: fig.id,
-                    affectedIds,
-                    startPositions,
-                    startBounds,
-                  };
-                }}
-                onDragMove={(e) => {
-                  const sync = selectionDragSyncRef.current;
-                  if (!sync) return;
-                  if (sync.anchorFigureId !== fig.id) return;
-
-                  const stage = stageRef.current;
-                  if (!stage) return;
-
-                  const anchorStart = sync.startPositions.get(sync.anchorFigureId);
-                  if (!anchorStart) return;
-
-                  const desired = { x: e.target.x(), y: e.target.y() };
-                  let dx = desired.x - anchorStart.x;
-                  let dy = desired.y - anchorStart.y;
-
-                  // Snap the selection bounds (left/center/right and top/center/bottom)
-                  // to nearby guide lines for a more intuitive "CAD-like" behavior.
-                  const snappedDelta = snapSelectionDeltaToGuides(
-                    sync.startBounds ?? null,
-                    dx,
-                    dy
-                  );
-                  dx = snappedDelta.dx;
-                  dy = snappedDelta.dy;
-
-                  const nextAnchor = { x: anchorStart.x + dx, y: anchorStart.y + dy };
-                  if (nextAnchor.x !== desired.x || nextAnchor.y !== desired.y) {
-                    e.target.position(nextAnchor);
-                  }
-
-                  // Move other selected figures manually using refs
-                  for (const id of sync.affectedIds) {
-                    if (id === fig.id) continue; // Already moved by Konva
-                    const start = sync.startPositions.get(id);
-                    if (!start) continue;
-                    const node = figureNodeRefs.current.get(id);
-                    if (node) {
-                      node.position({ x: start.x + dx, y: start.y + dy });
-                    }
-                  }
-                  
-                  // Force redraw of layer to show changes immediately
-                  const layer = e.target.getLayer();
-                  if (layer) layer.batchDraw();
-                }}
-                onDragEnd={(e) => {
-                  const sync = selectionDragSyncRef.current;
-                  selectionDragSyncRef.current = null;
-                  if (!sync || sync.anchorFigureId !== fig.id) return;
-
-                  const anchorStart = sync.startPositions.get(sync.anchorFigureId);
-                  if (!anchorStart) return;
-
-                  const desired = { x: e.target.x(), y: e.target.y() };
-                  let dx = desired.x - anchorStart.x;
-                  let dy = desired.y - anchorStart.y;
-
-                  const snappedDelta = snapSelectionDeltaToGuides(
-                    sync.startBounds ?? null,
-                    dx,
-                    dy
-                  );
-                  dx = snappedDelta.dx;
-                  dy = snappedDelta.dy;
-
-                  const nextAnchor = { x: anchorStart.x + dx, y: anchorStart.y + dy };
-                  if (nextAnchor.x !== desired.x || nextAnchor.y !== desired.y) {
-                    e.target.position(nextAnchor);
-                  }
-
-                  if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) {
                     dragPreviewPendingRef.current = null;
                     setDragPreviewPositions(null);
-                    requestDragPreviewRender();
-                    return;
-                  }
 
-                  const affected = new Set(sync.affectedIds);
-                  setFigures((prev) =>
-                    prev.map((f) =>
-                      affected.has(f.id) ? { ...f, x: f.x + dx, y: f.y + dy } : f
-                    )
-                  );
+                    const stage = stageRef.current;
+                    if (!stage) return;
 
-                  // Clear preview; next render uses updated figure positions.
-                  dragPreviewPendingRef.current = null;
-                  setDragPreviewPositions(null);
-                }}
-              />
-            );
-          })}
+                    const affectedIds = figures
+                      .filter(
+                        (f) =>
+                          selectedIdsSet.has(f.id) ||
+                          (f.kind === "seam" &&
+                            f.parentId &&
+                            selectedIdsSet.has(f.parentId))
+                      )
+                      .map((f) => f.id);
+
+                    let startBounds: BoundingBox | null = null;
+                    for (const f of figures) {
+                      if (!affectedIds.includes(f.id)) continue;
+                      const bb = figureWorldBoundingBox(f);
+                      if (!bb) continue;
+                      if (!startBounds) {
+                        startBounds = { ...bb };
+                      } else {
+                        const x0 = Math.min(startBounds.x, bb.x);
+                        const y0 = Math.min(startBounds.y, bb.y);
+                        const x1 = Math.max(
+                          startBounds.x + startBounds.width,
+                          bb.x + bb.width
+                        );
+                        const y1 = Math.max(
+                          startBounds.y + startBounds.height,
+                          bb.y + bb.height
+                        );
+                        startBounds = {
+                          x: x0,
+                          y: y0,
+                          width: x1 - x0,
+                          height: y1 - y0,
+                        };
+                      }
+                    }
+
+                    const startPositions = new Map<string, Vec2>();
+                    for (const id of affectedIds) {
+                      const node = stage.findOne(`.fig_${id}`);
+                      if (!node) continue;
+                      startPositions.set(id, { x: node.x(), y: node.y() });
+                    }
+
+                    selectionDragSyncRef.current = {
+                      anchorFigureId: fig.id,
+                      affectedIds,
+                      startPositions,
+                      startBounds,
+                    };
+                  }}
+                  onDragMove={(e) => {
+                    const sync = selectionDragSyncRef.current;
+                    if (!sync) return;
+                    if (sync.anchorFigureId !== fig.id) return;
+
+                    const stage = stageRef.current;
+                    if (!stage) return;
+
+                    const anchorStart = sync.startPositions.get(
+                      sync.anchorFigureId
+                    );
+                    if (!anchorStart) return;
+
+                    const desired = { x: e.target.x(), y: e.target.y() };
+                    let dx = desired.x - anchorStart.x;
+                    let dy = desired.y - anchorStart.y;
+
+                    // Snap the selection bounds (left/center/right and top/center/bottom)
+                    // to nearby guide lines for a more intuitive "CAD-like" behavior.
+                    const snappedDelta = snapSelectionDeltaToGuides(
+                      sync.startBounds ?? null,
+                      dx,
+                      dy
+                    );
+                    dx = snappedDelta.dx;
+                    dy = snappedDelta.dy;
+
+                    const nextAnchor = {
+                      x: anchorStart.x + dx,
+                      y: anchorStart.y + dy,
+                    };
+                    if (
+                      nextAnchor.x !== desired.x ||
+                      nextAnchor.y !== desired.y
+                    ) {
+                      e.target.position(nextAnchor);
+                    }
+
+                    // Move other selected figures manually using refs
+                    for (const id of sync.affectedIds) {
+                      if (id === fig.id) continue; // Already moved by Konva
+                      const start = sync.startPositions.get(id);
+                      if (!start) continue;
+                      const node = figureNodeRefs.current.get(id);
+                      if (node) {
+                        node.position({ x: start.x + dx, y: start.y + dy });
+                      }
+                    }
+
+                    // Force redraw of layer to show changes immediately
+                    const layer = e.target.getLayer();
+                    if (layer) layer.batchDraw();
+                  }}
+                  onDragEnd={(e) => {
+                    const sync = selectionDragSyncRef.current;
+                    selectionDragSyncRef.current = null;
+                    if (!sync || sync.anchorFigureId !== fig.id) return;
+
+                    const anchorStart = sync.startPositions.get(
+                      sync.anchorFigureId
+                    );
+                    if (!anchorStart) return;
+
+                    const desired = { x: e.target.x(), y: e.target.y() };
+                    let dx = desired.x - anchorStart.x;
+                    let dy = desired.y - anchorStart.y;
+
+                    const snappedDelta = snapSelectionDeltaToGuides(
+                      sync.startBounds ?? null,
+                      dx,
+                      dy
+                    );
+                    dx = snappedDelta.dx;
+                    dy = snappedDelta.dy;
+
+                    const nextAnchor = {
+                      x: anchorStart.x + dx,
+                      y: anchorStart.y + dy,
+                    };
+                    if (
+                      nextAnchor.x !== desired.x ||
+                      nextAnchor.y !== desired.y
+                    ) {
+                      e.target.position(nextAnchor);
+                    }
+
+                    if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) {
+                      dragPreviewPendingRef.current = null;
+                      setDragPreviewPositions(null);
+                      requestDragPreviewRender();
+                      return;
+                    }
+
+                    const affected = new Set(sync.affectedIds);
+                    setFigures((prev) =>
+                      prev.map((f) =>
+                        affected.has(f.id)
+                          ? { ...f, x: f.x + dx, y: f.y + dy }
+                          : f
+                      )
+                    );
+
+                    // Clear preview; next render uses updated figure positions.
+                    dragPreviewPendingRef.current = null;
+                    setDragPreviewPositions(null);
+                  }}
+                />
+              );
+            })}
           </Layer>
 
           <Layer id="ui-layer">
-          {guidesOverlay}
+            {guidesOverlay}
 
-          <Transformer
-            ref={transformerRef}
-            enabledAnchors={
-              tool === "select"
-                ? [
-                    "top-left",
-                    "top-center",
-                    "top-right",
-                    "middle-left",
-                    "middle-right",
-                    "bottom-left",
-                    "bottom-center",
-                    "bottom-right",
-                  ]
-                : []
-            }
-            rotateEnabled={tool === "select"}
-            keepRatio={transformMods.shift}
-            centeredScaling={transformMods.alt}
-            rotationSnaps={
-              transformMods.shift
-                ? [
-                    0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180, 195,
-                    210, 225, 240, 255, 270, 285, 300, 315, 330, 345,
-                  ]
-                : []
-            }
-            rotateSnapTolerance={4}
-            flipEnabled={false}
-            anchorSize={10 / scale}
-            borderStroke="#2563eb"
-            anchorStroke="#2563eb"
-            anchorFill="#ffffff"
-            borderStrokeWidth={1 / scale}
-            anchorStrokeWidth={1 / scale}
-            boundBoxFunc={(oldBox, newBox) => {
-              if (newBox.width < 5 || newBox.height < 5) return oldBox;
-              return newBox;
-            }}
-            onTransformEnd={finalizeSelectionTransform}
-          />
+            <Transformer
+              ref={transformerRef}
+              enabledAnchors={
+                tool === "select"
+                  ? [
+                      "top-left",
+                      "top-center",
+                      "top-right",
+                      "middle-left",
+                      "middle-right",
+                      "bottom-left",
+                      "bottom-center",
+                      "bottom-right",
+                    ]
+                  : []
+              }
+              rotateEnabled={tool === "select"}
+              keepRatio={transformMods.shift}
+              centeredScaling={transformMods.alt}
+              rotationSnaps={
+                transformMods.shift
+                  ? [
+                      0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180,
+                      195, 210, 225, 240, 255, 270, 285, 300, 315, 330, 345,
+                    ]
+                  : []
+              }
+              rotateSnapTolerance={4}
+              flipEnabled={false}
+              anchorSize={10 / scale}
+              borderStroke="#2563eb"
+              anchorStroke="#2563eb"
+              anchorFill="#ffffff"
+              borderStrokeWidth={1 / scale}
+              anchorStrokeWidth={1 / scale}
+              boundBoxFunc={(oldBox, newBox) => {
+                if (newBox.width < 5 || newBox.height < 5) return oldBox;
+                return newBox;
+              }}
+              onTransformEnd={finalizeSelectionTransform}
+            />
 
-          {offsetHoverPreview ? (
-            <Group
-              key={offsetHoverPreview.key}
-              x={offsetHoverPreview.x}
-              y={offsetHoverPreview.y}
-              rotation={offsetHoverPreview.rotation}
-              listening={false}
-            >
-              <Line
-                points={offsetHoverPreview.points}
-                closed={offsetHoverPreview.closed}
-                stroke={offsetHoverPreview.stroke}
-                strokeWidth={2 / scale}
-                dash={offsetHoverPreview.dash.map((d) => d / scale)}
-                opacity={0.55}
-                lineCap="round"
-                lineJoin="round"
+            {offsetHoverPreview ? (
+              <Group
+                key={offsetHoverPreview.key}
+                x={offsetHoverPreview.x}
+                y={offsetHoverPreview.y}
+                rotation={offsetHoverPreview.rotation}
+                listening={false}
+              >
+                <Line
+                  points={offsetHoverPreview.points}
+                  closed={offsetHoverPreview.closed}
+                  stroke={offsetHoverPreview.stroke}
+                  strokeWidth={2 / scale}
+                  dash={offsetHoverPreview.dash.map((d) => d / scale)}
+                  opacity={0.55}
+                  lineCap="round"
+                  lineJoin="round"
+                  listening={false}
+                />
+              </Group>
+            ) : null}
+
+            {draftPreview}
+
+            {curveDraftPreview}
+
+            {draftMeasuresOverlay}
+
+            {edgeHoverOverlay}
+
+            {nodeSplitMeasuresPreviewOverlay}
+
+            {dartOverlay}
+
+            {measureOverlay}
+
+            {magnetOverlay}
+
+            {marqueeDraft ? (
+              <Rect
+                x={Math.min(
+                  marqueeDraft.startWorld.x,
+                  marqueeDraft.currentWorld.x
+                )}
+                y={Math.min(
+                  marqueeDraft.startWorld.y,
+                  marqueeDraft.currentWorld.y
+                )}
+                width={Math.abs(
+                  marqueeDraft.currentWorld.x - marqueeDraft.startWorld.x
+                )}
+                height={Math.abs(
+                  marqueeDraft.currentWorld.y - marqueeDraft.startWorld.y
+                )}
+                stroke="#2563eb"
+                strokeWidth={1 / scale}
+                dash={[6 / scale, 4 / scale]}
+                fill="transparent"
                 listening={false}
               />
-            </Group>
-          ) : null}
+            ) : null}
 
-          {draftPreview}
-
-          {curveDraftPreview}
-
-          {draftMeasuresOverlay}
-
-          {edgeHoverOverlay}
-
-          {nodeSplitMeasuresPreviewOverlay}
-
-          {dartOverlay}
-
-          {measureOverlay}
-
-          {magnetOverlay}
-
-          {marqueeDraft ? (
-            <Rect
-              x={Math.min(marqueeDraft.startWorld.x, marqueeDraft.currentWorld.x)}
-              y={Math.min(marqueeDraft.startWorld.y, marqueeDraft.currentWorld.y)}
-              width={Math.abs(marqueeDraft.currentWorld.x - marqueeDraft.startWorld.x)}
-              height={Math.abs(marqueeDraft.currentWorld.y - marqueeDraft.startWorld.y)}
-              stroke="#2563eb"
-              strokeWidth={1 / scale}
-              dash={[6 / scale, 4 / scale]}
-              fill="transparent"
-              listening={false}
-            />
-          ) : null}
-
-          {nodeOverlay}
+            {nodeOverlay}
           </Layer>
-          </Stage>
+        </Stage>
       </div>
     </div>
   );

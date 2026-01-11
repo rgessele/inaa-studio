@@ -55,46 +55,6 @@ function resolveAci7(isDark: boolean): string {
   return isDark ? "#ffffff" : "#000000";
 }
 
-function pointArrayBoundingBox(points: number[]): {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-} | null {
-  if (points.length < 4) return null;
-  let minX = points[0];
-  let minY = points[1];
-  let maxX = points[0];
-  let maxY = points[1];
-  for (let i = 2; i < points.length; i += 2) {
-    minX = Math.min(minX, points[i]);
-    minY = Math.min(minY, points[i + 1]);
-    maxX = Math.max(maxX, points[i]);
-    maxY = Math.max(maxY, points[i + 1]);
-  }
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-}
-
-function nodesBoundingBox(nodes: Array<{ x: number; y: number }> | null): {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-} | null {
-  if (!nodes || nodes.length === 0) return null;
-  let minX = nodes[0].x;
-  let minY = nodes[0].y;
-  let maxX = nodes[0].x;
-  let maxY = nodes[0].y;
-  for (let i = 1; i < nodes.length; i++) {
-    minX = Math.min(minX, nodes[i].x);
-    minY = Math.min(minY, nodes[i].y);
-    maxX = Math.max(maxX, nodes[i].x);
-    maxY = Math.max(maxY, nodes[i].y);
-  }
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-}
-
 const FigureRenderer = ({
   figure,
   x,
@@ -155,11 +115,14 @@ const FigureRenderer = ({
   const nameFill = pointLabelFill;
   const nameOpacity = 0.22;
 
-  const estimateNameWidth = React.useCallback((text: string, fontSize: number) => {
-    // Konva clips to `width`, so keep this generous to avoid truncation.
-    // We allow overflow (no auto-fit), so this width is only for centering/alignment.
-    return Math.max(12, text.length * fontSize * 0.8 + fontSize * 1.5);
-  }, []);
+  const estimateNameWidth = React.useCallback(
+    (text: string, fontSize: number) => {
+      // Konva clips to `width`, so keep this generous to avoid truncation.
+      // We allow overflow (no auto-fit), so this width is only for centering/alignment.
+      return Math.max(12, text.length * fontSize * 0.8 + fontSize * 1.5);
+    },
+    []
+  );
 
   const estimateNameTightWidth = React.useCallback(
     (text: string, fontSize: number) => {
@@ -209,8 +172,7 @@ const FigureRenderer = ({
       const dx = nextX - prevX;
       const dy = nextY - prevY;
       const len = Math.hypot(dx, dy);
-      const n =
-        len > 1e-6 ? { x: -dy / len, y: dx / len } : { x: 0, y: -1 };
+      const n = len > 1e-6 ? { x: -dy / len, y: dx / len } : { x: 0, y: -1 };
       const offset = 18;
       const fontSize = nameFontSizePx;
       const width = estimateNameWidth(figureName, fontSize);
@@ -310,7 +272,9 @@ const FigureRenderer = ({
         />
       )}
 
-      {figure.kind !== "seam" && pointLabelsMode !== "off" && pointLabelsByNodeId ? (
+      {figure.kind !== "seam" &&
+      pointLabelsMode !== "off" &&
+      pointLabelsByNodeId ? (
         <>
           {figure.nodes.map((n) => {
             const text = pointLabelsByNodeId[n.id];
@@ -323,7 +287,10 @@ const FigureRenderer = ({
                 (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
                 { x: 0, y: 0 }
               );
-              return { x: sum.x / figure.nodes.length, y: sum.y / figure.nodes.length };
+              return {
+                x: sum.x / figure.nodes.length,
+                y: sum.y / figure.nodes.length,
+              };
             })();
 
             const dx = n.x - centroid.x;
@@ -443,7 +410,10 @@ const FigureRenderer = ({
 };
 
 // Custom comparison function for React.memo
-const arePropsEqual = (prev: FigureRendererProps, next: FigureRendererProps) => {
+const arePropsEqual = (
+  prev: FigureRendererProps,
+  next: FigureRendererProps
+) => {
   return (
     prev.x === next.x &&
     prev.y === next.y &&

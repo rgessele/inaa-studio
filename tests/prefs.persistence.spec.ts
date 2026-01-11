@@ -12,7 +12,9 @@ test.describe("prefs: persistence", () => {
       .poll(async () => (await getEditorState(page)).gridContrast)
       .toBeGreaterThan(0.79);
 
-    const raw = await page.evaluate(() => localStorage.getItem("inaa:gridContrast"));
+    const raw = await page.evaluate(() =>
+      localStorage.getItem("inaa:gridContrast")
+    );
     expect(raw).toBe("0.8");
 
     await page.reload({ waitUntil: "networkidle" });
@@ -33,10 +35,14 @@ test.describe("prefs: persistence", () => {
     await page.getByTestId("page-orientation-select").selectOption("portrait");
 
     await expect
-      .poll(async () => (await getEditorState(page)).pageGuideSettings.paperSize)
+      .poll(
+        async () => (await getEditorState(page)).pageGuideSettings.paperSize
+      )
       .toBe("A0");
 
-    const globalToggle = await page.evaluate(() => localStorage.getItem("inaa:showPageGuides"));
+    const globalToggle = await page.evaluate(() =>
+      localStorage.getItem("inaa:showPageGuides")
+    );
     expect(globalToggle).toBe("1");
 
     await page.evaluate(() => {
@@ -63,7 +69,9 @@ test.describe("prefs: persistence", () => {
     expect(state.pageGuideSettings.orientation).toBe("landscape");
     expect(state.pageGuideSettings.marginCm).toBe(1.5);
 
-    const stillGlobal = await page.evaluate(() => localStorage.getItem("inaa:showPageGuides"));
+    const stillGlobal = await page.evaluate(() =>
+      localStorage.getItem("inaa:showPageGuides")
+    );
     expect(stillGlobal).toBe("1");
   });
 });

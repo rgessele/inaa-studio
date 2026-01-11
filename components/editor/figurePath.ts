@@ -1,5 +1,12 @@
 import type { Figure, FigureEdge, FigureNode } from "./types";
-import { add, rotate, rotateInv, sampleCubic, sub, type Vec2 } from "./figureGeometry";
+import {
+  add,
+  rotate,
+  rotateInv,
+  sampleCubic,
+  sub,
+  type Vec2,
+} from "./figureGeometry";
 
 function toPointArray(points: Vec2[]): number[] {
   const out: number[] = [];
@@ -22,7 +29,11 @@ export function figureCentroidLocal(figure: Figure): Vec2 {
   return { x: sum.x / figure.nodes.length, y: sum.y / figure.nodes.length };
 }
 
-export function edgeLocalPoints(figure: Figure, edge: FigureEdge, steps: number): Vec2[] {
+export function edgeLocalPoints(
+  figure: Figure,
+  edge: FigureEdge,
+  steps: number
+): Vec2[] {
   const a = getNode(figure.nodes, edge.from);
   const b = getNode(figure.nodes, edge.to);
   if (!a || !b) return [];
@@ -37,7 +48,10 @@ export function edgeLocalPoints(figure: Figure, edge: FigureEdge, steps: number)
   return sampleCubic(p0, p1, p2, p3, steps);
 }
 
-export function figureLocalPolyline(figure: Figure, cubicSteps: number = 30): number[] {
+export function figureLocalPolyline(
+  figure: Figure,
+  cubicSteps: number = 30
+): number[] {
   const points: Vec2[] = [];
 
   for (const edge of figure.edges) {
@@ -72,16 +86,25 @@ export function figureLocalPolyline(figure: Figure, cubicSteps: number = 30): nu
   return toPointArray(points);
 }
 
-export function worldToFigureLocal(figure: Pick<Figure, "x" | "y" | "rotation">, world: Vec2): Vec2 {
+export function worldToFigureLocal(
+  figure: Pick<Figure, "x" | "y" | "rotation">,
+  world: Vec2
+): Vec2 {
   const translated = sub(world, { x: figure.x, y: figure.y });
   return rotateInv(translated, figure.rotation || 0);
 }
 
-export function figureLocalToWorld(figure: Pick<Figure, "x" | "y" | "rotation">, local: Vec2): Vec2 {
+export function figureLocalToWorld(
+  figure: Pick<Figure, "x" | "y" | "rotation">,
+  local: Vec2
+): Vec2 {
   return add(rotate(local, figure.rotation || 0), { x: figure.x, y: figure.y });
 }
 
-export function figureWorldPolyline(figure: Figure, cubicSteps: number = 30): number[] {
+export function figureWorldPolyline(
+  figure: Figure,
+  cubicSteps: number = 30
+): number[] {
   const local = figureLocalPolyline(figure, cubicSteps);
   const out: number[] = [];
   for (let i = 0; i < local.length; i += 2) {
@@ -91,7 +114,9 @@ export function figureWorldPolyline(figure: Figure, cubicSteps: number = 30): nu
   return out;
 }
 
-export function figureWorldBoundingBox(figure: Figure): { x: number; y: number; width: number; height: number } | null {
+export function figureWorldBoundingBox(
+  figure: Figure
+): { x: number; y: number; width: number; height: number } | null {
   const pts = figureWorldPolyline(figure, 40);
   if (pts.length < 2) return null;
   let minX = pts[0];

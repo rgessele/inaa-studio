@@ -4,7 +4,12 @@
  * This file contains test utilities for the mirror tool.
  */
 
-import { mirrorShape, mirrorPoint, mirrorPoints, getShapeCenter } from "./mirror";
+import {
+  mirrorShape,
+  mirrorPoint,
+  mirrorPoints,
+  getShapeCenter,
+} from "./mirror";
 import type { Shape } from "./types";
 
 /**
@@ -107,7 +112,8 @@ export function testMirrorRectangle() {
   console.log("Result position:", { x: result.x, y: result.y });
   console.log("Center axis:", center.x);
 
-  const isValid = result.width === shape.width && result.height === shape.height;
+  const isValid =
+    result.width === shape.width && result.height === shape.height;
   console.log("Test passed:", isValid ? "✓" : "✗");
 
   return { success: isValid, result };

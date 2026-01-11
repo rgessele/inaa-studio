@@ -65,7 +65,10 @@ const MeasureOverlayRenderer = ({
     const start = pts[0];
     const end = pts[pts.length - 1];
     const mt = midAndTangent(pts);
-    const mid = mt?.mid ?? { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    const mid = mt?.mid ?? {
+      x: (start.x + end.x) / 2,
+      y: (start.y + end.y) / 2,
+    };
     const anchorR = 6 / scale;
     const anchorStrokeW = 3 / scale;
     const anchorHaloW = anchorStrokeW + 2 / scale;
@@ -76,8 +79,7 @@ const MeasureOverlayRenderer = ({
     const isEnd = selectedEdge.anchor === "end";
 
     return (
-      <React.Fragment key={`msel:${figure.id}:${edge.id}`}
-      >
+      <React.Fragment key={`msel:${figure.id}:${edge.id}`}>
         {/* Strong highlight: a wide stroke + a crisp inner stroke (no transparency) */}
         <Line
           points={flat}
@@ -242,7 +244,8 @@ const MeasureOverlayRenderer = ({
     const n = norm(perp(mt.tangent));
 
     // Align label with the edge direction.
-    const rawAngleDeg = (Math.atan2(mt.tangent.y, mt.tangent.x) * 180) / Math.PI;
+    const rawAngleDeg =
+      (Math.atan2(mt.tangent.y, mt.tangent.x) * 180) / Math.PI;
     const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
 
     // Use a leader line when the edge is short on screen.
@@ -315,7 +318,10 @@ const MeasureOverlayRenderer = ({
   return <>{renderFigureLabels()}</>;
 };
 
-const arePropsEqual = (prev: MeasureOverlayProps, next: MeasureOverlayProps) => {
+const arePropsEqual = (
+  prev: MeasureOverlayProps,
+  next: MeasureOverlayProps
+) => {
   if (prev.scale !== next.scale) return false;
   if (prev.isDark !== next.isDark) return false;
   if (prev.figure !== next.figure) return false;

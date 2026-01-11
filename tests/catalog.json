@@ -12,17 +12,23 @@
     {
       "id": "editor.boot",
       "title": "Editor abre e renderiza",
-    {
-      "feature": "Seleção: clique no preenchimento seleciona figura (tool V)",
-      "tests": ["select.fill-hit.spec.ts"]
-    },
-    {
-      "feature": "Offset: seam label move ao arrastar", 
-      "tests": ["offset.seam-label.drag.spec.ts"]
-    },
       "risk": "high",
       "e2e": ["tests/editor.smoke.spec.ts"],
       "notes": "Cobre bypass E2E, toolbar e canvas."
+    },
+    {
+      "id": "editor.selectFillHit",
+      "title": "Seleção: clique no preenchimento seleciona figura (tool V)",
+      "risk": "medium",
+      "e2e": ["tests/select.fill-hit.spec.ts"],
+      "notes": ""
+    },
+    {
+      "id": "tool.offsetSeamLabelDrag",
+      "title": "Offset: seam label move ao arrastar",
+      "risk": "medium",
+      "e2e": ["tests/offset.seam-label.drag.spec.ts"],
+      "notes": ""
     },
     {
       "id": "editor.grid",

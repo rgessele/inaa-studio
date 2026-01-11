@@ -33,25 +33,14 @@ type PointLabelsExportOptions = {
   pointLabelsMode?: PointLabelsMode;
 };
 
-function pointArrayBoundingBox(points: number[]): BoundingBox | null {
-  if (points.length < 4) return null;
-  let minX = points[0];
-  let minY = points[1];
-  let maxX = points[0];
-  let maxY = points[1];
-  for (let i = 2; i < points.length; i += 2) {
-    minX = Math.min(minX, points[i]);
-    minY = Math.min(minY, points[i + 1]);
-    maxX = Math.max(maxX, points[i]);
-    maxY = Math.max(maxY, points[i + 1]);
-  }
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-}
-
 function computeFigureNameLayoutLocal(
   fig: Figure,
   rawText: string
-): { posLocal: { x: number; y: number }; fontSize: number; width: number } | null {
+): {
+  posLocal: { x: number; y: number };
+  fontSize: number;
+  width: number;
+} | null {
   const text = rawText.trim();
   if (!text) return null;
 
@@ -76,8 +65,12 @@ function computeFigureNameLayoutLocal(
 
     return {
       posLocal: {
-        x: centroid.x + (Number.isFinite(nameOffsetLocal.x) ? nameOffsetLocal.x : 0),
-        y: centroid.y + (Number.isFinite(nameOffsetLocal.y) ? nameOffsetLocal.y : 0),
+        x:
+          centroid.x +
+          (Number.isFinite(nameOffsetLocal.x) ? nameOffsetLocal.x : 0),
+        y:
+          centroid.y +
+          (Number.isFinite(nameOffsetLocal.y) ? nameOffsetLocal.y : 0),
       },
       fontSize,
       width,
@@ -120,7 +113,9 @@ function computeFigureNameLayoutLocal(
   const width = estimateNameWidth(text, fontSize);
   return {
     posLocal: {
-      x: centroid.x + (Number.isFinite(nameOffsetLocal.x) ? nameOffsetLocal.x : 0),
+      x:
+        centroid.x +
+        (Number.isFinite(nameOffsetLocal.x) ? nameOffsetLocal.x : 0),
       y:
         centroid.y -
         18 +
@@ -234,8 +229,8 @@ export async function generateTiledPDF(
     ? computeNodeLabels(filtered, options!.pointLabelsMode!)
     : new Map<string, Record<string, string>>();
 
-    if (filtered.length === 0) {
-      toast("Não há nada para exportar. Desenhe algo primeiro.", "error");
+  if (filtered.length === 0) {
+    toast("Não há nada para exportar. Desenhe algo primeiro.", "error");
     return;
   }
 
@@ -443,14 +438,7 @@ export async function generateTiledPDF(
     tileStage.destroy();
 
     if (pageNum > 1) pdf.addPage();
-    pdf.addImage(
-      dataURL,
-      "PNG",
-      marginCm,
-      marginCm,
-      safeWidthCm,
-      safeHeightCm
-    );
+    pdf.addImage(dataURL, "PNG", marginCm, marginCm, safeWidthCm, safeHeightCm);
   }
 
   pdf.save(`inaa-pattern-${new Date().getTime()}.pdf`);
@@ -574,4 +562,3 @@ export function generateSVG(
     `inaa-pattern-${new Date().getTime()}.svg`
   );
 }
-

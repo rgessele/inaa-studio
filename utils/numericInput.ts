@@ -6,7 +6,10 @@ export function parsePtBrDecimal(raw: string): number | null {
   return v;
 }
 
-export function formatPtBrDecimalFixed(value: number, decimals: number = 2): string {
+export function formatPtBrDecimalFixed(
+  value: number,
+  decimals: number = 2
+): string {
   const safeDecimals = Math.max(0, Math.min(6, Math.floor(decimals)));
   if (!Number.isFinite(value)) return "";
   return value.toFixed(safeDecimals).replace(".", ",");

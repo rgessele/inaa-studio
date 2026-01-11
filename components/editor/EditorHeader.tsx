@@ -53,7 +53,6 @@ export function EditorHeader() {
   const profileTooltip = useDelayedTooltip(true);
   const signOutTooltip = useDelayedTooltip(true);
 
-
   useEffect(() => {
     let isMounted = true;
 
@@ -208,7 +207,13 @@ export function EditorHeader() {
 
   const handleSave = async (name: string) => {
     setIsSaving(true);
-    const result = await saveProject(name, figures, pageGuideSettings, guides, projectId);
+    const result = await saveProject(
+      name,
+      figures,
+      pageGuideSettings,
+      guides,
+      projectId
+    );
 
     if (result.success && result.projectId) {
       setProjectName(name);
@@ -238,7 +243,13 @@ export function EditorHeader() {
     }
 
     setIsSaving(true);
-    const result = await saveProjectAsCopy(projectId, name, figures, pageGuideSettings, guides);
+    const result = await saveProjectAsCopy(
+      projectId,
+      name,
+      figures,
+      pageGuideSettings,
+      guides
+    );
 
     if (result.success && result.projectId) {
       setProjectName(name);

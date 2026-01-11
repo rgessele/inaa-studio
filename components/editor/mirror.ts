@@ -1,6 +1,6 @@
 /**
  * Mirror Tool - Shape Mirroring Utilities
- * 
+ *
  * Provides functions to mirror shapes horizontally or vertically.
  * Used for creating symmetric pattern pieces.
  */

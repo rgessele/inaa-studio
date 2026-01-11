@@ -1,6 +1,6 @@
 /**
  * Dart (Pence) utility functions
- * 
+ *
  * A dart is a triangular fold sewn into fabric to add shape and contour.
  * This module handles the geometric insertion of darts into pattern edges.
  */
@@ -209,7 +209,13 @@ export function isDartEligibleShape(shape: Shape): boolean {
 export function getDartSnapOnShape(
   shape: Shape,
   localPoint: Point
-): { anchorS: number; segmentIndex: number; t: number; snapPoint: Point; dist: number } | null {
+): {
+  anchorS: number;
+  segmentIndex: number;
+  t: number;
+  snapPoint: Point;
+  dist: number;
+} | null {
   const basePoly = getBasePolygonLocal(shape);
   if (basePoly.length < 3) return null;
   const hit = pointToS(basePoly, localPoint);
@@ -260,8 +266,10 @@ function buildDartGeometry(
   const uy = dy / segLen;
 
   const center = hit.point;
-  const leftHalfPx = clamp(dart.leftOpeningCm, MIN_OPENING_CM, 1000) * PX_PER_CM;
-  const rightHalfPx = clamp(dart.rightOpeningCm, MIN_OPENING_CM, 1000) * PX_PER_CM;
+  const leftHalfPx =
+    clamp(dart.leftOpeningCm, MIN_OPENING_CM, 1000) * PX_PER_CM;
+  const rightHalfPx =
+    clamp(dart.rightOpeningCm, MIN_OPENING_CM, 1000) * PX_PER_CM;
 
   // Clamp so base points stay within the segment.
   const maxLeftPx = centerT * segLen;
@@ -270,11 +278,17 @@ function buildDartGeometry(
   const safeRight = Math.min(rightHalfPx, maxRightPx);
 
   const baseLeft = { x: center.x - ux * safeLeft, y: center.y - uy * safeLeft };
-  const baseRight = { x: center.x + ux * safeRight, y: center.y + uy * safeRight };
+  const baseRight = {
+    x: center.x + ux * safeRight,
+    y: center.y + uy * safeRight,
+  };
 
   const normal = getPolygonInwardNormal(basePoly, segmentIndex);
   const depthPx = clamp(dart.depthCm, MIN_DEPTH_CM, 1000) * PX_PER_CM;
-  const apex = { x: center.x + normal.x * depthPx, y: center.y + normal.y * depthPx };
+  const apex = {
+    x: center.x + normal.x * depthPx,
+    y: center.y + normal.y * depthPx,
+  };
 
   return { segmentIndex, center, baseLeft, baseRight, apex, centerT };
 }
@@ -365,7 +379,10 @@ export function recomputeShapeDarts(shape: Shape): Shape {
   if (basePoly.length < 3) return shape;
 
   // Resolve geometries and group them by segment.
-  const bySegment = new Map<number, Array<ReturnType<typeof buildDartGeometry>>>();
+  const bySegment = new Map<
+    number,
+    Array<ReturnType<typeof buildDartGeometry>>
+  >();
   for (const dart of darts) {
     const resolveFrom = dart.linkMode === "follow-edge" ? "follow" : "frozen";
     const geom = buildDartGeometry(basePoly, dart, resolveFrom);
@@ -418,7 +435,10 @@ export function addDartToShape(
   const dart: DartInstance = {
     id: params.dartId,
     anchorS: clamp(params.anchorS, 0, 1),
-    frozenAnchor: { x: params.anchorLocalPoint.x, y: params.anchorLocalPoint.y },
+    frozenAnchor: {
+      x: params.anchorLocalPoint.x,
+      y: params.anchorLocalPoint.y,
+    },
     leftOpeningCm: half,
     rightOpeningCm: half,
     depthCm: clamp(params.depthCm, MIN_DEPTH_CM, 1000),
@@ -437,7 +457,9 @@ export function addDartToShape(
 
   const nextShape: Shape = {
     ...shape,
-    dartSourcePoints: shouldCaptureBase ? [...(shape.points ?? [])] : shape.dartSourcePoints,
+    dartSourcePoints: shouldCaptureBase
+      ? [...(shape.points ?? [])]
+      : shape.dartSourcePoints,
     darts: [...(shape.darts ?? []), dart],
   };
 
@@ -447,11 +469,24 @@ export function addDartToShape(
 export function updateDartOnShape(
   shape: Shape,
   dartId: string,
-  patch: Partial<Pick<DartInstance, "leftOpeningCm" | "rightOpeningCm" | "depthCm" | "widthMode" | "linkMode" | "anchorS" | "frozenAnchor">>
+  patch: Partial<
+    Pick<
+      DartInstance,
+      | "leftOpeningCm"
+      | "rightOpeningCm"
+      | "depthCm"
+      | "widthMode"
+      | "linkMode"
+      | "anchorS"
+      | "frozenAnchor"
+    >
+  >
 ): Shape {
   const darts = shape.darts ?? [];
   if (darts.length === 0) return shape;
-  const nextDarts = darts.map((d) => (d.id === dartId ? { ...d, ...patch } : d));
+  const nextDarts = darts.map((d) =>
+    d.id === dartId ? { ...d, ...patch } : d
+  );
   return recomputeShapeDarts({ ...shape, darts: nextDarts });
 }
 
@@ -484,11 +519,11 @@ function getInwardNormal(
   const dx = p2.x - p1.x;
   const dy = p2.y - p1.y;
   const length = Math.sqrt(dx * dx + dy * dy);
-  
+
   if (length < 0.0001) {
     return { x: 0, y: 0 };
   }
-  
+
   // Normal vector (perpendicular, pointing inward)
   // For a line from p1 to p2, this points to the left (inward direction)
   // Rotate 90 degrees counter-clockwise: (dx, dy) -> (dy, -dx)
@@ -501,7 +536,7 @@ function getInwardNormal(
 
 /**
  * Insert a dart into a line shape by modifying its points array
- * 
+ *
  * @param shape - The line or curve shape to insert the dart into
  * @param positionRatio - Position along the line (0-1) where dart is placed
  * @param depthPx - Depth/length of the dart in pixels
@@ -541,7 +576,7 @@ export function insertDartIntoLine(
   const dx = x2 - x1;
   const dy = y2 - y1;
   const length = Math.sqrt(dx * dx + dy * dy);
-  
+
   if (length < 0.0001) {
     return shape.points;
   }
@@ -556,17 +591,22 @@ export function insertDartIntoLine(
 
   // New points array: start -> left base -> apex -> right base -> end
   return [
-    x1, y1,           // Original start
-    leftX, leftY,     // Left base of dart
-    apexX, apexY,     // Dart apex (point)
-    rightX, rightY,   // Right base of dart
-    x2, y2,           // Original end
+    x1,
+    y1, // Original start
+    leftX,
+    leftY, // Left base of dart
+    apexX,
+    apexY, // Dart apex (point)
+    rightX,
+    rightY, // Right base of dart
+    x2,
+    y2, // Original end
   ];
 }
 
 /**
  * Insert a dart into a rectangle edge
- * 
+ *
  * @param shape - The rectangle shape
  * @param edgeIndex - Which edge (0=top, 1=right, 2=bottom, 3=left)
  * @param positionRatio - Position along the edge (0-1)
@@ -586,10 +626,10 @@ export function insertDartIntoRectangle(
 
   // Rectangle points: [0,0, w,0, w,h, 0,h]
   const corners = [
-    { x: 0, y: 0 },       // Top-left
-    { x: width, y: 0 },   // Top-right
+    { x: 0, y: 0 }, // Top-left
+    { x: width, y: 0 }, // Top-right
     { x: width, y: height }, // Bottom-right
-    { x: 0, y: height },  // Bottom-left
+    { x: 0, y: height }, // Bottom-left
   ];
 
   const edge = edgeIndex % 4;
@@ -613,7 +653,7 @@ export function insertDartIntoRectangle(
   const dx = p2.x - p1.x;
   const dy = p2.y - p1.y;
   const length = Math.sqrt(dx * dx + dy * dy);
-  
+
   if (length < 0.0001) {
     return [0, 0, width, 0, width, height, 0, height];
   }
@@ -631,11 +671,11 @@ export function insertDartIntoRectangle(
 
   for (let i = 0; i < 4; i++) {
     const corner = corners[i];
-    
+
     if (i === edge) {
       // Add the start corner
       newPoints.push(corner.x, corner.y);
-      
+
       // Add the dart points
       newPoints.push(leftX, leftY);
       newPoints.push(apexX, apexY);
@@ -650,7 +690,7 @@ export function insertDartIntoRectangle(
 
 /**
  * Insert a dart into a polyline (works for circles and other shapes with points array)
- * 
+ *
  * @param points - The points array representing a closed polyline
  * @param positionRatio - Position along the polyline (0-1)
  * @param depthPx - Depth/length of the dart in pixels
@@ -670,11 +710,11 @@ export function insertDartIntoPolyline(
   }
 
   const numPoints = Math.floor(points.length / 2);
-  
+
   // Calculate total perimeter
   let totalLength = 0;
   const segmentLengths: number[] = [];
-  
+
   const segmentsCount = isClosed ? numPoints : numPoints - 1;
   for (let i = 0; i < segmentsCount; i++) {
     const nextIndex = (i + 1) % numPoints;
@@ -728,7 +768,7 @@ export function insertDartIntoPolyline(
   const dx = p2.x - p1.x;
   const dy = p2.y - p1.y;
   const length = Math.sqrt(dx * dx + dy * dy);
-  
+
   if (length < 0.0001) {
     return points;
   }
@@ -764,7 +804,7 @@ export function insertDartIntoPolyline(
 
 /**
  * Apply dart to a shape
- * 
+ *
  * @param shape - The shape to apply the dart to
  * @param positionRatio - Position along the edge (0-1)
  * @param depthPx - Depth/length of the dart in pixels
@@ -785,7 +825,9 @@ export function applyDartToShape(
   // points will "stack" darts and looks like duplicated geometry.
   // Keep a stable source of truth for the pre-dart points.
   const shouldPreserveSourcePoints =
-    (shape.tool === "line" || shape.tool === "curve" || shape.tool === "circle") &&
+    (shape.tool === "line" ||
+      shape.tool === "curve" ||
+      shape.tool === "circle") &&
     Array.isArray(shape.points) &&
     shape.points.length >= 4;
 

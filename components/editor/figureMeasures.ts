@@ -51,7 +51,11 @@ function polylineLengthPx(points: number[]): number {
   return sum;
 }
 
-function edgeSampledPolyline(edge: FigureEdge, a: FigureNode, b: FigureNode): Vec2[] {
+function edgeSampledPolyline(
+  edge: FigureEdge,
+  a: FigureNode,
+  b: FigureNode
+): Vec2[] {
   const p0: Vec2 = { x: a.x, y: a.y };
   const p3: Vec2 = { x: b.x, y: b.y };
 
@@ -165,9 +169,15 @@ export function computeFigureMeasures(figure: Figure): FigureMeasures {
       const n = poly.length / 2;
       const mid = Math.max(1, Math.min(n - 2, Math.floor(n / 2)));
 
-      const pPrev: Vec2 = { x: poly[(mid - 1) * 2], y: poly[(mid - 1) * 2 + 1] };
+      const pPrev: Vec2 = {
+        x: poly[(mid - 1) * 2],
+        y: poly[(mid - 1) * 2 + 1],
+      };
       const pMid: Vec2 = { x: poly[mid * 2], y: poly[mid * 2 + 1] };
-      const pNext: Vec2 = { x: poly[(mid + 1) * 2], y: poly[(mid + 1) * 2 + 1] };
+      const pNext: Vec2 = {
+        x: poly[(mid + 1) * 2],
+        y: poly[(mid + 1) * 2 + 1],
+      };
 
       tangentAngleDegAtMid = angleDeg(pPrev, pNext);
       const r = circumradius(pPrev, pMid, pNext);

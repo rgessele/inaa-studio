@@ -73,7 +73,13 @@ export function ToolModifiersOverlay() {
   );
 }
 
-function StatusTooltip({ children, text }: { children: React.ReactNode; text: string }) {
+function StatusTooltip({
+  children,
+  text,
+}: {
+  children: React.ReactNode;
+  text: string;
+}) {
   return (
     <div className="group relative flex items-center justify-center cursor-help">
       {children}
@@ -125,22 +131,32 @@ function SystemStatus() {
     >
       <StatusTooltip text="Total de Figuras">
         <div className="flex items-center gap-1">
-          <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>shapes</span>
+          <span
+            className="material-symbols-outlined"
+            style={{ fontSize: "12px" }}
+          >
+            shapes
+          </span>
           <span>{figureCount}</span>
         </div>
       </StatusTooltip>
-      
+
       <div className="w-px h-3 bg-gray-300 dark:bg-gray-700" />
-      
+
       <StatusTooltip text="Total de Nós (Vértices)">
         <div className="flex items-center gap-1">
-          <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>share</span>
+          <span
+            className="material-symbols-outlined"
+            style={{ fontSize: "12px" }}
+          >
+            share
+          </span>
           <span>{nodeCount}</span>
         </div>
       </StatusTooltip>
 
       <div className="w-px h-3 bg-gray-300 dark:bg-gray-700" />
-      
+
       <StatusTooltip text="Quadros por segundo (FPS)">
         <div className={`flex items-center gap-1 ${fpsColor}`}>
           <span>{fps} FPS</span>
@@ -173,9 +189,7 @@ function ZoomIndicator({ scale }: { scale: number }) {
           d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
         />
       </svg>
-      <span className="tracking-wide">
-        {Math.round(scale * 100)}%
-      </span>
+      <span className="tracking-wide">{Math.round(scale * 100)}%</span>
     </div>
   );
 }

@@ -17,7 +17,7 @@ export function calculateRectangleOffset(
   pixelsPerCm: number
 ): Shape {
   const offsetPx = offsetCm * pixelsPerCm;
-  
+
   if (!shape.width || !shape.height) {
     return shape;
   }
@@ -60,7 +60,7 @@ export function calculateCircleOffset(
   pixelsPerCm: number
 ): Shape {
   const offsetPx = offsetCm * pixelsPerCm;
-  
+
   if (!shape.radius) {
     return shape;
   }
@@ -101,7 +101,7 @@ export function calculateLineOffset(
   pixelsPerCm: number
 ): Shape[] {
   const offsetPx = offsetCm * pixelsPerCm;
-  
+
   if (!shape.points || shape.points.length < 4) {
     return [];
   }
@@ -115,7 +115,7 @@ export function calculateLineOffset(
   const dx = x2 - x1;
   const dy = y2 - y1;
   const length = Math.sqrt(dx * dx + dy * dy);
-  
+
   if (length === 0) {
     return [];
   }
@@ -130,12 +130,7 @@ export function calculateLineOffset(
     tool: "line",
     x: shape.x,
     y: shape.y,
-    points: [
-      x1 + perpX,
-      y1 + perpY,
-      x2 + perpX,
-      y2 + perpY,
-    ],
+    points: [x1 + perpX, y1 + perpY, x2 + perpX, y2 + perpY],
     stroke: shape.stroke,
     strokeWidth: shape.strokeWidth,
     rotation: shape.rotation,
@@ -148,12 +143,7 @@ export function calculateLineOffset(
     tool: "line",
     x: shape.x,
     y: shape.y,
-    points: [
-      x1 - perpX,
-      y1 - perpY,
-      x2 - perpX,
-      y2 - perpY,
-    ],
+    points: [x1 - perpX, y1 - perpY, x2 - perpX, y2 - perpY],
     stroke: shape.stroke,
     strokeWidth: shape.strokeWidth,
     rotation: shape.rotation,
@@ -166,10 +156,20 @@ export function calculateLineOffset(
 
 function computeSeamParts(base: Shape, offsetCm: number, pixelsPerCm: number) {
   if (base.tool === "rectangle") {
-    return [{ seamPart: 0, shape: calculateRectangleOffset(base, offsetCm, pixelsPerCm) }];
+    return [
+      {
+        seamPart: 0,
+        shape: calculateRectangleOffset(base, offsetCm, pixelsPerCm),
+      },
+    ];
   }
   if (base.tool === "circle") {
-    return [{ seamPart: 0, shape: calculateCircleOffset(base, offsetCm, pixelsPerCm) }];
+    return [
+      {
+        seamPart: 0,
+        shape: calculateCircleOffset(base, offsetCm, pixelsPerCm),
+      },
+    ];
   }
   if (base.tool === "line" || base.tool === "curve") {
     const lines = calculateLineOffset(base, offsetCm, pixelsPerCm);

@@ -197,7 +197,10 @@ export function testUnfoldClosedPath() {
 
   console.log("\nTest: Unfold Creates Closed Path");
   console.log("Original vertices:", shape.points!.length / 2);
-  console.log("Result vertices:", result?.points ? result.points.length / 2 : 0);
+  console.log(
+    "Result vertices:",
+    result?.points ? result.points.length / 2 : 0
+  );
   console.log("Expected: doubled vertices");
 
   const isValid =

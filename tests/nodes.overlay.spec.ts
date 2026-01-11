@@ -1,7 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { getEditorState, gotoEditor } from "./helpers/e2e";
 
-test("editor: nós (pontinhos) overlay modes (never/always/hover)", async ({ page }) => {
+test("editor: nós (pontinhos) overlay modes (never/always/hover)", async ({
+  page,
+}) => {
   await gotoEditor(page);
 
   await expect(page.getByTestId("editor-stage-container")).toBeVisible();

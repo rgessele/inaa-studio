@@ -65,4 +65,7 @@ const arePropsEqual = (prev: NodeOverlayProps, next: NodeOverlayProps) => {
   );
 };
 
-export const MemoizedNodeOverlay = React.memo(NodeOverlayRenderer, arePropsEqual);
+export const MemoizedNodeOverlay = React.memo(
+  NodeOverlayRenderer,
+  arePropsEqual
+);

@@ -16,7 +16,9 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
-test("point labels: toolbar cycle + SVG export respects editor mode", async ({ page }) => {
+test("point labels: toolbar cycle + SVG export respects editor mode", async ({
+  page,
+}) => {
   await gotoEditor(page);
 
   await page.evaluate(() => {
@@ -38,7 +40,12 @@ test("point labels: toolbar cycle + SVG export respects editor mode", async ({ p
   // Enable labels: off -> numGlobal
   await page.getByTestId("point-labels-mode-button").click();
   await expect
-    .poll(async () => (await page.evaluate(() => window.__INAA_DEBUG__?.getState().pointLabelsMode)) ?? "")
+    .poll(
+      async () =>
+        (await page.evaluate(
+          () => window.__INAA_DEBUG__?.getState().pointLabelsMode
+        )) ?? ""
+    )
     .toBe("numGlobal");
 
   await expect.poll(countLabels).toBe(4);
@@ -66,7 +73,12 @@ test("point labels: toolbar cycle + SVG export respects editor mode", async ({ p
   await page.getByTestId("point-labels-mode-button").click();
 
   await expect
-    .poll(async () => (await page.evaluate(() => window.__INAA_DEBUG__?.getState().pointLabelsMode)) ?? "")
+    .poll(
+      async () =>
+        (await page.evaluate(
+          () => window.__INAA_DEBUG__?.getState().pointLabelsMode
+        )) ?? ""
+    )
     .toBe("off");
 
   await expect.poll(countLabels).toBe(0);
@@ -86,7 +98,9 @@ test("point labels: toolbar cycle + SVG export respects editor mode", async ({ p
   expect(svg2).not.toContain("inaa-point-label");
 });
 
-test("point labels: global vs per-figure + alpha modes in SVG", async ({ page }) => {
+test("point labels: global vs per-figure + alpha modes in SVG", async ({
+  page,
+}) => {
   await gotoEditor(page);
 
   // Create 2 rectangles (8 nodes total).
@@ -101,7 +115,12 @@ test("point labels: global vs per-figure + alpha modes in SVG", async ({ page })
   // Enable labels (off -> numGlobal)
   await page.getByTestId("point-labels-mode-button").click();
   await expect
-    .poll(async () => (await page.evaluate(() => window.__INAA_DEBUG__?.getState().pointLabelsMode)) ?? "")
+    .poll(
+      async () =>
+        (await page.evaluate(
+          () => window.__INAA_DEBUG__?.getState().pointLabelsMode
+        )) ?? ""
+    )
     .toBe("numGlobal");
 
   // Export SVG with labels ON: should contain 1..8
@@ -124,7 +143,12 @@ test("point labels: global vs per-figure + alpha modes in SVG", async ({ page })
   // Switch to per-figure numbering
   await page.getByTestId("point-labels-mode-button").click();
   await expect
-    .poll(async () => (await page.evaluate(() => window.__INAA_DEBUG__?.getState().pointLabelsMode)) ?? "")
+    .poll(
+      async () =>
+        (await page.evaluate(
+          () => window.__INAA_DEBUG__?.getState().pointLabelsMode
+        )) ?? ""
+    )
     .toBe("numPerFigure");
 
   await page.getByRole("button", { name: "Exportar" }).click();
@@ -146,7 +170,12 @@ test("point labels: global vs per-figure + alpha modes in SVG", async ({ page })
   // Switch to alpha global (A..H)
   await page.getByTestId("point-labels-mode-button").click();
   await expect
-    .poll(async () => (await page.evaluate(() => window.__INAA_DEBUG__?.getState().pointLabelsMode)) ?? "")
+    .poll(
+      async () =>
+        (await page.evaluate(
+          () => window.__INAA_DEBUG__?.getState().pointLabelsMode
+        )) ?? ""
+    )
     .toBe("alphaGlobal");
 
   await page.getByRole("button", { name: "Exportar" }).click();
@@ -164,7 +193,12 @@ test("point labels: global vs per-figure + alpha modes in SVG", async ({ page })
   // Switch to alpha per-figure (A..D twice)
   await page.getByTestId("point-labels-mode-button").click();
   await expect
-    .poll(async () => (await page.evaluate(() => window.__INAA_DEBUG__?.getState().pointLabelsMode)) ?? "")
+    .poll(
+      async () =>
+        (await page.evaluate(
+          () => window.__INAA_DEBUG__?.getState().pointLabelsMode
+        )) ?? ""
+    )
     .toBe("alphaPerFigure");
 
   await page.getByRole("button", { name: "Exportar" }).click();
@@ -180,7 +214,9 @@ test("point labels: global vs per-figure + alpha modes in SVG", async ({ page })
   expect(svgAlphaPerFigure).not.toContain(">H<");
 });
 
-test("point labels: PDF export toggles inclusion (size sanity)", async ({ page }) => {
+test("point labels: PDF export toggles inclusion (size sanity)", async ({
+  page,
+}) => {
   await gotoEditor(page);
 
   // Load a figure with many nodes so labels have a measurable impact.
@@ -190,8 +226,10 @@ test("point labels: PDF export toggles inclusion (size sanity)", async ({ page }
     }
 
     const nodesCount = 40;
-    const nodes: Array<{ id: string; x: number; y: number; mode: "corner" }> = [];
-    const edges: Array<{ id: string; from: string; to: string; kind: "line" }> = [];
+    const nodes: Array<{ id: string; x: number; y: number; mode: "corner" }> =
+      [];
+    const edges: Array<{ id: string; from: string; to: string; kind: "line" }> =
+      [];
 
     for (let i = 0; i < nodesCount; i++) {
       const t = (i / nodesCount) * Math.PI * 2;
@@ -232,7 +270,12 @@ test("point labels: PDF export toggles inclusion (size sanity)", async ({ page }
   // Enable labels (off -> numGlobal)
   await page.getByTestId("point-labels-mode-button").click();
   await expect
-    .poll(async () => (await page.evaluate(() => window.__INAA_DEBUG__?.getState().pointLabelsMode)) ?? "")
+    .poll(
+      async () =>
+        (await page.evaluate(
+          () => window.__INAA_DEBUG__?.getState().pointLabelsMode
+        )) ?? ""
+    )
     .toBe("numGlobal");
 
   // Export PDF with labels included.

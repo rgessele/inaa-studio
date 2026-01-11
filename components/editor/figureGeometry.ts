@@ -29,7 +29,13 @@ export function rotateInv(p: Vec2, degrees: number): Vec2 {
   return rotate(p, -degrees);
 }
 
-export function cubicAt(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: number): Vec2 {
+export function cubicAt(
+  p0: Vec2,
+  p1: Vec2,
+  p2: Vec2,
+  p3: Vec2,
+  t: number
+): Vec2 {
   const mt = 1 - t;
   const mt2 = mt * mt;
   const t2 = t * t;
@@ -43,7 +49,13 @@ export function cubicAt(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: number): Vec2
   };
 }
 
-export function sampleCubic(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, steps: number): Vec2[] {
+export function sampleCubic(
+  p0: Vec2,
+  p1: Vec2,
+  p2: Vec2,
+  p3: Vec2,
+  steps: number
+): Vec2[] {
   const pts: Vec2[] = [];
   const safeSteps = Math.max(4, Math.floor(steps));
   for (let i = 0; i <= safeSteps; i++) {
@@ -70,7 +82,9 @@ export function perp(v: Vec2): Vec2 {
   return { x: -v.y, y: v.x };
 }
 
-export function midAndTangent(points: Vec2[]): { mid: Vec2; tangent: Vec2 } | null {
+export function midAndTangent(
+  points: Vec2[]
+): { mid: Vec2; tangent: Vec2 } | null {
   if (points.length < 2) return null;
   if (points.length === 2) {
     const a = points[0];
@@ -88,7 +102,11 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-export function pointToSegmentDistance(p: Vec2, a: Vec2, b: Vec2): { d: number; t: number } {
+export function pointToSegmentDistance(
+  p: Vec2,
+  a: Vec2,
+  b: Vec2
+): { d: number; t: number } {
   const ab = sub(b, a);
   const ap = sub(p, a);
   const abLen2 = ab.x * ab.x + ab.y * ab.y;
@@ -149,8 +167,17 @@ export function polylinePointAtDistance(
 
 export const KAPPA = 0.5522847498307936;
 
-export function ellipseAsCubics(rx: number, ry: number): {
-  nodes: Array<{ x: number; y: number; inHandle: Vec2; outHandle: Vec2; mode: "smooth" }>;
+export function ellipseAsCubics(
+  rx: number,
+  ry: number
+): {
+  nodes: Array<{
+    x: number;
+    y: number;
+    inHandle: Vec2;
+    outHandle: Vec2;
+    mode: "smooth";
+  }>;
 } {
   const safeRx = Math.max(0, rx);
   const safeRy = Math.max(0, ry);
@@ -194,7 +221,13 @@ export function ellipseAsCubics(rx: number, ry: number): {
 }
 
 export function circleAsCubics(radius: number): {
-  nodes: Array<{ x: number; y: number; inHandle: Vec2; outHandle: Vec2; mode: "smooth" }>; 
+  nodes: Array<{
+    x: number;
+    y: number;
+    inHandle: Vec2;
+    outHandle: Vec2;
+    mode: "smooth";
+  }>;
 } {
   const r = Math.max(0, radius);
   const h = KAPPA * r;
@@ -203,10 +236,34 @@ export function circleAsCubics(radius: number): {
   // Handles are absolute in local coordinates.
   return {
     nodes: [
-      { x: r, y: 0, inHandle: { x: r, y: -h }, outHandle: { x: r, y: h }, mode: "smooth" },
-      { x: 0, y: r, inHandle: { x: h, y: r }, outHandle: { x: -h, y: r }, mode: "smooth" },
-      { x: -r, y: 0, inHandle: { x: -r, y: h }, outHandle: { x: -r, y: -h }, mode: "smooth" },
-      { x: 0, y: -r, inHandle: { x: -h, y: -r }, outHandle: { x: h, y: -r }, mode: "smooth" },
+      {
+        x: r,
+        y: 0,
+        inHandle: { x: r, y: -h },
+        outHandle: { x: r, y: h },
+        mode: "smooth",
+      },
+      {
+        x: 0,
+        y: r,
+        inHandle: { x: h, y: r },
+        outHandle: { x: -h, y: r },
+        mode: "smooth",
+      },
+      {
+        x: -r,
+        y: 0,
+        inHandle: { x: -r, y: h },
+        outHandle: { x: -r, y: -h },
+        mode: "smooth",
+      },
+      {
+        x: 0,
+        y: -r,
+        inHandle: { x: -h, y: -r },
+        outHandle: { x: h, y: -r },
+        mode: "smooth",
+      },
     ],
   };
 }

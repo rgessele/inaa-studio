@@ -14,7 +14,12 @@ test("imã: linha faz snap no contorno de outra figura", async ({ page }) => {
   // Enable magnet
   await page.getByTestId("magnet-toggle-button").click();
   await expect
-    .poll(async () => (await page.evaluate(() => window.__INAA_DEBUG__?.getState().magnetEnabled)) ?? false)
+    .poll(
+      async () =>
+        (await page.evaluate(
+          () => window.__INAA_DEBUG__?.getState().magnetEnabled
+        )) ?? false
+    )
     .toBe(true);
 
   // Use Line tool (UI click is more deterministic than keyboard in E2E)
@@ -44,7 +49,9 @@ test("imã: linha faz snap no contorno de outra figura", async ({ page }) => {
         return { w: c.width, h: c.height };
       });
     })
-    .toEqual(expect.objectContaining({ w: expect.any(Number), h: expect.any(Number) }));
+    .toEqual(
+      expect.objectContaining({ w: expect.any(Number), h: expect.any(Number) })
+    );
   await expect
     .poll(async () => {
       return await stageCanvas.evaluate((el) => {

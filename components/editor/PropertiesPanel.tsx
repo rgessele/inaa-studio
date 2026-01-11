@@ -53,7 +53,7 @@ export function PropertiesPanel() {
     if (!selectedFigure) return;
     if (isEditingFigureName) return;
     setFigureNameDraft(selectedFigure.name ?? "");
-  }, [isEditingFigureName, selectedFigure?.id, selectedFigure?.name]);
+  }, [isEditingFigureName, selectedFigure]);
 
   const applyFigureNameDraft = (raw: string) => {
     if (!selectedFigure) return;
@@ -67,13 +67,14 @@ export function PropertiesPanel() {
     setFigureNameDraft(trimmed);
   };
 
-  const curveSelection = selectedFigure?.tool === "curve" ? selectedFigure : null;
+  const curveSelection =
+    selectedFigure?.tool === "curve" ? selectedFigure : null;
   const showCurveStylePanel = tool === "curve" || curveSelection != null;
   const presetGroups = semanticPresetsByCategory();
   const defaultPresetId = presetGroups.flatMap((g) => g.presets)[0]?.id ?? null;
-  const [curveStylePresetId, setCurveStylePresetId] = useState<SemanticCurveId | "">(
-    (defaultPresetId as SemanticCurveId | null) ?? ""
-  );
+  const [curveStylePresetId, setCurveStylePresetId] = useState<
+    SemanticCurveId | ""
+  >((defaultPresetId as SemanticCurveId | null) ?? "");
 
   const presetMetaById = React.useMemo(() => {
     const map = new Map<
@@ -112,7 +113,9 @@ export function PropertiesPanel() {
   const [isEditingCurveBias, setIsEditingCurveBias] = useState(false);
 
   const [curveRotationDraft, setCurveRotationDraft] = useState<string>("0");
-  const [curveRotationError, setCurveRotationError] = useState<string | null>(null);
+  const [curveRotationError, setCurveRotationError] = useState<string | null>(
+    null
+  );
   const [isEditingCurveRotation, setIsEditingCurveRotation] = useState(false);
 
   const [curveFlipX, setCurveFlipX] = useState(false);
@@ -167,10 +170,21 @@ export function PropertiesPanel() {
     if (!showCurveStylePanel) return;
     // In tool mode (no curve selected), start with a default preset.
     // When a curve is selected and is custom, we keep "Customizado" (empty value).
-    if (tool === "curve" && !curveSelection && !curveStylePresetId && defaultPresetId) {
+    if (
+      tool === "curve" &&
+      !curveSelection &&
+      !curveStylePresetId &&
+      defaultPresetId
+    ) {
       setCurveStylePresetId(defaultPresetId);
     }
-  }, [curveSelection, curveStylePresetId, defaultPresetId, showCurveStylePanel, tool]);
+  }, [
+    curveSelection,
+    curveStylePresetId,
+    defaultPresetId,
+    showCurveStylePanel,
+    tool,
+  ]);
 
   const applyCurveStyleById = (semanticId: SemanticCurveId) => {
     if (!curveSelection) return;
@@ -310,7 +324,8 @@ export function PropertiesPanel() {
           {curveSelection?.styledData ? (
             <div className="space-y-1">
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                <span className="font-bold">Estilo atual:</span> {activeStyleMeta?.label}
+                <span className="font-bold">Estilo atual:</span>{" "}
+                {activeStyleMeta?.label}
               </p>
               {activeStyleMeta?.categoryLabel ? (
                 <p className="text-[11px] text-gray-400 dark:text-gray-500">
@@ -325,7 +340,7 @@ export function PropertiesPanel() {
                   ? "Curva em modo custom. Selecione um preset para aplicar automaticamente."
                   : "Selecionar um preset aplica automaticamente na curva."
                 : (helpWhenNoCurveSelected ??
-                    "Selecione uma curva para aplicar um estilo.")}
+                  "Selecione uma curva para aplicar um estilo.")}
             </p>
           ) : null}
         </div>
@@ -658,7 +673,7 @@ export function PropertiesPanel() {
     const current = Number(raw.replace(",", "."));
     const base = Number.isFinite(current)
       ? current
-      : selectedStyledParams?.rotationDeg ?? 0;
+      : (selectedStyledParams?.rotationDeg ?? 0);
     const next = clampRotationDeg(base + direction * 1);
     setCurveRotationDraft(String(Math.round(next)));
     setCurveRotationError(null);
@@ -669,8 +684,9 @@ export function PropertiesPanel() {
     if (!selectedFigure) return null;
     if (selectedFigure.kind === "seam") return selectedFigure;
     return (
-      figures.find((f) => f.kind === "seam" && f.parentId === selectedFigure.id) ??
-      null
+      figures.find(
+        (f) => f.kind === "seam" && f.parentId === selectedFigure.id
+      ) ?? null
     );
   })();
 
@@ -681,7 +697,8 @@ export function PropertiesPanel() {
 
   const inputBaseClass =
     "px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm";
-  const inputFocusClass = "focus:ring-1 focus:ring-gray-400/50 focus:border-gray-400";
+  const inputFocusClass =
+    "focus:ring-1 focus:ring-gray-400/50 focus:border-gray-400";
   const inputDisabledClass =
     "disabled:bg-gray-50 dark:disabled:bg-gray-900/30 disabled:border-gray-200 dark:disabled:border-gray-700 disabled:text-gray-500 dark:disabled:text-gray-400 disabled:cursor-default disabled:shadow-none disabled:ring-0";
   const inputErrorClass =
@@ -714,7 +731,9 @@ export function PropertiesPanel() {
 
     // Update only this seam figure. Geometry recalculation happens in Canvas.
     setFigures((prev) =>
-      prev.map((f) => (f.id === seamForSelection.id ? { ...f, offsetCm: safe } : f))
+      prev.map((f) =>
+        f.id === seamForSelection.id ? { ...f, offsetCm: safe } : f
+      )
     );
   };
 
@@ -756,9 +775,13 @@ export function PropertiesPanel() {
   };
 
   const selectedEdgeInfo =
-    selectedEdge && selectedFigure && selectedEdge.figureId === selectedFigure.id
+    selectedEdge &&
+    selectedFigure &&
+    selectedEdge.figureId === selectedFigure.id
       ? (() => {
-          const edge = selectedFigure.edges.find((e) => e.id === selectedEdge.edgeId);
+          const edge = selectedFigure.edges.find(
+            (e) => e.id === selectedEdge.edgeId
+          );
           if (!edge) return null;
           const measure = selectedFigure.measures?.perEdge?.find(
             (m) => m.edgeId === selectedEdge.edgeId
@@ -805,7 +828,9 @@ export function PropertiesPanel() {
           anchor: selectedEdge.anchor,
         });
         return updated
-          ? markCurveCustomSnapshotDirtyIfPresent(breakStyledLinkIfNeeded(updated))
+          ? markCurveCustomSnapshotDirtyIfPresent(
+              breakStyledLinkIfNeeded(updated)
+            )
           : f;
       })
     );
@@ -864,10 +889,15 @@ export function PropertiesPanel() {
   // Show tool properties when no shape is selected but a tool is active
   const showToolProperties =
     !selectedFigure &&
-    (tool === "mirror" || tool === "unfold" || tool === "offset" || tool === "curve");
+    (tool === "mirror" ||
+      tool === "unfold" ||
+      tool === "offset" ||
+      tool === "curve");
 
   const hasCanvasSelection =
-    selectedFigureId != null || selectedFigureIds.length > 0 || selectedEdge != null;
+    selectedFigureId != null ||
+    selectedFigureIds.length > 0 ||
+    selectedEdge != null;
 
   React.useEffect(() => {
     // Default behavior:
@@ -930,9 +960,9 @@ export function PropertiesPanel() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
-              {showCurveStylePanel ? (
-                renderCurveStylePanel({ showHelp: true })
-              ) : null}
+              {showCurveStylePanel
+                ? renderCurveStylePanel({ showHelp: true })
+                : null}
 
               {selectedFigureIds.length === 1 && (
                 <div>
@@ -1030,7 +1060,7 @@ export function PropertiesPanel() {
                           title="Rotacionar 15°"
                           onClick={() => {
                             const current = selectedFigure.nameRotationDeg ?? 0;
-                            const next = ((current + 15) % 360 + 360) % 360;
+                            const next = (((current + 15) % 360) + 360) % 360;
                             setFigures((prev) =>
                               prev.map((f) =>
                                 f.id === selectedFigure.id
@@ -1049,12 +1079,16 @@ export function PropertiesPanel() {
                         </button>
 
                         <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
-                          {String(((selectedFigure.nameRotationDeg ?? 0) % 360 + 360) % 360)}°
+                          {String(
+                            (((selectedFigure.nameRotationDeg ?? 0) % 360) +
+                              360) %
+                              360
+                          )}
+                          °
                         </span>
                       </div>
                     </div>
                   </div>
-
                 </div>
               )}
 
@@ -1095,7 +1129,9 @@ export function PropertiesPanel() {
                         if (e.key === "Escape") {
                           e.preventDefault();
                           setIsEditingSeamOffset(false);
-                          setSeamOffsetDraft(formatPtBrDecimalFixed(offsetDisplayCm, 2));
+                          setSeamOffsetDraft(
+                            formatPtBrDecimalFixed(offsetDisplayCm, 2)
+                          );
                           setSeamOffsetError(null);
                         }
                         if (e.key === "Enter") {
@@ -1147,10 +1183,7 @@ export function PropertiesPanel() {
                     <div className="flex items-center gap-2">
                       <input
                         className={
-                          "w-24 " +
-                          inputBaseClass +
-                          " " +
-                          inputFocusClass
+                          "w-24 " + inputBaseClass + " " + inputFocusClass
                         }
                         type="text"
                         inputMode="decimal"
@@ -1173,7 +1206,8 @@ export function PropertiesPanel() {
                           }
                         }}
                         onWheel={(e) => {
-                          if (document.activeElement !== e.currentTarget) return;
+                          if (document.activeElement !== e.currentTarget)
+                            return;
                           e.preventDefault();
                           e.stopPropagation();
                           bumpEdgeLength(e.deltaY < 0 ? 1 : -1);
@@ -1190,12 +1224,15 @@ export function PropertiesPanel() {
                         Âncora
                       </span>
                       <div className="ml-auto inline-flex rounded border border-gray-300 dark:border-gray-600 overflow-hidden">
-                        {([
-                          { key: "start", label: "Início" },
-                          { key: "mid", label: "Meio" },
-                          { key: "end", label: "Fim" },
-                        ] as const).map((opt) => {
-                          const active = (selectedEdge?.anchor ?? "end") === opt.key;
+                        {(
+                          [
+                            { key: "start", label: "Início" },
+                            { key: "mid", label: "Meio" },
+                            { key: "end", label: "Fim" },
+                          ] as const
+                        ).map((opt) => {
+                          const active =
+                            (selectedEdge?.anchor ?? "end") === opt.key;
                           return (
                             <button
                               key={opt.key}
@@ -1238,7 +1275,8 @@ export function PropertiesPanel() {
                     </div>
 
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Dica: Use Option/Alt + clique na aresta, ou dê duplo clique na medida.
+                      Dica: Use Option/Alt + clique na aresta, ou dê duplo
+                      clique na medida.
                     </p>
                   </div>
 
@@ -1356,13 +1394,13 @@ export function PropertiesPanel() {
               </h3>
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
-              {tool === "curve" ? (
-                renderCurveStylePanel({
-                  showHelp: true,
-                  helpWhenNoCurveSelected:
-                    "Desenhe e selecione uma curva para aplicar um estilo.",
-                })
-              ) : null}
+              {tool === "curve"
+                ? renderCurveStylePanel({
+                    showHelp: true,
+                    helpWhenNoCurveSelected:
+                      "Desenhe e selecione uma curva para aplicar um estilo.",
+                  })
+                : null}
 
               {tool === "mirror" && (
                 <div>
@@ -1472,7 +1510,9 @@ export function PropertiesPanel() {
                         if (e.key === "Escape") {
                           e.preventDefault();
                           setIsEditingToolOffset(false);
-                          setToolOffsetDraft(formatPtBrDecimalFixed(offsetValueCm, 2));
+                          setToolOffsetDraft(
+                            formatPtBrDecimalFixed(offsetValueCm, 2)
+                          );
                           setToolOffsetError(null);
                         }
                         if (e.key === "Enter") {

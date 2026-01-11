@@ -53,12 +53,13 @@ After Dart:        P1 -------- L A R -------- P2
 
 Where:
 - L = Left base point
-- R = Right base point  
+- R = Right base point
 - A = Apex (dart point)
 - D = Depth (perpendicular from edge)
 ```
 
 The algorithm:
+
 1. Calculates the position along the edge (default 50%)
 2. Computes the inward normal (perpendicular direction)
 3. Creates apex point at depth distance from edge
@@ -99,18 +100,21 @@ The algorithm:
 Darts work by modifying the `points` array of shapes:
 
 **Line shapes:**
+
 ```typescript
 // Before: [x1, y1, x2, y2]
 // After:  [x1, y1, leftX, leftY, apexX, apexY, rightX, rightY, x2, y2]
 ```
 
 **Rectangle shapes:**
+
 ```typescript
 // Before: [0, 0, w, 0, w, h, 0, h]
 // After: [0, 0, ..., leftX, leftY, apexX, apexY, rightX, rightY, ..., w, 0, w, h, 0, h]
 ```
 
 **Circle/Polygon shapes:**
+
 ```typescript
 // Inserts 3 points (left, apex, right) at the calculated segment
 ```
@@ -124,11 +128,11 @@ function getInwardNormal(p1, p2) {
   const dx = p2.x - p1.x;
   const dy = p2.y - p1.y;
   const length = Math.sqrt(dx * dx + dy * dy);
-  
+
   // Rotate 90° counter-clockwise for left/inward normal
   return {
     x: -dy / length,
-    y: dx / length
+    y: dx / length,
   };
 }
 ```
@@ -136,12 +140,14 @@ function getInwardNormal(p1, p2) {
 ## User Interface
 
 ### Toolbar Button
+
 - Location: Below "Margem de costura" (Seam allowance) tool
 - Icon: Custom SVG triangle
 - Tooltip: "Pence" with keyboard shortcut info
 - Shortcut: `D` key
 
 ### Configuration Panel
+
 Appears at top of canvas when dart tool is active:
 
 ```
@@ -152,24 +158,28 @@ Appears at top of canvas when dart tool is active:
 ```
 
 ### Export Settings
+
 - Dart checkbox in export modal under "Elementos do desenho"
 - Controls whether darts are included in PDF/SVG exports
 
 ## Technical Considerations
 
 ### Compatibility
+
 - Works with all drawing tools: line, rectangle, circle, curve
 - Integrates with existing node editing tool
 - Compatible with undo/redo system (uses setShapes with history)
 - Works with seam allowance tool (they don't conflict)
 
 ### Rendering
+
 - Darts render automatically via the points array
 - No special rendering code needed
 - Works with all existing transformations (move, rotate)
 - Node editing will show all dart points
 
 ### Limitations (Current Implementation)
+
 1. Position is fixed at 50% of edge (not adjustable via UI yet)
 2. Edge selection for rectangles defaults to edge 0 (top edge)
 3. One dart per shape (applying again replaces the previous)
@@ -178,6 +188,7 @@ Appears at top of canvas when dart tool is active:
 ## Future Enhancements
 
 ### Planned Features
+
 1. **Interactive positioning**: Click and drag to position dart along edge
 2. **Multiple darts**: Support multiple darts on same shape
 3. **Edge selection**: For rectangles/polygons, choose which edge
@@ -186,6 +197,7 @@ Appears at top of canvas when dart tool is active:
 6. **Bust/waist presets**: Common dart configurations for patterns
 
 ### Possible Improvements
+
 - Angle control for dart direction (not perpendicular)
 - Curved darts (French darts)
 - Dart leg editing via node tool
@@ -210,12 +222,13 @@ Appears at top of canvas when dart tool is active:
 ## Acceptance Criteria (from Issue #17)
 
 ✅ **Comportamento:**
+
 1. Usuário clica em uma linha (aresta) do molde. ✓
 2. Define parâmetros: Profundidade (comprimento) e Abertura (largura na base). ✓
 3. O sistema insere 3 novos vértices na linha, formando um triângulo apontando para dentro (ou fora). ✓
 4. A geometria da linha original é alterada (split). ✓
 
-✅ **Critério de Aceite:** 
+✅ **Critério de Aceite:**
 Inserir uma pence na cintura de uma saia e a linha da cintura se adaptar à nova geometria. ✓
 (Implementation supports this - dart modifies the points array to split the edge)
 
@@ -224,8 +237,8 @@ Inserir uma pence na cintura de uma saia e a linha da cintura se adaptar à nova
 ### Applying a Dart Programmatically
 
 ```typescript
-import { applyDartToShape } from './dart';
-import { PX_PER_CM } from './constants';
+import { applyDartToShape } from "./dart";
+import { PX_PER_CM } from "./constants";
 
 // Apply 3cm deep, 2cm wide dart at position 0.5 (middle)
 const depthPx = 3 * PX_PER_CM;
@@ -237,7 +250,7 @@ const updatedShape = applyDartToShape(
   positionRatio,
   depthPx,
   openingPx,
-  0  // edge index for rectangles
+  0 // edge index for rectangles
 );
 ```
 
@@ -249,12 +262,14 @@ if (tool === "dart") {
   const handleClick = (shapeId: string) => {
     const depthPx = dartDepthCm * PX_PER_CM;
     const openingPx = dartOpeningCm * PX_PER_CM;
-    
-    setShapes(prev => prev.map(shape =>
-      shape.id === shapeId
-        ? applyDartToShape(shape, 0.5, depthPx, openingPx, 0)
-        : shape
-    ));
+
+    setShapes((prev) =>
+      prev.map((shape) =>
+        shape.id === shapeId
+          ? applyDartToShape(shape, 0.5, depthPx, openingPx, 0)
+          : shape
+      )
+    );
   };
 }
 ```

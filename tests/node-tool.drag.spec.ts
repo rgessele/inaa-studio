@@ -1,7 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { gotoEditor } from "./helpers/e2e";
 
-test("node tool: dragging existing node does not split edge", async ({ page }) => {
+test("node tool: dragging existing node does not split edge", async ({
+  page,
+}) => {
   await gotoEditor(page);
 
   // Deterministic rectangle is selected by helper.

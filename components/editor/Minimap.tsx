@@ -36,7 +36,7 @@ export function Minimap() {
     };
 
     updateSize();
-    
+
     // Retry getting stage size if it wasn't available initially
     const interval = setInterval(() => {
       const s = getStage();
@@ -83,9 +83,10 @@ export function Minimap() {
     // Add some padding around figures
     const width = maxX - minX;
     const height = maxY - minY;
-    
+
     // If single point or empty
-    if (!Number.isFinite(minX)) return { x: -500, y: -500, width: 1000, height: 1000 };
+    if (!Number.isFinite(minX))
+      return { x: -500, y: -500, width: 1000, height: 1000 };
 
     return {
       x: minX - 100,
@@ -122,7 +123,9 @@ export function Minimap() {
     return { x, y, w, h };
   }, [position, scale, stageSize, worldBounds, minimapScale]);
 
-  const handleMapClick = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+  const handleMapClick = (
+    e: Konva.KonvaEventObject<MouseEvent | TouchEvent>
+  ) => {
     const stage = e.target.getStage();
     if (!stage) return;
     const ptr = stage.getPointerPosition();
@@ -145,9 +148,7 @@ export function Minimap() {
     });
   };
 
-  const handleDragViewport = (
-    e: Konva.KonvaEventObject<DragEvent>
-  ) => {
+  const handleDragViewport = (e: Konva.KonvaEventObject<DragEvent>) => {
     // Dragging the viewport rect
     const newX = e.target.x();
     const newY = e.target.y();
@@ -162,7 +163,7 @@ export function Minimap() {
       x: -worldX * scale,
       y: -worldY * scale,
     });
-    
+
     // Reset position of the rect in Konva (we control it via props)
     e.target.position({ x: viewportRect?.x || 0, y: viewportRect?.y || 0 });
   };
@@ -180,7 +181,7 @@ export function Minimap() {
   }
 
   return (
-    <div 
+    <div
       className="absolute bottom-32 right-3 z-20 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-900/90 shadow-floating animate-in fade-in zoom-in-95 duration-200"
       style={{ width: MINIMAP_WIDTH, height: MINIMAP_HEIGHT }}
     >
@@ -213,7 +214,7 @@ export function Minimap() {
             // We need to shift by worldBounds.x, worldBounds.y and scale
             const mx = (f.x - worldBounds.x) * minimapScale;
             const my = (f.y - worldBounds.y) * minimapScale;
-            
+
             // For performance, we can just draw the polyline or even a bounding box
             // Let's try polyline first, it's nicer
             const flatPoints = figureLocalPolyline(f, 1); // Low detail

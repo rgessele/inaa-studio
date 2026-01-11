@@ -52,6 +52,8 @@ test("editor smoke: draw + undo/redo + page guides", async ({ page }) => {
   expect(afterRedo.figuresCount).toBe(afterDraw.figuresCount);
 
   // Page guides preference is global: persisted in localStorage
-  const lsValue = await page.evaluate(() => localStorage.getItem("inaa:showPageGuides"));
+  const lsValue = await page.evaluate(() =>
+    localStorage.getItem("inaa:showPageGuides")
+  );
   expect(lsValue).toBe("1");
 });

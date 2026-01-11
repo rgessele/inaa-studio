@@ -1,22 +1,26 @@
 # Pull Request Summary: Dart Tool Implementation
 
 ## Overview
+
 Successfully implemented the Dart Tool (Ferramenta de Pences) feature as specified in issue #17. The tool allows users to insert triangular darts into pattern edges for garment construction.
 
 ## What is a Dart?
+
 A dart (pence) is a triangular fold sewn into fabric to add shape and contour to a garment. In pattern making, it's represented as a triangular indentation in an edge or seam line.
 
 ## Implementation Summary
 
 ### Core Functionality ✅
+
 - **Dart Insertion**: Click on any shape (line, rectangle, circle, curve) to insert a dart
-- **Parameters**: 
+- **Parameters**:
   - Profundidade (Depth): 0.5-20 cm (default: 3 cm)
   - Abertura (Opening): 0.5-20 cm (default: 2 cm)
 - **Geometry**: Inserts 3 vertices (left base, apex, right base) into the shape's points array
 - **Direction**: Correctly points inward/perpendicular to the edge
 
 ### User Interface ✅
+
 - **Tool Button**: Added to toolbar with custom triangle SVG icon
 - **Keyboard Shortcut**: `D` key activates the dart tool
 - **Configuration Panel**: Appears at top of canvas showing depth and opening inputs
@@ -26,6 +30,7 @@ A dart (pence) is a triangular fold sewn into fabric to add shape and contour to
 ### Technical Implementation ✅
 
 #### Files Created
+
 1. **`components/editor/dart.ts`** (314 lines)
    - Core geometry functions for dart insertion
    - Handles lines, rectangles, circles, and polylines
@@ -45,6 +50,7 @@ A dart (pence) is a triangular fold sewn into fabric to add shape and contour to
    - Future enhancement ideas
 
 #### Files Modified
+
 1. **`components/editor/types.ts`**
    - Added "dart" to DrawingTool type
    - Created DartParams interface
@@ -85,6 +91,7 @@ The dart insertion algorithm:
 ```
 
 **Normal Vector Calculation:**
+
 - Rotate edge vector 90° clockwise: (dx, dy) → (dy, -dx)
 - Normalize to unit vector
 - Multiply by depth for apex position
@@ -92,13 +99,15 @@ The dart insertion algorithm:
 ### Test Results ✅
 
 **Geometry Tests Passed:**
+
 - ✅ Horizontal line: Dart points downward (negative Y direction)
-- ✅ Vertical line: Dart points right (positive X direction)  
+- ✅ Vertical line: Dart points right (positive X direction)
 - ✅ Opening width matches input parameters
 - ✅ Depth distance matches input parameters
 - ✅ Points array structure correct (5 vertices for line)
 
 **Code Quality:**
+
 - ✅ TypeScript compilation successful (no errors)
 - ✅ All types properly defined
 - ✅ Follows existing code patterns (offset tool, measure tool)
@@ -109,19 +118,18 @@ The dart insertion algorithm:
 From issue #17:
 
 ### Comportamento ✅
+
 1. ✅ Usuário clica em uma linha (aresta) do molde
    - Implemented: Click handler in Canvas.tsx
-   
 2. ✅ Define parâmetros: Profundidade (comprimento) e Abertura (largura na base)
    - Implemented: Configuration panel with number inputs
-   
 3. ✅ O sistema insere 3 novos vértices na linha, formando um triângulo apontando para dentro
    - Implemented: insertDartIntoLine() creates [left, apex, right] vertices
-   
 4. ✅ A geometria da linha original é alterada (split)
    - Implemented: Points array modified to include dart geometry
 
 ### Critério de Aceite ✅
+
 **"Inserir uma pence na cintura de uma saia e a linha da cintura se adaptar à nova geometria"**
 
 - ✅ Works for all shape types (line, rectangle, circle, curve)
@@ -132,6 +140,7 @@ From issue #17:
 ## Integration Points
 
 ### Works With:
+
 - ✅ **Select Tool**: Darts can be selected and moved
 - ✅ **Node Tool**: All dart vertices are editable as nodes
 - ✅ **Undo/Redo**: Dart operations are in history
@@ -139,6 +148,7 @@ From issue #17:
 - ✅ **Transform**: Darts transform with their parent shape
 
 ### Does Not Conflict With:
+
 - ✅ Seam allowance (offset) tool
 - ✅ Measure tool
 - ✅ Drawing tools
@@ -161,6 +171,7 @@ From issue #17:
 ## Future Enhancements
 
 ### Suggested Improvements
+
 1. **Interactive Positioning**: Click and drag to position dart
 2. **Multiple Darts**: Support several darts on one shape
 3. **Edge Chooser**: For rectangles/polygons, select which edge
@@ -173,18 +184,21 @@ From issue #17:
 ## Developer Notes
 
 ### Code Organization
+
 - Dart logic isolated in `dart.ts` module
 - Follows existing patterns (similar to `offset.ts`)
 - No breaking changes to existing code
 - Backward compatible (dart fields optional)
 
 ### Rendering
+
 - Uses existing Line rendering (no special dart rendering needed)
 - Works automatically via points array
 - Node editing shows all dart points
 - Transforms apply correctly
 
 ### State Management
+
 - Follows EditorContext pattern
 - State persists across tool switches
 - Cleanup on tool change
@@ -232,9 +246,10 @@ For manual testing:
 
 ## Screenshots/Demos
 
-*Note: Screenshots require authentication setup in test environment*
+_Note: Screenshots require authentication setup in test environment_
 
 Expected behavior:
+
 1. Toolbar shows dart button with triangle icon
 2. Clicking activates dart tool
 3. Configuration panel appears at top
@@ -248,6 +263,7 @@ The dart tool is **fully implemented** and **ready for testing**. All acceptance
 **Status: ✅ READY FOR REVIEW**
 
 ### Next Steps
+
 1. Code review
 2. Manual UI testing with authentication
 3. User acceptance testing

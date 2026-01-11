@@ -19,7 +19,11 @@ type IconProps = {
   strokeWidth?: number;
 };
 
-function Svg({ className, strokeWidth = 1.5, children }: React.PropsWithChildren<IconProps>) {
+function Svg({
+  className,
+  strokeWidth = 1.5,
+  children,
+}: React.PropsWithChildren<IconProps>) {
   return (
     <svg
       className={className}
@@ -37,12 +41,16 @@ function Svg({ className, strokeWidth = 1.5, children }: React.PropsWithChildren
 
 type ToolIconVariant = "cursor" | "toolbar";
 
-export function getToolIcon(tool: string, variant: ToolIconVariant, extraClassName?: string): React.ReactNode | null {
+export function getToolIcon(
+  tool: string,
+  variant: ToolIconVariant,
+  extraClassName?: string
+): React.ReactNode | null {
   const baseClass =
     variant === "cursor"
       ? "w-4 h-4 text-gray-700 dark:text-gray-200"
       : "w-5 h-5 stroke-current";
-  
+
   const className = extraClassName || baseClass;
   const strokeWidth = variant === "cursor" ? 1.5 : 1.5;
   return getToolIconInternal(tool, className, strokeWidth);
@@ -119,7 +127,14 @@ function getToolIconInternal(
         <Svg className={className} strokeWidth={strokeWidth}>
           <path d="M12 4v16" />
           <rect x="5" y="7" width="3.6" height="10" rx="1" />
-          <rect x="15.4" y="7" width="3.6" height="10" rx="1" strokeDasharray="2 2" />
+          <rect
+            x="15.4"
+            y="7"
+            width="3.6"
+            height="10"
+            rx="1"
+            strokeDasharray="2 2"
+          />
           <path d="M9.2 9.2C10.6 7.8 13.4 7.8 14.8 9.2" />
           <path d="M14.8 9.2L13.6 9" />
           <path d="M14.8 9.2L14.6 8" />
@@ -141,11 +156,14 @@ function getToolIconInternal(
     case "node":
       return (
         <Svg className={className} strokeWidth={strokeWidth}>
-          <circle cx="7" cy="17" r="1.4" fill="currentColor" stroke="none" />
-          <circle cx="12" cy="7" r="1.4" fill="currentColor" stroke="none" />
-          <circle cx="17" cy="17" r="1.4" fill="currentColor" stroke="none" />
-          <path d="M8.2 16.2L11 9" />
-          <path d="M12.8 9L15.8 16.2" />
+          <circle cx="6" cy="6" r="2" />
+          <circle cx="18" cy="6" r="2" />
+          <circle cx="18" cy="18" r="2" />
+          <circle cx="6" cy="18" r="2" />
+          <path d="M8 6H16" />
+          <path d="M18 8V16" />
+          <path d="M16 18H8" />
+          <path d="M6 16V8" />
         </Svg>
       );
     default:

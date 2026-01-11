@@ -99,12 +99,14 @@ All acceptance criteria from issue #17 have been met. The dart tool is fully fun
 ## ✨ Features Implemented
 
 ### Core Functionality
+
 - ✅ Click on any shape to insert a dart
 - ✅ Supports lines, rectangles, circles, and curves
 - ✅ Geometric insertion with correct perpendicular direction
 - ✅ Real-time parameter updates
 
 ### User Interface
+
 - ✅ Dart tool button in toolbar
 - ✅ Custom triangle SVG icon
 - ✅ Keyboard shortcut: `D` key
@@ -114,6 +116,7 @@ All acceptance criteria from issue #17 have been met. The dart tool is fully fun
 - ✅ Export filter checkbox
 
 ### Integration
+
 - ✅ Works with select tool (move darted shapes)
 - ✅ Works with node tool (edit dart vertices)
 - ✅ Works with undo/redo system
@@ -127,6 +130,7 @@ All acceptance criteria from issue #17 have been met. The dart tool is fully fun
 From issue #17:
 
 ### Comportamento
+
 1. ✅ **Usuário clica em uma linha (aresta) do molde**
    - Implemented in `Canvas.tsx` handleShapeClick
    - Works for all shape types
@@ -147,16 +151,19 @@ From issue #17:
    - Renders correctly via existing Line component
 
 ### Critério de Aceite
+
 ✅ **"Inserir uma pence na cintura de uma saia e a linha da cintura se adaptar à nova geometria"**
-   - Works for all shapes including skirt waistlines
-   - Geometry automatically adapts
-   - Dart modifies points array to show new edge shape
+
+- Works for all shapes including skirt waistlines
+- Geometry automatically adapts
+- Dart modifies points array to show new edge shape
 
 ---
 
 ## 🧪 Testing
 
 ### Automated Tests
+
 - ✅ TypeScript compilation: **PASSED**
 - ✅ Geometry calculations: **VERIFIED**
   - Horizontal line dart points downward ✓
@@ -165,12 +172,14 @@ From issue #17:
   - Depth distance matches parameters ✓
 
 ### Code Review
+
 - ✅ All feedback addressed
 - ✅ Magic numbers extracted to constants
 - ✅ Comments clarified and corrected
 - ✅ Unit conversions fixed (cm ↔ px)
 
 ### Manual Testing Required
+
 - [ ] UI interaction testing
 - [ ] Visual verification on canvas
 - [ ] Test with different shape types
@@ -183,17 +192,20 @@ From issue #17:
 ## 📊 Code Statistics
 
 ### Lines of Code
+
 - **New code:** ~1,400 lines
   - Implementation: ~750 lines
   - Tests: ~175 lines
   - Documentation: ~475 lines
 
 ### Files Changed
+
 - **New files:** 7
 - **Modified files:** 6
 - **Total files:** 13
 
 ### Documentation
+
 - **Technical docs:** 3 files (IMPLEMENTATION, VISUAL_GUIDE, PR_SUMMARY)
 - **Code comments:** Extensive inline documentation
 - **Test examples:** Console-accessible test suite
@@ -203,6 +215,7 @@ From issue #17:
 ## 🎯 Technical Highlights
 
 ### Geometry Algorithm
+
 ```typescript
 1. Calculate position along edge (0-1 ratio)
 2. Find perpendicular inward normal vector
@@ -212,15 +225,17 @@ From issue #17:
 ```
 
 ### Normal Vector Calculation
+
 ```typescript
 // Rotate 90° counter-clockwise: (dx, dy) → (dy, -dx)
 const normal = {
   x: dy / length,
-  y: -dx / length
+  y: -dx / length,
 };
 ```
 
 ### Points Array Transformation
+
 ```typescript
 // Before: [x1, y1, x2, y2]
 // After:  [x1, y1, leftX, leftY, apexX, apexY, rightX, rightY, x2, y2]
@@ -246,6 +261,7 @@ Documented in DART_TOOL_IMPLEMENTATION.md:
 ## 🚀 Deployment Status
 
 ### Ready ✅
+
 - [x] Code complete
 - [x] TypeScript compilation passes
 - [x] Code review feedback addressed
@@ -255,6 +271,7 @@ Documented in DART_TOOL_IMPLEMENTATION.md:
 - [x] Follows project conventions
 
 ### Pending Manual Testing
+
 - [ ] UI interaction testing (requires auth)
 - [ ] Visual verification
 - [ ] User acceptance testing
@@ -265,6 +282,7 @@ Documented in DART_TOOL_IMPLEMENTATION.md:
 ## 📝 Usage Instructions
 
 ### Quick Start
+
 1. Press `D` key or click triangle button in toolbar
 2. Configuration panel appears at top
 3. Click on any shape (line, rectangle, circle, curve)
@@ -273,12 +291,14 @@ Documented in DART_TOOL_IMPLEMENTATION.md:
 6. Switch tools or continue adding more darts
 
 ### Parameters
+
 - **Profundidade (Depth):** 0.5-20 cm (default: 3 cm)
 - **Abertura (Opening):** 0.5-20 cm (default: 2 cm)
 - **Position:** Fixed at 50% (middle of edge)
 - **Edge:** Default to edge 0 for rectangles (top edge)
 
 ### Integration
+
 - **Select Tool (V):** Move darted shapes
 - **Node Tool (N):** Edit dart vertices
 - **Undo (Cmd+Z):** Undo dart operation
@@ -289,6 +309,7 @@ Documented in DART_TOOL_IMPLEMENTATION.md:
 ## 🎓 Learning Resources
 
 All documentation files include:
+
 - Theoretical background on darts in garment construction
 - Step-by-step algorithm explanations
 - Visual ASCII diagrams
@@ -312,6 +333,7 @@ The dart tool is fully implemented and ready for review. All acceptance criteria
 - **Extensible:** Foundation for future enhancements
 
 **NEXT STEPS:**
+
 1. Code review and approval
 2. Manual UI testing with authentication
 3. User acceptance testing
@@ -320,7 +342,7 @@ The dart tool is fully implemented and ready for review. All acceptance criteria
 
 ---
 
-*Implementation completed by GitHub Copilot*  
-*Issue: rgessele/inaa-studio#17*  
-*Branch: copilot/add-crease-tool-functionality*  
-*Date: December 17, 2024*
+_Implementation completed by GitHub Copilot_  
+_Issue: rgessele/inaa-studio#17_  
+_Branch: copilot/add-crease-tool-functionality_  
+_Date: December 17, 2024_
