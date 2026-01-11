@@ -777,7 +777,7 @@ export function PropertiesPanel() {
     ? figureWorldBoundingBox(selectedFigure)
     : null;
 
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [edgeLengthDraft, setEdgeLengthDraft] = useState<string>("");
 
   React.useEffect(() => {
@@ -865,6 +865,21 @@ export function PropertiesPanel() {
   const showToolProperties =
     !selectedFigure &&
     (tool === "mirror" || tool === "unfold" || tool === "offset" || tool === "curve");
+
+  const hasCanvasSelection =
+    selectedFigureId != null || selectedFigureIds.length > 0 || selectedEdge != null;
+
+  React.useEffect(() => {
+    // Default behavior:
+    // - Start collapsed
+    // - Open when something is selected
+    // - Close when selection is cleared (unless we are showing tool properties)
+    if (hasCanvasSelection || showToolProperties) {
+      setCollapsed(false);
+      return;
+    }
+    setCollapsed(true);
+  }, [hasCanvasSelection, showToolProperties]);
 
   return (
     <aside
