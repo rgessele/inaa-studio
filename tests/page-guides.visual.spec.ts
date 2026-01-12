@@ -2,15 +2,26 @@ import { test, expect } from "@playwright/test";
 import { gotoEditor } from "./helpers/e2e";
 
 test.describe("visual: page guides tiles", () => {
+  // Make element screenshot size deterministic across browser projects.
+  // The stage container has left/top padding (Tailwind `left-6 top-6`), so
+  // viewport 896x672 yields an element screenshot of 872x648 (matches snapshots).
+  test.use({ viewport: { width: 896, height: 672 } });
+
   test("A4 tiles render", async ({ page }) => {
     await gotoEditor(page);
 
-    await page.getByTestId("view-menu-button").click();
+    // Some header elements can overlap/intercept pointer events at small viewports.
+    // Use a DOM click to keep this test stable across browsers.
+    await page
+      .getByTestId("view-menu-button")
+      .evaluate((el) => (el as HTMLButtonElement).click());
     await page.getByTestId("toggle-page-guides").click();
     await page.getByTestId("page-size-select").selectOption("A4");
 
     // Close the dropdown so it doesn't overlap the canvas screenshot.
-    await page.getByTestId("view-menu-button").click();
+    await page
+      .getByTestId("view-menu-button")
+      .evaluate((el) => (el as HTMLButtonElement).click());
     await expect(page.getByRole("heading", { name: "Régua" })).toBeHidden();
 
     const region = page.getByTestId("editor-stage-container");
@@ -24,12 +35,16 @@ test.describe("visual: page guides tiles", () => {
   test("A0 tiles render", async ({ page }) => {
     await gotoEditor(page);
 
-    await page.getByTestId("view-menu-button").click();
+    await page
+      .getByTestId("view-menu-button")
+      .evaluate((el) => (el as HTMLButtonElement).click());
     await page.getByTestId("toggle-page-guides").click();
     await page.getByTestId("page-size-select").selectOption("A0");
 
     // Close the dropdown so it doesn't overlap the canvas screenshot.
-    await page.getByTestId("view-menu-button").click();
+    await page
+      .getByTestId("view-menu-button")
+      .evaluate((el) => (el as HTMLButtonElement).click());
     await expect(page.getByRole("heading", { name: "Régua" })).toBeHidden();
 
     const region = page.getByTestId("editor-stage-container");

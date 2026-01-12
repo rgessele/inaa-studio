@@ -63,13 +63,32 @@ test("imã: linha faz snap no contorno de outra figura", async ({ page }) => {
 
   // Stage starts with scale=1 and position=(0,0) by default.
   // The test rectangle is at world coords x=0..200, y=0..120.
-  const startWorld = { x: 200, y: 200 };
-  const nearRightEdgeWorld = { x: 203, y: 60 }; // should snap to x=200 on the right edge
+  const stage = page.getByTestId("editor-stage-container");
+  await expect(stage).toBeVisible();
 
-  await stageCanvas.dragTo(stageCanvas, {
-    sourcePosition: startWorld,
-    targetPosition: nearRightEdgeWorld,
-  });
+  const box = await stage.boundingBox();
+  expect(box).toBeTruthy();
+
+  const clamp = (value: number, min: number, max: number): number =>
+    Math.max(min, Math.min(max, value));
+
+  // Coordinates are relative to the stage container top-left (scale=1).
+  const start = { x: 220, y: 200 };
+  const end = { x: 203, y: 60 }; // should snap to x=200 on the right edge
+
+  const startX = clamp(box!.x + start.x, box!.x + 1, box!.x + box!.width - 2);
+  const startY = clamp(
+    box!.y + start.y,
+    box!.y + 1,
+    box!.y + box!.height - 2
+  );
+  const endX = clamp(box!.x + end.x, box!.x + 1, box!.x + box!.width - 2);
+  const endY = clamp(box!.y + end.y, box!.y + 1, box!.y + box!.height - 2);
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(endX, endY);
+  await page.mouse.up();
 
   await expect
     .poll(async () => {
