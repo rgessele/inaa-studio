@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useEditor } from "./EditorContext";
 import { figureWorldBoundingBox } from "./figurePath";
-import { pxToCm } from "./measureUnits";
+import { cmToPx, pxToCm } from "./measureUnits";
 import { PX_PER_CM } from "./constants";
 import { setEdgeTargetLengthPx } from "./edgeEdit";
+import { ellipseAsCubics } from "./figureGeometry";
 import {
   applySemanticStyleToCurveFigure,
   applySemanticStyleToFigureEdge,
@@ -46,6 +47,260 @@ export function PropertiesPanel() {
     unfoldAxis,
     setUnfoldAxis,
   } = useEditor();
+
+  const makeLocalId = useCallback((prefix: string): string => {
+    return typeof crypto !== "undefined" && crypto.randomUUID
+      ? `${prefix}_${crypto.randomUUID()}`
+      : `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+  }, []);
+
+  const rebuildCircleGeometry = useCallback(
+    (figureId: string, rxPx: number, ryPx: number) => {
+      const safeRx = Math.max(0.01 * PX_PER_CM, rxPx);
+      const safeRy = Math.max(0.01 * PX_PER_CM, ryPx);
+      const { nodes } = ellipseAsCubics(safeRx, safeRy);
+
+      setSelectedEdge(null);
+      setFigures((prev) =>
+        prev.map((f) => {
+          if (f.id !== figureId) return f;
+          if (f.kind === "seam") return f;
+          if (f.tool !== "circle") return f;
+
+          const nextNodes = nodes.map((n, idx) => {
+            const existing = f.nodes[idx];
+            return {
+              id: existing?.id ?? makeLocalId("n"),
+              x: n.x,
+              y: n.y,
+              mode: n.mode,
+              inHandle: { x: n.inHandle.x, y: n.inHandle.y },
+              outHandle: { x: n.outHandle.x, y: n.outHandle.y },
+            };
+          });
+
+          const nextEdges = nodes.map((_, idx) => {
+            const existing = f.edges[idx];
+            return {
+              id: existing?.id ?? makeLocalId("e"),
+              from: nextNodes[idx].id,
+              to: nextNodes[(idx + 1) % nextNodes.length].id,
+              kind: "cubic" as const,
+            };
+          });
+
+          return {
+            ...f,
+            closed: true,
+            nodes: nextNodes,
+            edges: nextEdges,
+          };
+        })
+      );
+    },
+    [makeLocalId, setFigures, setSelectedEdge]
+  );
+
+  const selectedCircleMeasures = useMemo(() => {
+    if (!selectedFigureId) return null;
+    const f = figures.find((x) => x.id === selectedFigureId) ?? null;
+    if (!f) return null;
+    if (f.kind === "seam") return null;
+    if (f.tool !== "circle") return null;
+    return f.measures?.circle ?? null;
+  }, [figures, selectedFigureId]);
+
+  const selectedCircleIsPerfect =
+    selectedCircleMeasures?.radiusPx != null &&
+    selectedCircleMeasures.radiusPx > 0;
+
+  const [circleRadiusDraft, setCircleRadiusDraft] = useState<string>("0,00");
+  const [circleRadiusError, setCircleRadiusError] = useState<string | null>(
+    null
+  );
+  const [isEditingCircleRadius, setIsEditingCircleRadius] = useState(false);
+
+  const [circleRxDraft, setCircleRxDraft] = useState<string>("0,00");
+  const [circleRxError, setCircleRxError] = useState<string | null>(null);
+  const [isEditingCircleRx, setIsEditingCircleRx] = useState(false);
+
+  const [circleRyDraft, setCircleRyDraft] = useState<string>("0,00");
+  const [circleRyError, setCircleRyError] = useState<string | null>(null);
+  const [isEditingCircleRy, setIsEditingCircleRy] = useState(false);
+
+  const [circleCircDraft, setCircleCircDraft] = useState<string>("0,00");
+  const [circleCircError, setCircleCircError] = useState<string | null>(null);
+  const [isEditingCircleCirc, setIsEditingCircleCirc] = useState(false);
+
+  useEffect(() => {
+    if (!selectedCircleMeasures) return;
+
+    if (!isEditingCircleRadius) {
+      const r = selectedCircleMeasures.radiusPx;
+      setCircleRadiusDraft(formatPtBrDecimalFixed(pxToCm(r ?? 0), 2));
+      setCircleRadiusError(null);
+    }
+    if (!isEditingCircleRx) {
+      setCircleRxDraft(formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.rxPx), 2));
+      setCircleRxError(null);
+    }
+    if (!isEditingCircleRy) {
+      setCircleRyDraft(formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.ryPx), 2));
+      setCircleRyError(null);
+    }
+    if (!isEditingCircleCirc) {
+      setCircleCircDraft(
+        formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.circumferencePx), 2)
+      );
+      setCircleCircError(null);
+    }
+  }, [
+    isEditingCircleCirc,
+    isEditingCircleRadius,
+    isEditingCircleRx,
+    isEditingCircleRy,
+    selectedCircleMeasures,
+  ]);
+
+  const applyCircleRadiusDraft = (raw: string) => {
+    if (!selectedFigureId || !selectedCircleMeasures) return;
+    const cm = parsePtBrDecimal(raw);
+    if (cm == null) {
+      setCircleRadiusError("Valor inválido");
+      return;
+    }
+    const safeCm = clampMin(cm, 0.01);
+    const rPx = cmToPx(safeCm);
+    rebuildCircleGeometry(selectedFigureId, rPx, rPx);
+    setCircleRadiusDraft(formatPtBrDecimalFixed(safeCm, 2));
+    setCircleRadiusError(null);
+  };
+
+  const applyCircleRxDraft = (raw: string) => {
+    if (!selectedFigureId || !selectedCircleMeasures) return;
+    const cm = parsePtBrDecimal(raw);
+    if (cm == null) {
+      setCircleRxError("Valor inválido");
+      return;
+    }
+    const safeCm = clampMin(cm, 0.01);
+    rebuildCircleGeometry(
+      selectedFigureId,
+      cmToPx(safeCm),
+      selectedCircleMeasures.ryPx
+    );
+    setCircleRxDraft(formatPtBrDecimalFixed(safeCm, 2));
+    setCircleRxError(null);
+  };
+
+  const applyCircleRyDraft = (raw: string) => {
+    if (!selectedFigureId || !selectedCircleMeasures) return;
+    const cm = parsePtBrDecimal(raw);
+    if (cm == null) {
+      setCircleRyError("Valor inválido");
+      return;
+    }
+    const safeCm = clampMin(cm, 0.01);
+    rebuildCircleGeometry(
+      selectedFigureId,
+      selectedCircleMeasures.rxPx,
+      cmToPx(safeCm)
+    );
+    setCircleRyDraft(formatPtBrDecimalFixed(safeCm, 2));
+    setCircleRyError(null);
+  };
+
+  const applyCircleCircDraft = (raw: string) => {
+    if (!selectedFigureId || !selectedCircleMeasures) return;
+    const cm = parsePtBrDecimal(raw);
+    if (cm == null) {
+      setCircleCircError("Valor inválido");
+      return;
+    }
+    const safeCm = clampMin(cm, 0.01);
+    const targetPx = cmToPx(safeCm);
+
+    if (selectedCircleIsPerfect) {
+      const rPx = targetPx / (2 * Math.PI);
+      rebuildCircleGeometry(selectedFigureId, rPx, rPx);
+      setCircleCircDraft(formatPtBrDecimalFixed(safeCm, 2));
+      setCircleCircError(null);
+      return;
+    }
+
+    const currentPx = selectedCircleMeasures.circumferencePx;
+    if (!(currentPx > 1e-6)) {
+      setCircleCircError("Valor inválido");
+      return;
+    }
+
+    const s = targetPx / currentPx;
+    const nextRx = selectedCircleMeasures.rxPx * s;
+    const nextRy = selectedCircleMeasures.ryPx * s;
+    rebuildCircleGeometry(selectedFigureId, nextRx, nextRy);
+    setCircleCircDraft(formatPtBrDecimalFixed(safeCm, 2));
+    setCircleCircError(null);
+  };
+
+  const bumpCircleRadius = (direction: 1 | -1) => {
+    if (!selectedCircleMeasures) return;
+    const fallback = pxToCm(selectedCircleMeasures.radiusPx ?? 0);
+    const next = bumpNumericValue({
+      raw: circleRadiusDraft,
+      fallback,
+      direction,
+      step: 0.1,
+      min: 0.01,
+    });
+    const nextStr = formatPtBrDecimalFixed(next, 2);
+    setCircleRadiusDraft(nextStr);
+    applyCircleRadiusDraft(nextStr);
+  };
+
+  const bumpCircleRx = (direction: 1 | -1) => {
+    if (!selectedCircleMeasures) return;
+    const fallback = pxToCm(selectedCircleMeasures.rxPx);
+    const next = bumpNumericValue({
+      raw: circleRxDraft,
+      fallback,
+      direction,
+      step: 0.1,
+      min: 0.01,
+    });
+    const nextStr = formatPtBrDecimalFixed(next, 2);
+    setCircleRxDraft(nextStr);
+    applyCircleRxDraft(nextStr);
+  };
+
+  const bumpCircleRy = (direction: 1 | -1) => {
+    if (!selectedCircleMeasures) return;
+    const fallback = pxToCm(selectedCircleMeasures.ryPx);
+    const next = bumpNumericValue({
+      raw: circleRyDraft,
+      fallback,
+      direction,
+      step: 0.1,
+      min: 0.01,
+    });
+    const nextStr = formatPtBrDecimalFixed(next, 2);
+    setCircleRyDraft(nextStr);
+    applyCircleRyDraft(nextStr);
+  };
+
+  const bumpCircleCirc = (direction: 1 | -1) => {
+    if (!selectedCircleMeasures) return;
+    const fallback = pxToCm(selectedCircleMeasures.circumferencePx);
+    const next = bumpNumericValue({
+      raw: circleCircDraft,
+      fallback,
+      direction,
+      step: 0.1,
+      min: 0.01,
+    });
+    const nextStr = formatPtBrDecimalFixed(next, 2);
+    setCircleCircDraft(nextStr);
+    applyCircleCircDraft(nextStr);
+  };
   const selectedFigure = figures.find((f) => f.id === selectedFigureId);
 
   const [figureNameDraft, setFigureNameDraft] = useState<string>("");
@@ -1056,6 +1311,386 @@ export function PropertiesPanel() {
               {showCurveStylePanel
                 ? renderCurveStylePanel({ showHelp: true })
                 : null}
+
+              {selectedFigure?.tool === "circle" &&
+              selectedFigure.kind !== "seam" &&
+              selectedCircleMeasures ? (
+                <div className="space-y-3">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      {selectedCircleIsPerfect ? "Círculo" : "Elipse"}
+                    </span>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                      ↑↓ e scroll
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {selectedCircleIsPerfect ? (
+                      <>
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Raio
+                          </span>
+                          <input
+                            data-testid="circle-radius"
+                            className={
+                              "w-full " +
+                              inputBaseClass +
+                              " " +
+                              (circleRadiusError
+                                ? inputErrorClass
+                                : inputFocusClass)
+                            }
+                            type="text"
+                            inputMode="decimal"
+                            value={circleRadiusDraft}
+                            onFocus={() => setIsEditingCircleRadius(true)}
+                            onChange={(e) => {
+                              setCircleRadiusDraft(e.target.value);
+                              setCircleRadiusError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                bumpCircleRadius(1);
+                                return;
+                              }
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                bumpCircleRadius(-1);
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                setIsEditingCircleRadius(false);
+                                setCircleRadiusDraft(
+                                  formatPtBrDecimalFixed(
+                                    pxToCm(selectedCircleMeasures.radiusPx ?? 0),
+                                    2
+                                  )
+                                );
+                                setCircleRadiusError(null);
+                              }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                applyCircleRadiusDraft(circleRadiusDraft);
+                                setIsEditingCircleRadius(false);
+                              }
+                            }}
+                            onWheel={(e) => {
+                              if (document.activeElement !== e.currentTarget)
+                                return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              bumpCircleRadius(e.deltaY < 0 ? 1 : -1);
+                            }}
+                            onBlur={() => {
+                              applyCircleRadiusDraft(circleRadiusDraft);
+                              setIsEditingCircleRadius(false);
+                            }}
+                          />
+                          {circleRadiusError ? (
+                            <p className="text-xs text-red-600 dark:text-red-500">
+                              {circleRadiusError}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Circunferência
+                          </span>
+                          <input
+                            data-testid="circle-circumference"
+                            className={
+                              "w-full " +
+                              inputBaseClass +
+                              " " +
+                              (circleCircError
+                                ? inputErrorClass
+                                : inputFocusClass)
+                            }
+                            type="text"
+                            inputMode="decimal"
+                            value={circleCircDraft}
+                            onFocus={() => setIsEditingCircleCirc(true)}
+                            onChange={(e) => {
+                              setCircleCircDraft(e.target.value);
+                              setCircleCircError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                bumpCircleCirc(1);
+                                return;
+                              }
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                bumpCircleCirc(-1);
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                setIsEditingCircleCirc(false);
+                                setCircleCircDraft(
+                                  formatPtBrDecimalFixed(
+                                    pxToCm(
+                                      selectedCircleMeasures.circumferencePx
+                                    ),
+                                    2
+                                  )
+                                );
+                                setCircleCircError(null);
+                              }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                applyCircleCircDraft(circleCircDraft);
+                                setIsEditingCircleCirc(false);
+                              }
+                            }}
+                            onWheel={(e) => {
+                              if (document.activeElement !== e.currentTarget)
+                                return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              bumpCircleCirc(e.deltaY < 0 ? 1 : -1);
+                            }}
+                            onBlur={() => {
+                              applyCircleCircDraft(circleCircDraft);
+                              setIsEditingCircleCirc(false);
+                            }}
+                          />
+                          {circleCircError ? (
+                            <p className="text-xs text-red-600 dark:text-red-500">
+                              {circleCircError}
+                            </p>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Raio X
+                          </span>
+                          <input
+                            data-testid="circle-rx"
+                            className={
+                              "w-full " +
+                              inputBaseClass +
+                              " " +
+                              (circleRxError
+                                ? inputErrorClass
+                                : inputFocusClass)
+                            }
+                            type="text"
+                            inputMode="decimal"
+                            value={circleRxDraft}
+                            onFocus={() => setIsEditingCircleRx(true)}
+                            onChange={(e) => {
+                              setCircleRxDraft(e.target.value);
+                              setCircleRxError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                bumpCircleRx(1);
+                                return;
+                              }
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                bumpCircleRx(-1);
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                setIsEditingCircleRx(false);
+                                setCircleRxDraft(
+                                  formatPtBrDecimalFixed(
+                                    pxToCm(selectedCircleMeasures.rxPx),
+                                    2
+                                  )
+                                );
+                                setCircleRxError(null);
+                              }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                applyCircleRxDraft(circleRxDraft);
+                                setIsEditingCircleRx(false);
+                              }
+                            }}
+                            onWheel={(e) => {
+                              if (document.activeElement !== e.currentTarget)
+                                return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              bumpCircleRx(e.deltaY < 0 ? 1 : -1);
+                            }}
+                            onBlur={() => {
+                              applyCircleRxDraft(circleRxDraft);
+                              setIsEditingCircleRx(false);
+                            }}
+                          />
+                          {circleRxError ? (
+                            <p className="text-xs text-red-600 dark:text-red-500">
+                              {circleRxError}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Raio Y
+                          </span>
+                          <input
+                            data-testid="circle-ry"
+                            className={
+                              "w-full " +
+                              inputBaseClass +
+                              " " +
+                              (circleRyError
+                                ? inputErrorClass
+                                : inputFocusClass)
+                            }
+                            type="text"
+                            inputMode="decimal"
+                            value={circleRyDraft}
+                            onFocus={() => setIsEditingCircleRy(true)}
+                            onChange={(e) => {
+                              setCircleRyDraft(e.target.value);
+                              setCircleRyError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                bumpCircleRy(1);
+                                return;
+                              }
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                bumpCircleRy(-1);
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                setIsEditingCircleRy(false);
+                                setCircleRyDraft(
+                                  formatPtBrDecimalFixed(
+                                    pxToCm(selectedCircleMeasures.ryPx),
+                                    2
+                                  )
+                                );
+                                setCircleRyError(null);
+                              }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                applyCircleRyDraft(circleRyDraft);
+                                setIsEditingCircleRy(false);
+                              }
+                            }}
+                            onWheel={(e) => {
+                              if (document.activeElement !== e.currentTarget)
+                                return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              bumpCircleRy(e.deltaY < 0 ? 1 : -1);
+                            }}
+                            onBlur={() => {
+                              applyCircleRyDraft(circleRyDraft);
+                              setIsEditingCircleRy(false);
+                            }}
+                          />
+                          {circleRyError ? (
+                            <p className="text-xs text-red-600 dark:text-red-500">
+                              {circleRyError}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="space-y-1 col-span-2">
+                          <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Circunferência (aprox.)
+                          </span>
+                          <input
+                            data-testid="circle-circumference"
+                            className={
+                              "w-full " +
+                              inputBaseClass +
+                              " " +
+                              (circleCircError
+                                ? inputErrorClass
+                                : inputFocusClass)
+                            }
+                            type="text"
+                            inputMode="decimal"
+                            value={circleCircDraft}
+                            onFocus={() => setIsEditingCircleCirc(true)}
+                            onChange={(e) => {
+                              setCircleCircDraft(e.target.value);
+                              setCircleCircError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                bumpCircleCirc(1);
+                                return;
+                              }
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                bumpCircleCirc(-1);
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                setIsEditingCircleCirc(false);
+                                setCircleCircDraft(
+                                  formatPtBrDecimalFixed(
+                                    pxToCm(
+                                      selectedCircleMeasures.circumferencePx
+                                    ),
+                                    2
+                                  )
+                                );
+                                setCircleCircError(null);
+                              }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                applyCircleCircDraft(circleCircDraft);
+                                setIsEditingCircleCirc(false);
+                              }
+                            }}
+                            onWheel={(e) => {
+                              if (document.activeElement !== e.currentTarget)
+                                return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              bumpCircleCirc(e.deltaY < 0 ? 1 : -1);
+                            }}
+                            onBlur={() => {
+                              applyCircleCircDraft(circleCircDraft);
+                              setIsEditingCircleCirc(false);
+                            }}
+                          />
+                          {circleCircError ? (
+                            <p className="text-xs text-red-600 dark:text-red-500">
+                              {circleCircError}
+                            </p>
+                          ) : null}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {selectedCircleIsPerfect
+                      ? "Editar a circunferência ajusta o raio." 
+                      : "Editar a circunferência escala a elipse mantendo a proporção (Rx/Ry)."}
+                  </p>
+
+                  <div className="h-px bg-gray-200 dark:bg-gray-700"></div>
+                </div>
+              ) : null}
 
               {selectedFigureIds.length === 1 && (
                 <div>

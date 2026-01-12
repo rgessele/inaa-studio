@@ -138,13 +138,25 @@ export function computeFigureMeasures(figure: Figure): FigureMeasures {
       const rxPx = widthPx / 2;
       const ryPx = heightPx / 2;
 
-      const circumferencePx = figure.closed
-        ? figureLengthPx
-        : Math.max(0, 2 * Math.PI * ((rxPx + ryPx) / 2));
-
       const maxR = Math.max(rxPx, ryPx);
       const isCircle = maxR > 0 && Math.abs(rxPx - ryPx) / maxR <= 0.02;
       const radiusPx = isCircle ? (rxPx + ryPx) / 2 : undefined;
+
+      // Circumference:
+      // - If this is effectively a circle, use exact 2πr.
+      // - Otherwise, use a stable ellipse approximation (Ramanujan II).
+      const circumferencePx = (() => {
+        if (radiusPx != null) return Math.max(0, 2 * Math.PI * radiusPx);
+
+        const a = Math.max(rxPx, ryPx);
+        const b = Math.min(rxPx, ryPx);
+        if (!(a > 0) || !(b > 0)) return 0;
+
+        const h = ((a - b) * (a - b)) / ((a + b) * (a + b));
+        const denom = 10 + Math.sqrt(Math.max(0, 4 - 3 * h));
+        const factor = denom > 1e-9 ? 1 + (3 * h) / denom : 1;
+        return Math.max(0, Math.PI * (a + b) * factor);
+      })();
 
       measures.circle = {
         rxPx,

@@ -304,12 +304,55 @@ const MeasureOverlayRenderer = ({
     );
   };
 
+  const renderCircleMeasures = () => {
+    if (figure.tool !== "circle") return null;
+    const c = figure.measures?.circle;
+    if (!c) return null;
+
+    const centroid = figureCentroidLocal(figure);
+    const lineGap = 13 / scale;
+    const w = Math.max(textWidth, 150 / scale);
+    const isCircle = c.radiusPx != null;
+
+    const lines: string[] = [];
+    if (isCircle && c.radiusPx != null) {
+      lines.push(`Raio: ${formatCm(pxToCm(c.radiusPx), 2)}`);
+      lines.push(`Circ.: ${formatCm(pxToCm(c.circumferencePx), 2)}`);
+    } else {
+      lines.push(`Raio X: ${formatCm(pxToCm(c.rxPx), 2)}`);
+      lines.push(`Raio Y: ${formatCm(pxToCm(c.ryPx), 2)}`);
+      lines.push(`Circ. (aprox.): ${formatCm(pxToCm(c.circumferencePx), 2)}`);
+    }
+
+    const text = lines.join("\n");
+
+    return (
+      <Text
+        key={`mcircle:${figure.id}`}
+        x={centroid.x}
+        y={centroid.y - lineGap * (lines.length / 2)}
+        width={w}
+        offsetX={w / 2}
+        offsetY={0}
+        text={text}
+        fontSize={fontSize}
+        lineHeight={1.15}
+        align="center"
+        fill={fill}
+        opacity={opacity}
+        listening={false}
+        name="inaa-measure-label"
+      />
+    );
+  };
+
   const renderFigureLabels = () => {
     if (!figure.measures) return null;
     return (
       <>
         {renderSelectedEdgeHighlight()}
         {renderHoveredEdgeHighlight()}
+        {renderCircleMeasures()}
         {figure.edges.map((edge) => renderEdgeLabel(edge))}
       </>
     );
