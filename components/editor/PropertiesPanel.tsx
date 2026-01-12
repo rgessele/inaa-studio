@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { useEditor } from "./EditorContext";
 import { figureWorldBoundingBox } from "./figurePath";
 import { cmToPx, pxToCm } from "./measureUnits";
@@ -118,56 +118,49 @@ export function PropertiesPanel() {
   const [circleRadiusError, setCircleRadiusError] = useState<string | null>(
     null
   );
-  const [isEditingCircleRadius, setIsEditingCircleRadius] = useState(false);
+  const [circleRadiusEditingForId, setCircleRadiusEditingForId] = useState<
+    string | null
+  >(null);
 
   const [circleRxDraft, setCircleRxDraft] = useState<string>("0,00");
   const [circleRxError, setCircleRxError] = useState<string | null>(null);
-  const [isEditingCircleRx, setIsEditingCircleRx] = useState(false);
+  const [circleRxEditingForId, setCircleRxEditingForId] = useState<string | null>(
+    null
+  );
 
   const [circleRyDraft, setCircleRyDraft] = useState<string>("0,00");
   const [circleRyError, setCircleRyError] = useState<string | null>(null);
-  const [isEditingCircleRy, setIsEditingCircleRy] = useState(false);
+  const [circleRyEditingForId, setCircleRyEditingForId] = useState<string | null>(
+    null
+  );
 
   const [circleCircDraft, setCircleCircDraft] = useState<string>("0,00");
   const [circleCircError, setCircleCircError] = useState<string | null>(null);
-  const [isEditingCircleCirc, setIsEditingCircleCirc] = useState(false);
+  const [circleCircEditingForId, setCircleCircEditingForId] = useState<
+    string | null
+  >(null);
 
-  useEffect(() => {
-    if (!selectedCircleMeasures) return;
+  const isEditingCircleRadius =
+    selectedFigureId != null && circleRadiusEditingForId === selectedFigureId;
+  const isEditingCircleRx =
+    selectedFigureId != null && circleRxEditingForId === selectedFigureId;
+  const isEditingCircleRy =
+    selectedFigureId != null && circleRyEditingForId === selectedFigureId;
+  const isEditingCircleCirc =
+    selectedFigureId != null && circleCircEditingForId === selectedFigureId;
 
-    if (!isEditingCircleRadius) {
-      const r = selectedCircleMeasures.radiusPx;
-      setCircleRadiusDraft(formatPtBrDecimalFixed(pxToCm(r ?? 0), 2));
-      setCircleRadiusError(null);
-    }
-    if (!isEditingCircleRx) {
-      setCircleRxDraft(
-        formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.rxPx), 2)
-      );
-      setCircleRxError(null);
-    }
-    if (!isEditingCircleRy) {
-      setCircleRyDraft(
-        formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.ryPx), 2)
-      );
-      setCircleRyError(null);
-    }
-    if (!isEditingCircleCirc) {
-      setCircleCircDraft(
-        formatPtBrDecimalFixed(
-          pxToCm(selectedCircleMeasures.circumferencePx),
-          2
-        )
-      );
-      setCircleCircError(null);
-    }
-  }, [
-    isEditingCircleCirc,
-    isEditingCircleRadius,
-    isEditingCircleRx,
-    isEditingCircleRy,
-    selectedCircleMeasures,
-  ]);
+  const circleRadiusValue = selectedCircleMeasures
+    ? formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.radiusPx ?? 0), 2)
+    : "0,00";
+  const circleRxValue = selectedCircleMeasures
+    ? formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.rxPx), 2)
+    : "0,00";
+  const circleRyValue = selectedCircleMeasures
+    ? formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.ryPx), 2)
+    : "0,00";
+  const circleCircValue = selectedCircleMeasures
+    ? formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.circumferencePx), 2)
+    : "0,00";
 
   const applyCircleRadiusDraft = (raw: string) => {
     if (!selectedFigureId || !selectedCircleMeasures) return;
@@ -1342,14 +1335,23 @@ export function PropertiesPanel() {
                               "w-full " +
                               inputBaseClass +
                               " " +
-                              (circleRadiusError
+                              (isEditingCircleRadius && circleRadiusError
                                 ? inputErrorClass
                                 : inputFocusClass)
                             }
                             type="text"
                             inputMode="decimal"
-                            value={circleRadiusDraft}
-                            onFocus={() => setIsEditingCircleRadius(true)}
+                            value={
+                              isEditingCircleRadius
+                                ? circleRadiusDraft
+                                : circleRadiusValue
+                            }
+                            onFocus={() => {
+                              if (!selectedFigureId) return;
+                              setCircleRadiusDraft(circleRadiusValue);
+                              setCircleRadiusError(null);
+                              setCircleRadiusEditingForId(selectedFigureId);
+                            }}
                             onChange={(e) => {
                               setCircleRadiusDraft(e.target.value);
                               setCircleRadiusError(null);
@@ -1367,21 +1369,14 @@ export function PropertiesPanel() {
                               }
                               if (e.key === "Escape") {
                                 e.preventDefault();
-                                setIsEditingCircleRadius(false);
-                                setCircleRadiusDraft(
-                                  formatPtBrDecimalFixed(
-                                    pxToCm(
-                                      selectedCircleMeasures.radiusPx ?? 0
-                                    ),
-                                    2
-                                  )
-                                );
+                                setCircleRadiusEditingForId(null);
+                                setCircleRadiusDraft(circleRadiusValue);
                                 setCircleRadiusError(null);
                               }
                               if (e.key === "Enter") {
                                 e.preventDefault();
                                 applyCircleRadiusDraft(circleRadiusDraft);
-                                setIsEditingCircleRadius(false);
+                                setCircleRadiusEditingForId(null);
                               }
                             }}
                             onWheel={(e) => {
@@ -1393,10 +1388,10 @@ export function PropertiesPanel() {
                             }}
                             onBlur={() => {
                               applyCircleRadiusDraft(circleRadiusDraft);
-                              setIsEditingCircleRadius(false);
+                              setCircleRadiusEditingForId(null);
                             }}
                           />
-                          {circleRadiusError ? (
+                          {isEditingCircleRadius && circleRadiusError ? (
                             <p className="text-xs text-red-600 dark:text-red-500">
                               {circleRadiusError}
                             </p>
@@ -1413,14 +1408,23 @@ export function PropertiesPanel() {
                               "w-full " +
                               inputBaseClass +
                               " " +
-                              (circleCircError
+                              (isEditingCircleCirc && circleCircError
                                 ? inputErrorClass
                                 : inputFocusClass)
                             }
                             type="text"
                             inputMode="decimal"
-                            value={circleCircDraft}
-                            onFocus={() => setIsEditingCircleCirc(true)}
+                            value={
+                              isEditingCircleCirc
+                                ? circleCircDraft
+                                : circleCircValue
+                            }
+                            onFocus={() => {
+                              if (!selectedFigureId) return;
+                              setCircleCircDraft(circleCircValue);
+                              setCircleCircError(null);
+                              setCircleCircEditingForId(selectedFigureId);
+                            }}
                             onChange={(e) => {
                               setCircleCircDraft(e.target.value);
                               setCircleCircError(null);
@@ -1438,21 +1442,14 @@ export function PropertiesPanel() {
                               }
                               if (e.key === "Escape") {
                                 e.preventDefault();
-                                setIsEditingCircleCirc(false);
-                                setCircleCircDraft(
-                                  formatPtBrDecimalFixed(
-                                    pxToCm(
-                                      selectedCircleMeasures.circumferencePx
-                                    ),
-                                    2
-                                  )
-                                );
+                                setCircleCircEditingForId(null);
+                                setCircleCircDraft(circleCircValue);
                                 setCircleCircError(null);
                               }
                               if (e.key === "Enter") {
                                 e.preventDefault();
                                 applyCircleCircDraft(circleCircDraft);
-                                setIsEditingCircleCirc(false);
+                                setCircleCircEditingForId(null);
                               }
                             }}
                             onWheel={(e) => {
@@ -1464,10 +1461,10 @@ export function PropertiesPanel() {
                             }}
                             onBlur={() => {
                               applyCircleCircDraft(circleCircDraft);
-                              setIsEditingCircleCirc(false);
+                              setCircleCircEditingForId(null);
                             }}
                           />
-                          {circleCircError ? (
+                          {isEditingCircleCirc && circleCircError ? (
                             <p className="text-xs text-red-600 dark:text-red-500">
                               {circleCircError}
                             </p>
@@ -1486,14 +1483,19 @@ export function PropertiesPanel() {
                               "w-full " +
                               inputBaseClass +
                               " " +
-                              (circleRxError
+                              (isEditingCircleRx && circleRxError
                                 ? inputErrorClass
                                 : inputFocusClass)
                             }
                             type="text"
                             inputMode="decimal"
-                            value={circleRxDraft}
-                            onFocus={() => setIsEditingCircleRx(true)}
+                            value={isEditingCircleRx ? circleRxDraft : circleRxValue}
+                            onFocus={() => {
+                              if (!selectedFigureId) return;
+                              setCircleRxDraft(circleRxValue);
+                              setCircleRxError(null);
+                              setCircleRxEditingForId(selectedFigureId);
+                            }}
                             onChange={(e) => {
                               setCircleRxDraft(e.target.value);
                               setCircleRxError(null);
@@ -1511,19 +1513,14 @@ export function PropertiesPanel() {
                               }
                               if (e.key === "Escape") {
                                 e.preventDefault();
-                                setIsEditingCircleRx(false);
-                                setCircleRxDraft(
-                                  formatPtBrDecimalFixed(
-                                    pxToCm(selectedCircleMeasures.rxPx),
-                                    2
-                                  )
-                                );
+                                setCircleRxEditingForId(null);
+                                setCircleRxDraft(circleRxValue);
                                 setCircleRxError(null);
                               }
                               if (e.key === "Enter") {
                                 e.preventDefault();
                                 applyCircleRxDraft(circleRxDraft);
-                                setIsEditingCircleRx(false);
+                                setCircleRxEditingForId(null);
                               }
                             }}
                             onWheel={(e) => {
@@ -1535,10 +1532,10 @@ export function PropertiesPanel() {
                             }}
                             onBlur={() => {
                               applyCircleRxDraft(circleRxDraft);
-                              setIsEditingCircleRx(false);
+                              setCircleRxEditingForId(null);
                             }}
                           />
-                          {circleRxError ? (
+                          {isEditingCircleRx && circleRxError ? (
                             <p className="text-xs text-red-600 dark:text-red-500">
                               {circleRxError}
                             </p>
@@ -1555,14 +1552,19 @@ export function PropertiesPanel() {
                               "w-full " +
                               inputBaseClass +
                               " " +
-                              (circleRyError
+                              (isEditingCircleRy && circleRyError
                                 ? inputErrorClass
                                 : inputFocusClass)
                             }
                             type="text"
                             inputMode="decimal"
-                            value={circleRyDraft}
-                            onFocus={() => setIsEditingCircleRy(true)}
+                            value={isEditingCircleRy ? circleRyDraft : circleRyValue}
+                            onFocus={() => {
+                              if (!selectedFigureId) return;
+                              setCircleRyDraft(circleRyValue);
+                              setCircleRyError(null);
+                              setCircleRyEditingForId(selectedFigureId);
+                            }}
                             onChange={(e) => {
                               setCircleRyDraft(e.target.value);
                               setCircleRyError(null);
@@ -1580,19 +1582,14 @@ export function PropertiesPanel() {
                               }
                               if (e.key === "Escape") {
                                 e.preventDefault();
-                                setIsEditingCircleRy(false);
-                                setCircleRyDraft(
-                                  formatPtBrDecimalFixed(
-                                    pxToCm(selectedCircleMeasures.ryPx),
-                                    2
-                                  )
-                                );
+                                setCircleRyEditingForId(null);
+                                setCircleRyDraft(circleRyValue);
                                 setCircleRyError(null);
                               }
                               if (e.key === "Enter") {
                                 e.preventDefault();
                                 applyCircleRyDraft(circleRyDraft);
-                                setIsEditingCircleRy(false);
+                                setCircleRyEditingForId(null);
                               }
                             }}
                             onWheel={(e) => {
@@ -1604,10 +1601,10 @@ export function PropertiesPanel() {
                             }}
                             onBlur={() => {
                               applyCircleRyDraft(circleRyDraft);
-                              setIsEditingCircleRy(false);
+                              setCircleRyEditingForId(null);
                             }}
                           />
-                          {circleRyError ? (
+                          {isEditingCircleRy && circleRyError ? (
                             <p className="text-xs text-red-600 dark:text-red-500">
                               {circleRyError}
                             </p>
@@ -1624,14 +1621,23 @@ export function PropertiesPanel() {
                               "w-full " +
                               inputBaseClass +
                               " " +
-                              (circleCircError
+                              (isEditingCircleCirc && circleCircError
                                 ? inputErrorClass
                                 : inputFocusClass)
                             }
                             type="text"
                             inputMode="decimal"
-                            value={circleCircDraft}
-                            onFocus={() => setIsEditingCircleCirc(true)}
+                            value={
+                              isEditingCircleCirc
+                                ? circleCircDraft
+                                : circleCircValue
+                            }
+                            onFocus={() => {
+                              if (!selectedFigureId) return;
+                              setCircleCircDraft(circleCircValue);
+                              setCircleCircError(null);
+                              setCircleCircEditingForId(selectedFigureId);
+                            }}
                             onChange={(e) => {
                               setCircleCircDraft(e.target.value);
                               setCircleCircError(null);
@@ -1649,21 +1655,14 @@ export function PropertiesPanel() {
                               }
                               if (e.key === "Escape") {
                                 e.preventDefault();
-                                setIsEditingCircleCirc(false);
-                                setCircleCircDraft(
-                                  formatPtBrDecimalFixed(
-                                    pxToCm(
-                                      selectedCircleMeasures.circumferencePx
-                                    ),
-                                    2
-                                  )
-                                );
+                                setCircleCircEditingForId(null);
+                                setCircleCircDraft(circleCircValue);
                                 setCircleCircError(null);
                               }
                               if (e.key === "Enter") {
                                 e.preventDefault();
                                 applyCircleCircDraft(circleCircDraft);
-                                setIsEditingCircleCirc(false);
+                                setCircleCircEditingForId(null);
                               }
                             }}
                             onWheel={(e) => {
@@ -1675,10 +1674,10 @@ export function PropertiesPanel() {
                             }}
                             onBlur={() => {
                               applyCircleCircDraft(circleCircDraft);
-                              setIsEditingCircleCirc(false);
+                              setCircleCircEditingForId(null);
                             }}
                           />
-                          {circleCircError ? (
+                          {isEditingCircleCirc && circleCircError ? (
                             <p className="text-xs text-red-600 dark:text-red-500">
                               {circleCircError}
                             </p>
