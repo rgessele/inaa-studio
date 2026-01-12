@@ -185,6 +185,10 @@ export interface Figure {
   styledData?: StyledCurveData;
   derivedFrom?: DerivedFromCurveStyle;
 
+  // Per-edge Styled Curves (used when applying presets to a single cubic edge
+  // inside a non-curve figure).
+  styledEdges?: Record<string, StyledCurveData>;
+
   // Styled Curves: baseline snapshot for "Customizado" restore.
   // Stores the user’s chosen (or auto-captured) custom geometry.
   customSnapshot?: {

@@ -74,7 +74,15 @@ declare global {
         x: number;
         y: number;
         rotation: number;
-        nodes: Array<{ id: string; x: number; y: number }>;
+        closed: boolean;
+        nodes: Array<{
+          id: string;
+          x: number;
+          y: number;
+          mode: "smooth" | "corner";
+          inHandle: { x: number; y: number } | null;
+          outHandle: { x: number; y: number } | null;
+        }>;
         edges: Array<{ id: string; from: string; to: string; kind: string }>;
       }>;
       getSelectedFigureStats?: () => {

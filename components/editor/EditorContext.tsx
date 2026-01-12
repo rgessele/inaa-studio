@@ -653,7 +653,17 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           x: f.x,
           y: f.y,
           rotation: f.rotation || 0,
-          nodes: f.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y })),
+          closed: f.closed,
+          nodes: f.nodes.map((n) => ({
+            id: n.id,
+            x: n.x,
+            y: n.y,
+            mode: n.mode,
+            inHandle: n.inHandle ? { x: n.inHandle.x, y: n.inHandle.y } : null,
+            outHandle: n.outHandle
+              ? { x: n.outHandle.x, y: n.outHandle.y }
+              : null,
+          })),
           edges: f.edges.map((e) => ({
             id: e.id,
             from: e.from,

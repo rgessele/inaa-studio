@@ -784,6 +784,107 @@ function projectNormalizedToWorld(opts: {
   return add(startWorld, add(mul(ux, p.x), mul(uy, p.y)));
 }
 
+export function applySemanticStyleToFigureEdge(opts: {
+  figure: Figure;
+  edgeId: string;
+  semanticId: SemanticCurveId;
+  params?: Partial<StyledCurveParams>;
+}): { figure: Figure } | { error: string } {
+  const { figure, edgeId, semanticId } = opts;
+  if (figure.kind === "seam") return { error: "Selecione a figura base." };
+
+  const edge = figure.edges.find((e) => e.id === edgeId) ?? null;
+  if (!edge) return { error: "Aresta não encontrada." };
+
+  const n0 = getNode(figure.nodes, edge.from);
+  const n3 = getNode(figure.nodes, edge.to);
+  if (!n0 || !n3) return { error: "Aresta sem nós válidos." };
+
+  const preset =
+    SEMANTIC_CURVE_PRESETS.find((p) => p.id === semanticId) ?? null;
+  if (!preset) return { error: "Preset de curva inválido." };
+
+  const template = TECHNICAL_CURVE_TEMPLATES[preset.technicalId] ?? null;
+  if (!template) return { error: "Template técnico não encontrado." };
+
+  const params: StyledCurveParams = {
+    ...preset.defaultParams,
+    ...(opts.params ?? {}),
+  };
+
+  const startWorld = figureLocalToWorld(figure, { x: n0.x, y: n0.y });
+  const endWorld = figureLocalToWorld(figure, { x: n3.x, y: n3.y });
+
+  const p1n = applyParamsToNormalizedPoint(template.p1, params);
+  const p2n = applyParamsToNormalizedPoint(template.p2, params);
+
+  const p1w = projectNormalizedToWorld({ startWorld, endWorld, p: p1n });
+  const p2w = projectNormalizedToWorld({ startWorld, endWorld, p: p2n });
+
+  const p1l = worldToFigureLocal(figure, p1w);
+  const p2l = worldToFigureLocal(figure, p2w);
+
+  const nodes = cloneNodes(figure.nodes);
+  const idx0 = nodes.findIndex((n) => n.id === edge.from);
+  const idx3 = nodes.findIndex((n) => n.id === edge.to);
+  if (idx0 < 0 || idx3 < 0) return { error: "Aresta sem nós válidos." };
+
+  nodes[idx0] = {
+    ...nodes[idx0],
+    mode: "smooth",
+    outHandle: { x: p1l.x, y: p1l.y },
+  };
+  nodes[idx3] = {
+    ...nodes[idx3],
+    mode: "smooth",
+    inHandle: { x: p2l.x, y: p2l.y },
+  };
+
+  const edges = cloneEdges(figure.edges);
+  const eIdx = edges.findIndex((e) => e.id === edgeId);
+  edges[eIdx] = { ...edges[eIdx], kind: "cubic" };
+
+  const styledData: StyledCurveData = {
+    semanticId: preset.id,
+    technicalId: preset.technicalId,
+    params,
+  };
+
+  return {
+    figure: {
+      ...figure,
+      nodes,
+      edges,
+      styledEdges: {
+        ...(figure.styledEdges ?? {}),
+        [edgeId]: styledData,
+      },
+    },
+  };
+}
+
+export function reapplyStyledEdgeWithParams(opts: {
+  figure: Figure;
+  edgeId: string;
+  params: Partial<StyledCurveParams>;
+}): { figure: Figure } | { error: string } {
+  const { figure, edgeId, params } = opts;
+  const styled = figure.styledEdges?.[edgeId] ?? null;
+  if (!styled) return { error: "Aresta não está em modo styled." };
+
+  const merged: StyledCurveParams = {
+    ...styled.params,
+    ...params,
+  };
+
+  return applySemanticStyleToFigureEdge({
+    figure,
+    edgeId,
+    semanticId: styled.semanticId,
+    params: merged,
+  });
+}
+
 export function applySemanticStyleToCurveFigure(opts: {
   figure: Figure;
   semanticId: SemanticCurveId;

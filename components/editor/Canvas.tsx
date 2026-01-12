@@ -59,6 +59,7 @@ import {
   breakStyledLinkIfNeeded,
   markCurveCustomSnapshotDirtyIfPresent,
 } from "./styledCurves";
+import { convertEdgeToCubic, convertEdgeToLine } from "./edgeConvert";
 import { Ruler } from "./Ruler";
 import { Minimap } from "./Minimap";
 import { MemoizedFigure } from "./FigureRenderer";
@@ -118,6 +119,14 @@ function id(prefix: string): string {
 type MeasureEdgeHover = {
   figureId: string;
   edgeId: string;
+} | null;
+
+type EdgeContextMenuState = {
+  x: number;
+  y: number;
+  figureId: string;
+  edgeId: string;
+  edgeKind: "line" | "cubic";
 } | null;
 
 function seamSourceSignature(base: Figure, offsetCm?: number): string {
@@ -1264,6 +1273,7 @@ function makeCurveFromPoints(
 export default function Canvas() {
   const {
     tool,
+    setTool,
     figures,
     setFigures,
     selectedFigureIds,
@@ -1414,7 +1424,10 @@ export default function Canvas() {
   }, [edgeEditDraft, selectedEdge]);
 
   useEffect(() => {
-    if (tool === "select") return;
+    // Selected edges are primarily a select/node editing affordance.
+    // Clear them when switching away from those tools so we don't keep showing
+    // edge-specific UI in unrelated tools.
+    if (tool === "select" || tool === "node") return;
     if (selectedEdge) setSelectedEdge(null);
   }, [selectedEdge, setSelectedEdge, tool]);
   const backgroundRef = useRef<Konva.Rect | null>(null);
@@ -1470,6 +1483,9 @@ export default function Canvas() {
   const [marqueeDraft, setMarqueeDraft] = useState<MarqueeDraft>(null);
   const [hoveredMeasureEdge, setHoveredMeasureEdge] =
     useState<MeasureEdgeHover>(null);
+
+  const [edgeContextMenu, setEdgeContextMenu] =
+    useState<EdgeContextMenuState>(null);
   const [magnetSnap, setMagnetSnap] = useState<{
     pointWorld: Vec2;
     kind: "node" | "edge" | "guide";
@@ -2336,6 +2352,66 @@ export default function Canvas() {
     return Math.max(0.01, v);
   }, []);
 
+  useEffect(() => {
+    if (!edgeContextMenu) return;
+
+    const onDown = (evt: MouseEvent) => {
+      const target = evt.target as HTMLElement | null;
+      if (target?.closest?.('[data-testid="edge-context-menu"]')) return;
+      setEdgeContextMenu(null);
+    };
+
+    const onKey = (evt: KeyboardEvent) => {
+      if (evt.key === "Escape") setEdgeContextMenu(null);
+    };
+
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [edgeContextMenu]);
+
+  const handleConvertContextEdge = useCallback(
+    (kind: "cubic" | "line") => {
+      if (!edgeContextMenu) return;
+      const { figureId, edgeId } = edgeContextMenu;
+
+      setFigures((prev) =>
+        prev.map((f) => {
+          if (f.id !== figureId) return f;
+          if (f.kind === "seam") return f;
+
+          const updatedRaw =
+            kind === "cubic"
+              ? convertEdgeToCubic(f, edgeId)
+              : convertEdgeToLine(f, edgeId);
+
+          if (updatedRaw === f) return f;
+          return markCurveCustomSnapshotDirtyIfPresent(
+            breakStyledLinkIfNeeded(updatedRaw)
+          );
+        })
+      );
+
+      setSelectedFigureIds([figureId]);
+      setSelectedEdge({ figureId, edgeId, anchor: "mid" });
+
+      if (kind === "cubic") {
+        setTool("node");
+      }
+      setEdgeContextMenu(null);
+    },
+    [
+      edgeContextMenu,
+      setFigures,
+      setSelectedEdge,
+      setSelectedFigureIds,
+      setTool,
+    ]
+  );
+
   const openInlineEdgeEdit = useCallback(
     (opts: {
       figureId: string;
@@ -2504,6 +2580,23 @@ export default function Canvas() {
     const stage = stageRef.current;
     if (!stage) return;
 
+    // Node tool: if the click started on an interactive node/handle, do not
+    // run the edge-splitting logic on the stage. This fixes a bug where dragging
+    // a handle that lies on top of the edge stroke would insert a new node.
+    if (tool === "node") {
+      try {
+        const targetName = e.target?.name?.() ?? "";
+        if (
+          targetName.includes("inaa-node-point") ||
+          targetName.includes("inaa-node-handle")
+        ) {
+          return;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     // Cursor badge should never show while pointer is down.
     isPointerDownRef.current = true;
     hideCursorBadge();
@@ -2662,6 +2755,7 @@ export default function Canvas() {
 
     if (
       tool === "node" &&
+      e.evt.button === 0 &&
       hoveredNodeId &&
       selectedFigureId &&
       selectedFigure &&
@@ -2678,6 +2772,7 @@ export default function Canvas() {
 
     if (
       tool === "node" &&
+      e.evt.button === 0 &&
       hoveredEdge &&
       selectedFigureId &&
       selectedFigure &&
@@ -3702,6 +3797,14 @@ export default function Canvas() {
                     handle: null,
                   });
                 }}
+                onMouseDown={(ev) => {
+                  ev.cancelBubble = true;
+                  setNodeSelection({
+                    figureId: selectedFigure.id,
+                    nodeId: n.id,
+                    handle: null,
+                  });
+                }}
               />
 
               {/* Visual node */}
@@ -3745,6 +3848,7 @@ export default function Canvas() {
                   x={inH.x}
                   y={inH.y}
                   radius={rHandle}
+                  name="inaa-node-handle in"
                   fill={handleAccentStroke}
                   stroke={aci7}
                   strokeWidth={1 / scale}
@@ -3793,6 +3897,14 @@ export default function Canvas() {
                       handle: "in",
                     });
                   }}
+                  onMouseDown={(ev) => {
+                    ev.cancelBubble = true;
+                    setNodeSelection({
+                      figureId: selectedFigure.id,
+                      nodeId: n.id,
+                      handle: "in",
+                    });
+                  }}
                 />
               ) : null}
 
@@ -3801,6 +3913,7 @@ export default function Canvas() {
                   x={outH.x}
                   y={outH.y}
                   radius={rHandle}
+                  name="inaa-node-handle out"
                   fill={handleAccentStroke}
                   stroke={aci7}
                   strokeWidth={1 / scale}
@@ -3842,6 +3955,14 @@ export default function Canvas() {
                     );
                   }}
                   onPointerDown={(ev) => {
+                    ev.cancelBubble = true;
+                    setNodeSelection({
+                      figureId: selectedFigure.id,
+                      nodeId: n.id,
+                      handle: "out",
+                    });
+                  }}
+                  onMouseDown={(ev) => {
                     ev.cancelBubble = true;
                     setNodeSelection({
                       figureId: selectedFigure.id,
@@ -4147,6 +4268,39 @@ export default function Canvas() {
           </div>
         ) : null}
 
+        {edgeContextMenu ? (
+          <div
+            data-testid="edge-context-menu"
+            className="absolute z-[100] min-w-[220px] bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-1"
+            style={{ left: edgeContextMenu.x, top: edgeContextMenu.y }}
+            onContextMenu={(evt) => evt.preventDefault()}
+            onMouseDown={(evt) => {
+              evt.preventDefault();
+              evt.stopPropagation();
+            }}
+          >
+            {edgeContextMenu.edgeKind === "line" ? (
+              <button
+                type="button"
+                data-testid="edge-context-convert-to-curve"
+                className="w-full text-left text-xs px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
+                onClick={() => handleConvertContextEdge("cubic")}
+              >
+                Converter para curva
+              </button>
+            ) : (
+              <button
+                type="button"
+                data-testid="edge-context-convert-to-line"
+                className="w-full text-left text-xs px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
+                onClick={() => handleConvertContextEdge("line")}
+              >
+                Converter para linha
+              </button>
+            )}
+          </div>
+        ) : null}
+
         {edgeEditDraft ? (
           <div
             className="absolute z-50"
@@ -4295,6 +4449,55 @@ export default function Canvas() {
           onContextMenu={(e) => {
             // Disable browser context menu inside the canvas.
             e.evt.preventDefault();
+
+            const stage = stageRef.current;
+            if (!stage) return;
+
+            stage.setPointersPositions(e.evt);
+            const pos = stage.getPointerPosition();
+            if (!pos) return;
+
+            const world = {
+              x: (pos.x - position.x) / scale,
+              y: (pos.y - position.y) / scale,
+            };
+
+            const thresholdWorld = 12 / scale;
+            const figId = findHoveredFigureId(figures, world, thresholdWorld);
+            const fig = figId ? (figures.find((f) => f.id === figId) ?? null) : null;
+            if (!fig || fig.kind === "seam") {
+              setEdgeContextMenu(null);
+              return;
+            }
+
+            const local = worldToFigureLocal(fig, world);
+            const hit = findNearestEdge(fig, local);
+            if (!hit.best || hit.bestDist > thresholdWorld) {
+              setEdgeContextMenu(null);
+              return;
+            }
+
+            const edge = fig.edges.find((ed) => ed.id === hit.best!.edgeId) ?? null;
+            if (!edge) {
+              setEdgeContextMenu(null);
+              return;
+            }
+
+            const rect = containerRef.current?.getBoundingClientRect();
+            if (!rect) return;
+
+            // Select for discoverability.
+            setSelectedFigureIds([fig.id]);
+            setSelectedEdge({ figureId: fig.id, edgeId: edge.id, anchor: "mid" });
+
+            setEdgeEditDraft(null);
+            setEdgeContextMenu({
+              x: e.evt.clientX - rect.left,
+              y: e.evt.clientY - rect.top,
+              figureId: fig.id,
+              edgeId: edge.id,
+              edgeKind: edge.kind,
+            });
           }}
         >
           <Layer id="grid-layer">

@@ -8,6 +8,7 @@ import { PX_PER_CM } from "./constants";
 import { setEdgeTargetLengthPx } from "./edgeEdit";
 import {
   applySemanticStyleToCurveFigure,
+  applySemanticStyleToFigureEdge,
   ensureCurveCustomSnapshot,
   restoreCurveCustomSnapshot,
   saveCurveCustomSnapshot,
@@ -17,6 +18,7 @@ import type { SemanticCurveId } from "./types";
 import {
   breakStyledLinkIfNeeded,
   markCurveCustomSnapshotDirtyIfPresent,
+  reapplyStyledEdgeWithParams,
   reapplyStyledCurveWithParams,
 } from "./styledCurves";
 import type { StyledCurveParams } from "./types";
@@ -69,7 +71,34 @@ export function PropertiesPanel() {
 
   const curveSelection =
     selectedFigure?.tool === "curve" ? selectedFigure : null;
-  const showCurveStylePanel = tool === "curve" || curveSelection != null;
+
+  const selectedEdgeKind: "line" | "cubic" | null = (() => {
+    if (!selectedEdge) return null;
+    if (!selectedFigure) return null;
+    if (selectedEdge.figureId !== selectedFigure.id) return null;
+    const edge = selectedFigure.edges.find((e) => e.id === selectedEdge.edgeId);
+    return edge?.kind ?? null;
+  })();
+
+  const isCubicEdgeSelected = selectedEdgeKind === "cubic";
+
+  const selectedEdgeIdForCurveStyle = (() => {
+    if (!isCubicEdgeSelected) return null;
+    if (!selectedEdge) return null;
+    if (!selectedFigure) return null;
+    if (selectedEdge.figureId !== selectedFigure.id) return null;
+    return selectedEdge.edgeId;
+  })();
+
+  const edgeStyledData =
+    selectedFigure && selectedEdgeIdForCurveStyle
+      ? (selectedFigure.styledEdges?.[selectedEdgeIdForCurveStyle] ?? null)
+      : null;
+
+  const activeStyledData = curveSelection?.styledData ?? edgeStyledData;
+
+  const showCurveStylePanel =
+    tool === "curve" || curveSelection != null || isCubicEdgeSelected;
   const presetGroups = semanticPresetsByCategory();
   const defaultPresetId = presetGroups.flatMap((g) => g.presets)[0]?.id ?? null;
   const [curveStylePresetId, setCurveStylePresetId] = useState<
@@ -90,7 +119,7 @@ export function PropertiesPanel() {
   }, [presetGroups]);
 
   const activeStyleMeta = (() => {
-    const semanticId = curveSelection?.styledData?.semanticId;
+    const semanticId = activeStyledData?.semanticId;
     if (!semanticId) return null;
     return {
       semanticId,
@@ -102,7 +131,7 @@ export function PropertiesPanel() {
   })();
 
   const selectedStyledParams: StyledCurveParams | null =
-    curveSelection?.styledData?.params ?? null;
+    activeStyledData?.params ?? null;
 
   const [curveHeightDraft, setCurveHeightDraft] = useState<string>("1,00");
   const [curveHeightError, setCurveHeightError] = useState<string | null>(null);
@@ -132,9 +161,15 @@ export function PropertiesPanel() {
         })
       );
     }
-    if (!curveSelection.styledData) return;
+  }, [
+    curveSelection,
+    setFigures,
+  ]);
 
-    const p = curveSelection.styledData.params;
+  React.useEffect(() => {
+    const p = activeStyledData?.params;
+    if (!p) return;
+
     if (!isEditingCurveHeight) {
       setCurveHeightDraft(formatPtBrDecimalFixed(p.height, 2));
       setCurveHeightError(null);
@@ -150,21 +185,20 @@ export function PropertiesPanel() {
     setCurveFlipX(!!p.flipX);
     setCurveFlipY(!!p.flipY);
   }, [
-    curveSelection,
+    activeStyledData,
     isEditingCurveBias,
     isEditingCurveHeight,
     isEditingCurveRotation,
-    setFigures,
   ]);
 
   React.useEffect(() => {
-    if (!curveSelection) return;
-    if (curveSelection.styledData?.semanticId) {
-      setCurveStylePresetId(curveSelection.styledData.semanticId);
+    const semanticId = activeStyledData?.semanticId ?? null;
+    if (semanticId) {
+      setCurveStylePresetId(semanticId);
       return;
     }
     setCurveStylePresetId("");
-  }, [curveSelection]);
+  }, [activeStyledData]);
 
   React.useEffect(() => {
     if (!showCurveStylePanel) return;
@@ -187,15 +221,30 @@ export function PropertiesPanel() {
   ]);
 
   const applyCurveStyleById = (semanticId: SemanticCurveId) => {
-    if (!curveSelection) return;
+    if (curveSelection) {
+      setSelectedEdge(null);
+      setFigures((prev) =>
+        prev.map((f) => {
+          if (f.id !== curveSelection.id) return f;
+          if (f.kind === "seam") return f;
+          const res = applySemanticStyleToCurveFigure({
+            figure: f,
+            semanticId,
+          });
+          return "figure" in res ? res.figure : f;
+        })
+      );
+      return;
+    }
 
-    setSelectedEdge(null);
+    if (!selectedFigure || !selectedEdgeIdForCurveStyle) return;
     setFigures((prev) =>
       prev.map((f) => {
-        if (f.id !== curveSelection.id) return f;
+        if (f.id !== selectedFigure.id) return f;
         if (f.kind === "seam") return f;
-        const res = applySemanticStyleToCurveFigure({
+        const res = applySemanticStyleToFigureEdge({
           figure: f,
+          edgeId: selectedEdgeIdForCurveStyle,
           semanticId,
         });
         return "figure" in res ? res.figure : f;
@@ -227,15 +276,31 @@ export function PropertiesPanel() {
   };
 
   const applyStyledParams = (params: Partial<StyledCurveParams>) => {
-    if (!curveSelection) return;
-    if (!curveSelection.styledData) return;
+    if (curveSelection) {
+      if (!curveSelection.styledData) return;
+      setSelectedEdge(null);
+      setFigures((prev) =>
+        prev.map((f) => {
+          if (f.id !== curveSelection.id) return f;
+          if (f.kind === "seam") return f;
+          const res = reapplyStyledCurveWithParams({ figure: f, params });
+          return "figure" in res ? res.figure : f;
+        })
+      );
+      return;
+    }
 
-    setSelectedEdge(null);
+    if (!selectedFigure || !selectedEdgeIdForCurveStyle) return;
+    if (!edgeStyledData) return;
     setFigures((prev) =>
       prev.map((f) => {
-        if (f.id !== curveSelection.id) return f;
+        if (f.id !== selectedFigure.id) return f;
         if (f.kind === "seam") return f;
-        const res = reapplyStyledCurveWithParams({ figure: f, params });
+        const res = reapplyStyledEdgeWithParams({
+          figure: f,
+          edgeId: selectedEdgeIdForCurveStyle,
+          params,
+        });
         return "figure" in res ? res.figure : f;
       })
     );
@@ -259,10 +324,31 @@ export function PropertiesPanel() {
       const next = nextRaw as SemanticCurveId | "";
       setCurveStylePresetId(next);
 
-      if (!curveSelection) return;
+      if (curveSelection) {
+        if (next === "") {
+          applyCustomFromSnapshot();
+          return;
+        }
+        applyCurveStyleById(next);
+        return;
+      }
+
+      if (!selectedFigure || !selectedEdgeIdForCurveStyle) return;
 
       if (next === "") {
-        applyCustomFromSnapshot();
+        setFigures((prev) =>
+          prev.map((f) => {
+            if (f.id !== selectedFigure.id) return f;
+            if (f.kind === "seam") return f;
+            if (!f.styledEdges?.[selectedEdgeIdForCurveStyle]) return f;
+            const nextStyledEdges = { ...(f.styledEdges ?? {}) };
+            delete nextStyledEdges[selectedEdgeIdForCurveStyle];
+            const compact = Object.keys(nextStyledEdges).length
+              ? nextStyledEdges
+              : undefined;
+            return { ...f, styledEdges: compact };
+          })
+        );
         return;
       }
 
@@ -283,6 +369,7 @@ export function PropertiesPanel() {
               Preset
             </span>
             <select
+              data-testid="curve-style-preset"
               className={
                 "w-full " +
                 inputBaseClass +
@@ -321,7 +408,7 @@ export function PropertiesPanel() {
             </button>
           ) : null}
 
-          {curveSelection?.styledData ? (
+          {activeStyledData ? (
             <div className="space-y-1">
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 <span className="font-bold">Estilo atual:</span>{" "}
@@ -339,13 +426,15 @@ export function PropertiesPanel() {
                 ? isCustomSelected
                   ? "Curva em modo custom. Selecione um preset para aplicar automaticamente."
                   : "Selecionar um preset aplica automaticamente na curva."
-                : (helpWhenNoCurveSelected ??
-                  "Selecione uma curva para aplicar um estilo.")}
+                : isCubicEdgeSelected
+                  ? "Selecionar um preset aplica automaticamente na aresta curva selecionada."
+                  : (helpWhenNoCurveSelected ??
+                    "Selecione uma curva para aplicar um estilo.")}
             </p>
           ) : null}
         </div>
 
-        {curveSelection?.styledData ? (
+        {activeStyledData ? (
           <div className="space-y-3">
             <div className="flex items-baseline justify-between">
               <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -362,6 +451,7 @@ export function PropertiesPanel() {
                   Altura
                 </span>
                 <input
+                  data-testid="curve-style-height"
                   className={
                     "w-full " +
                     inputBaseClass +
@@ -426,6 +516,7 @@ export function PropertiesPanel() {
                   Bias
                 </span>
                 <input
+                  data-testid="curve-style-bias"
                   className={
                     "w-full " +
                     inputBaseClass +
@@ -490,6 +581,7 @@ export function PropertiesPanel() {
                   Rotação
                 </span>
                 <input
+                  data-testid="curve-style-rotation"
                   className={
                     "w-full " +
                     inputBaseClass +
@@ -549,7 +641,7 @@ export function PropertiesPanel() {
                 ) : null}
               </div>
 
-              <div className="space-y-2 pt-5">
+                <div className="space-y-2 pt-5">
                 <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
                   Espelhamento
                 </span>
@@ -585,7 +677,8 @@ export function PropertiesPanel() {
             </div>
 
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Ajustes paramétricos reaplicam o template na mesma curva.
+              Ajustes paramétricos reaplicam o template na mesma
+              {curveSelection ? " curva" : " aresta"}.
             </p>
           </div>
         ) : null}
