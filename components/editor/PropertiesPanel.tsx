@@ -141,16 +141,23 @@ export function PropertiesPanel() {
       setCircleRadiusError(null);
     }
     if (!isEditingCircleRx) {
-      setCircleRxDraft(formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.rxPx), 2));
+      setCircleRxDraft(
+        formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.rxPx), 2)
+      );
       setCircleRxError(null);
     }
     if (!isEditingCircleRy) {
-      setCircleRyDraft(formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.ryPx), 2));
+      setCircleRyDraft(
+        formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.ryPx), 2)
+      );
       setCircleRyError(null);
     }
     if (!isEditingCircleCirc) {
       setCircleCircDraft(
-        formatPtBrDecimalFixed(pxToCm(selectedCircleMeasures.circumferencePx), 2)
+        formatPtBrDecimalFixed(
+          pxToCm(selectedCircleMeasures.circumferencePx),
+          2
+        )
       );
       setCircleCircError(null);
     }
@@ -416,10 +423,7 @@ export function PropertiesPanel() {
         })
       );
     }
-  }, [
-    curveSelection,
-    setFigures,
-  ]);
+  }, [curveSelection, setFigures]);
 
   React.useEffect(() => {
     const p = activeStyledData?.params;
@@ -896,7 +900,7 @@ export function PropertiesPanel() {
                 ) : null}
               </div>
 
-                <div className="space-y-2 pt-5">
+              <div className="space-y-2 pt-5">
                 <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
                   Espelhamento
                 </span>
@@ -1366,7 +1370,9 @@ export function PropertiesPanel() {
                                 setIsEditingCircleRadius(false);
                                 setCircleRadiusDraft(
                                   formatPtBrDecimalFixed(
-                                    pxToCm(selectedCircleMeasures.radiusPx ?? 0),
+                                    pxToCm(
+                                      selectedCircleMeasures.radiusPx ?? 0
+                                    ),
                                     2
                                   )
                                 );
@@ -1684,7 +1690,7 @@ export function PropertiesPanel() {
 
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     {selectedCircleIsPerfect
-                      ? "Editar a circunferência ajusta o raio." 
+                      ? "Editar a circunferência ajusta o raio."
                       : "Editar a circunferência escala a elipse mantendo a proporção (Rx/Ry)."}
                   </p>
 

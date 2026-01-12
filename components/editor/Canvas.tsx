@@ -2973,7 +2973,9 @@ export default function Canvas() {
         ? null
         : findHoveredClosedFigureOrSeamBaseId(figures, world, 60);
       const nextHoveredId = hitId ?? insideId;
-      setHoveredFigureId((prev) => (prev === nextHoveredId ? prev : nextHoveredId));
+      setHoveredFigureId((prev) =>
+        prev === nextHoveredId ? prev : nextHoveredId
+      );
     } else if (hoveredFigureId) {
       setHoveredFigureId(null);
     }
@@ -4464,7 +4466,9 @@ export default function Canvas() {
 
             const thresholdWorld = 12 / scale;
             const figId = findHoveredFigureId(figures, world, thresholdWorld);
-            const fig = figId ? (figures.find((f) => f.id === figId) ?? null) : null;
+            const fig = figId
+              ? (figures.find((f) => f.id === figId) ?? null)
+              : null;
             if (!fig || fig.kind === "seam") {
               setEdgeContextMenu(null);
               return;
@@ -4477,7 +4481,8 @@ export default function Canvas() {
               return;
             }
 
-            const edge = fig.edges.find((ed) => ed.id === hit.best!.edgeId) ?? null;
+            const edge =
+              fig.edges.find((ed) => ed.id === hit.best!.edgeId) ?? null;
             if (!edge) {
               setEdgeContextMenu(null);
               return;
@@ -4488,7 +4493,11 @@ export default function Canvas() {
 
             // Select for discoverability.
             setSelectedFigureIds([fig.id]);
-            setSelectedEdge({ figureId: fig.id, edgeId: edge.id, anchor: "mid" });
+            setSelectedEdge({
+              figureId: fig.id,
+              edgeId: edge.id,
+              anchor: "mid",
+            });
 
             setEdgeEditDraft(null);
             setEdgeContextMenu({

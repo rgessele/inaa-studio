@@ -1,7 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { gotoEditor } from "./helpers/e2e";
 
-test("circle: editar raio/raios e circunferência no painel", async ({ page }) => {
+test("circle: editar raio/raios e circunferência no painel", async ({
+  page,
+}) => {
   await gotoEditor(page);
 
   const stage = page.getByTestId("editor-stage-container");
