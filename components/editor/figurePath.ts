@@ -113,11 +113,13 @@ function tryPolylineByTraversal(
 
     if (visited.size === figure.edges.length) break;
 
-    const nextNode = currentEdge.to;
-    const candidates = outgoing.get(nextNode) ?? [];
-    const next = candidates.find((e) => !visited.has(e.id));
-    if (!next) break;
-    currentEdge = next;
+    const nextNodeId: string = currentEdge.to;
+    const candidates: FigureEdge[] = outgoing.get(nextNodeId) ?? [];
+    const nextEdge: FigureEdge | undefined = candidates.find(
+      (e) => !visited.has(e.id)
+    );
+    if (!nextEdge) break;
+    currentEdge = nextEdge;
   }
 
   // Only accept traversal output when it covers the full contour.

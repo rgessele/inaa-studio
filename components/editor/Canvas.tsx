@@ -3408,8 +3408,6 @@ export default function Canvas() {
 
     setFigures((prev) => {
       const next = [...prev];
-      if (draft.tool === "line")
-        next.push(makeLineFigure(a, b, "line", "aci7"));
       if (draft.tool === "rectangle") next.push(makeRectFigure(a, b, "aci7"));
       if (draft.tool === "circle") {
         const center: Vec2 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
