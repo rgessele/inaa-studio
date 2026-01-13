@@ -2882,13 +2882,27 @@ export default function Canvas() {
     }
 
     if (tool === "curve") {
-      // Multi-click cubic: click to add points, double-click to finish.
-      if (e.evt.detail >= 2 && curveDraft) {
-        const pts = curveDraft.pointsWorld;
-        const first = pts[0];
-        const distToStart = len(sub(world, first));
-        const closed = pts.length >= 3 && distToStart < 12;
-        const finalized = makeCurveFromPoints(pts, closed, "aci7");
+      const CLOSE_TOL_PX = 10;
+      const closeTolWorld = CLOSE_TOL_PX / scale;
+
+      if (!curveDraft) {
+        setCurveDraft({
+          pointsWorld: [worldForTool],
+          currentWorld: worldForTool,
+        });
+        return;
+      }
+
+      const pts = curveDraft.pointsWorld;
+      const first = pts[0];
+      const last = pts[pts.length - 1];
+
+      const canClose = pts.length >= 3;
+      const isCloseClick =
+        canClose && dist(worldForTool, first) <= closeTolWorld;
+
+      if (isCloseClick) {
+        const finalized = makeCurveFromPoints(pts, true, "aci7");
         if (finalized) {
           setFigures((prev) => [...prev, finalized]);
           setSelectedFigureId(finalized.id);
@@ -2897,11 +2911,11 @@ export default function Canvas() {
         return;
       }
 
-      if (!curveDraft) {
-        setCurveDraft({
-          pointsWorld: [worldForTool],
-          currentWorld: worldForTool,
-        });
+      if (last && dist(worldForTool, last) < 0.5) {
+        // Ignore near-duplicate clicks.
+        setCurveDraft((prev) =>
+          prev ? { ...prev, currentWorld: worldForTool } : prev
+        );
         return;
       }
 
@@ -3531,14 +3545,41 @@ export default function Canvas() {
         }
       }
 
-      if (tool === "curve" && evt.key === "Enter" && curveDraft) {
-        const pts = curveDraft.pointsWorld;
-        const finalized = makeCurveFromPoints(pts, false, "aci7");
-        if (finalized) {
-          setFigures((prev) => [...prev, finalized]);
-          setSelectedFigureId(finalized.id);
+      if (tool === "curve" && curveDraft) {
+        if (evt.key === "Enter") {
+          evt.preventDefault();
+          const pts = curveDraft.pointsWorld;
+          if (pts.length < 2) {
+            setCurveDraft(null);
+            return;
+          }
+
+          const finalized = makeCurveFromPoints(pts, false, "aci7");
+          if (finalized) {
+            setFigures((prev) => [...prev, finalized]);
+            setSelectedFigureId(finalized.id);
+          }
+          setCurveDraft(null);
+          return;
         }
-        setCurveDraft(null);
+
+        const isUndoLast =
+          evt.key.toLowerCase() === "z" && (evt.metaKey || evt.ctrlKey);
+
+        if (evt.key === "Backspace" || isUndoLast) {
+          evt.preventDefault();
+          evt.stopPropagation();
+          setCurveDraft((prev) => {
+            if (!prev) return prev;
+            const nextPoints = prev.pointsWorld.slice(0, -1);
+            if (nextPoints.length === 0) return null;
+            return {
+              pointsWorld: nextPoints,
+              currentWorld: prev.currentWorld,
+            };
+          });
+          return;
+        }
       }
     };
 
@@ -3780,22 +3821,64 @@ export default function Canvas() {
 
   const curveDraftPreview = useMemo(() => {
     if (!curveDraft) return null;
-    const pts = [...curveDraft.pointsWorld, curveDraft.currentWorld];
+    const CLOSE_TOL_PX = 10;
+    const closeTolWorld = CLOSE_TOL_PX / scale;
+
+    const fixed = curveDraft.pointsWorld;
+    const live = curveDraft.currentWorld;
+
+    const canClose = fixed.length >= 3;
+    const first = fixed[0];
+    const isCloseHover = canClose && dist(live, first) <= closeTolWorld;
+
+    const pts = [...fixed, live];
     if (pts.length < 2) return null;
 
     const fig = makeCurveFromPoints(pts, false, "aci7");
     if (!fig) return null;
     const poly = figureLocalPolyline(fig, 60);
     return (
-      <Line
-        points={poly}
-        stroke={previewStroke}
-        strokeWidth={1 / scale}
-        dash={previewDash}
-        listening={false}
-        lineCap="round"
-        lineJoin="round"
-      />
+      <>
+        <Line
+          points={poly}
+          stroke={previewStroke}
+          strokeWidth={1 / scale}
+          dash={previewDash}
+          listening={false}
+          lineCap="round"
+          lineJoin="round"
+        />
+
+        {isCloseHover ? (
+          <Line
+            points={[live.x, live.y, first.x, first.y]}
+            stroke="#16a34a"
+            strokeWidth={1.5 / scale}
+            dash={[4 / scale, 4 / scale]}
+            listening={false}
+            lineCap="round"
+            lineJoin="round"
+          />
+        ) : null}
+
+        {fixed.map((p, idx) => (
+          <Circle
+            key={`curve-draft-pt:${idx}`}
+            x={p.x}
+            y={p.y}
+            radius={3.5 / scale}
+            fill={
+              idx === 0 && canClose
+                ? isCloseHover
+                  ? "#16a34a"
+                  : previewStroke
+                : previewStroke
+            }
+            opacity={0.9}
+            listening={false}
+          />
+        ))}
+      </>
     );
   }, [curveDraft, previewDash, previewStroke, scale]);
 
