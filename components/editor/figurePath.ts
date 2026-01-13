@@ -20,6 +20,111 @@ function getNode(nodes: FigureNode[], id: string): FigureNode | undefined {
   return nodes.find((n) => n.id === id);
 }
 
+function polylineFromEdgesInOrder(
+  figure: Figure,
+  cubicSteps: number,
+  edges: FigureEdge[]
+): Vec2[] {
+  const points: Vec2[] = [];
+
+  for (const edge of edges) {
+    const a = getNode(figure.nodes, edge.from);
+    const b = getNode(figure.nodes, edge.to);
+    if (!a || !b) continue;
+
+    const p0: Vec2 = { x: a.x, y: a.y };
+    const p3: Vec2 = { x: b.x, y: b.y };
+
+    if (edge.kind === "line") {
+      if (points.length === 0) {
+        points.push(p0, p3);
+      } else {
+        points.push(p3);
+      }
+      continue;
+    }
+
+    const p1 = a.outHandle ? { x: a.outHandle.x, y: a.outHandle.y } : p0;
+    const p2 = b.inHandle ? { x: b.inHandle.x, y: b.inHandle.y } : p3;
+
+    const sampled = sampleCubic(p0, p1, p2, p3, cubicSteps);
+    if (points.length === 0) {
+      points.push(...sampled);
+    } else {
+      // avoid duplicate join point
+      points.push(...sampled.slice(1));
+    }
+  }
+
+  return points;
+}
+
+function tryPolylineByTraversal(
+  figure: Figure,
+  cubicSteps: number
+): Vec2[] | null {
+  if (figure.edges.length === 0) return [];
+
+  const outgoing = new Map<string, FigureEdge[]>();
+  const incomingCount = new Map<string, number>();
+
+  for (const e of figure.edges) {
+    const list = outgoing.get(e.from) ?? [];
+    list.push(e);
+    outgoing.set(e.from, list);
+    incomingCount.set(e.to, (incomingCount.get(e.to) ?? 0) + 1);
+    if (!incomingCount.has(e.from))
+      incomingCount.set(e.from, incomingCount.get(e.from) ?? 0);
+  }
+
+  let startEdge: FigureEdge | undefined = figure.edges[0];
+
+  if (!figure.closed) {
+    // For open figures, prefer a start node with no incoming edges.
+    let startNode: string | null = null;
+    for (const nodeId of outgoing.keys()) {
+      if ((incomingCount.get(nodeId) ?? 0) === 0) {
+        startNode = nodeId;
+        break;
+      }
+    }
+    if (startNode) {
+      startEdge = outgoing.get(startNode)?.[0] ?? startEdge;
+    }
+  }
+
+  if (!startEdge) return null;
+
+  const visited = new Set<string>();
+  const points: Vec2[] = [];
+
+  let currentEdge: FigureEdge | undefined = startEdge;
+  let safety = 0;
+  while (currentEdge && safety < figure.edges.length + 5) {
+    safety++;
+    if (visited.has(currentEdge.id)) break;
+    visited.add(currentEdge.id);
+
+    const segPts = edgeLocalPoints(figure, currentEdge, cubicSteps);
+    if (segPts.length) {
+      if (points.length === 0) points.push(...segPts);
+      else points.push(...segPts.slice(1));
+    }
+
+    if (visited.size === figure.edges.length) break;
+
+    const nextNode = currentEdge.to;
+    const candidates = outgoing.get(nextNode) ?? [];
+    const next = candidates.find((e) => !visited.has(e.id));
+    if (!next) break;
+    currentEdge = next;
+  }
+
+  // Only accept traversal output when it covers the full contour.
+  if (visited.size !== figure.edges.length) return null;
+  return points;
+}
+
 export function figureCentroidLocal(figure: Figure): Vec2 {
   if (!figure.nodes.length) return { x: 0, y: 0 };
   const sum = figure.nodes.reduce(
@@ -52,37 +157,10 @@ export function figureLocalPolyline(
   figure: Figure,
   cubicSteps: number = 30
 ): number[] {
-  const points: Vec2[] = [];
+  const traversed = tryPolylineByTraversal(figure, cubicSteps);
+  if (traversed) return toPointArray(traversed);
 
-  for (const edge of figure.edges) {
-    const a = getNode(figure.nodes, edge.from);
-    const b = getNode(figure.nodes, edge.to);
-    if (!a || !b) continue;
-
-    const p0: Vec2 = { x: a.x, y: a.y };
-    const p3: Vec2 = { x: b.x, y: b.y };
-
-    if (edge.kind === "line") {
-      if (points.length === 0) {
-        points.push(p0, p3);
-      } else {
-        points.push(p3);
-      }
-      continue;
-    }
-
-    const p1 = a.outHandle ? { x: a.outHandle.x, y: a.outHandle.y } : p0;
-    const p2 = b.inHandle ? { x: b.inHandle.x, y: b.inHandle.y } : p3;
-
-    const sampled = sampleCubic(p0, p1, p2, p3, cubicSteps);
-    if (points.length === 0) {
-      points.push(...sampled);
-    } else {
-      // avoid duplicate join point
-      points.push(...sampled.slice(1));
-    }
-  }
-
+  const points = polylineFromEdgesInOrder(figure, cubicSteps, figure.edges);
   return toPointArray(points);
 }
 
