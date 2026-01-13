@@ -997,6 +997,54 @@ function makeLineFigure(
   };
 }
 
+function makePolylineLineFigure(
+  points: Vec2[],
+  closed: boolean,
+  stroke: string
+): Figure | null {
+  if (points.length < 2) return null;
+
+  const nodes: FigureNode[] = points.map((p) => ({
+    id: id("n"),
+    x: p.x,
+    y: p.y,
+    mode: "corner",
+  }));
+
+  const edges: FigureEdge[] = [];
+  for (let i = 0; i < nodes.length - 1; i++) {
+    edges.push({
+      id: id("e"),
+      from: nodes[i].id,
+      to: nodes[i + 1].id,
+      kind: "line",
+    });
+  }
+  if (closed && nodes.length >= 3) {
+    edges.push({
+      id: id("e"),
+      from: nodes[nodes.length - 1].id,
+      to: nodes[0].id,
+      kind: "line",
+    });
+  }
+
+  return {
+    id: id("fig"),
+    tool: "line",
+    x: 0,
+    y: 0,
+    rotation: 0,
+    closed: closed && nodes.length >= 3,
+    nodes,
+    edges,
+    stroke,
+    strokeWidth: 2,
+    fill: "transparent",
+    opacity: 1,
+  };
+}
+
 function makeRectFigure(a: Vec2, b: Vec2, stroke: string): Figure {
   const minX = Math.min(a.x, b.x);
   const minY = Math.min(a.y, b.y);
@@ -1088,6 +1136,17 @@ function snapAngleRad(angleRad: number, stepDeg: number): number {
   return Math.round(angleRad / step) * step;
 }
 
+function applyLineAngleLock(from: Vec2, rawTo: Vec2): Vec2 {
+  const v = sub(rawTo, from);
+  const length = len(v);
+  if (length === 0) return rawTo;
+  const angle = snapAngleRad(Math.atan2(v.y, v.x), 15);
+  return {
+    x: from.x + Math.cos(angle) * length,
+    y: from.y + Math.sin(angle) * length,
+  };
+}
+
 function computeRectLikeCorners(
   start: Vec2,
   raw: Vec2,
@@ -1121,28 +1180,8 @@ function computeRectLikeCorners(
   return { a: start, b: { x: bx, y: by } };
 }
 
-function computeLineEndpoints(
-  start: Vec2,
-  raw: Vec2,
-  mods: DraftMods
-): { a: Vec2; b: Vec2 } {
-  const v = sub(raw, start);
-  const length = len(v);
-  if (length === 0) return { a: start, b: start };
-
-  let angle = Math.atan2(v.y, v.x);
-  if (mods.shift) angle = snapAngleRad(angle, 15);
-  const v2: Vec2 = { x: Math.cos(angle) * length, y: Math.sin(angle) * length };
-
-  if (mods.alt) {
-    return { a: sub(start, v2), b: add(start, v2) };
-  }
-
-  return { a: start, b: add(start, v2) };
-}
-
 type Draft = {
-  tool: "line" | "rectangle" | "circle";
+  tool: "rectangle" | "circle";
   startWorld: Vec2;
   currentWorld: Vec2;
   effectiveAWorld: Vec2;
@@ -1151,6 +1190,11 @@ type Draft = {
 } | null;
 
 type CurveDraft = {
+  pointsWorld: Vec2[];
+  currentWorld: Vec2;
+} | null;
+
+type LineDraft = {
   pointsWorld: Vec2[];
   currentWorld: Vec2;
 } | null;
@@ -1433,6 +1477,8 @@ export default function Canvas() {
   const backgroundRef = useRef<Konva.Rect | null>(null);
   const [draft, setDraft] = useState<Draft>(null);
   const [curveDraft, setCurveDraft] = useState<CurveDraft>(null);
+  const [lineDraft, setLineDraft] = useState<LineDraft>(null);
+  const lineDraftRef = useRef<LineDraft>(null);
   const [nodeSelection, setNodeSelection] = useState<NodeSelection>(null);
   const [nodeMergePreview, setNodeMergePreview] = useState<{
     figureId: string;
@@ -1490,10 +1536,19 @@ export default function Canvas() {
     pointWorld: Vec2;
     kind: "node" | "edge" | "guide";
   } | null>(null);
+
+  useEffect(() => {
+    lineDraftRef.current = lineDraft;
+  }, [lineDraft]);
   const [isPanning, setIsPanning] = useState(false);
   const lastPointerRef = useRef<Vec2 | null>(null);
   const lastPanClientRef = useRef<{ x: number; y: number } | null>(null);
-  const lastPointerDownAtRef = useRef<number>(0);
+  const lastPointerDownSigRef = useRef<{
+    t: number;
+    x: number;
+    y: number;
+    button: number;
+  } | null>(null);
   const cursorBadgeIdleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const cursorBadgeLastPosRef = useRef<{ x: number; y: number } | null>(null);
   const isPointerDownRef = useRef(false);
@@ -2569,10 +2624,22 @@ export default function Canvas() {
     const isMouse = evt instanceof MouseEvent && !isPointer;
     const now = Date.now();
     if (isPointer) {
-      lastPointerDownAtRef.current = now;
+      lastPointerDownSigRef.current = {
+        t: now,
+        x: evt.clientX,
+        y: evt.clientY,
+        button: evt.button,
+      };
     } else if (isMouse) {
-      // If a pointer event just happened, ignore the synthetic mouse event.
-      if (now - lastPointerDownAtRef.current < 60) {
+      const sig = lastPointerDownSigRef.current;
+      // Ignore only the synthetic mouse event that mirrors a pointer event.
+      if (
+        sig &&
+        now - sig.t < 80 &&
+        sig.button === evt.button &&
+        Math.abs(sig.x - evt.clientX) < 2 &&
+        Math.abs(sig.y - evt.clientY) < 2
+      ) {
         return;
       }
     }
@@ -2696,6 +2763,22 @@ export default function Canvas() {
         if (nextPoints.length === 0) return null;
         return { pointsWorld: nextPoints, currentWorld: world };
       });
+      return;
+    }
+
+    // Line tool: right click undoes the last placed point.
+    if (tool === "line" && e.evt.button === 2) {
+      e.evt.preventDefault();
+      const current = lineDraftRef.current;
+      if (!current) return;
+
+      const nextPoints = current.pointsWorld.slice(0, -1);
+      const nextDraft =
+        nextPoints.length === 0
+          ? null
+          : { pointsWorld: nextPoints, currentWorld: worldForTool };
+      lineDraftRef.current = nextDraft;
+      setLineDraft(nextDraft);
       return;
     }
 
@@ -2833,14 +2916,88 @@ export default function Canvas() {
       return;
     }
 
-    if (tool === "line" || tool === "rectangle" || tool === "circle") {
-      const mods: DraftMods = { shift: e.evt.shiftKey, alt: e.evt.altKey };
-      let effective = { a: worldForTool, b: worldForTool };
-      if (tool === "line")
-        effective = computeLineEndpoints(worldForTool, worldForTool, mods);
-      if (tool === "rectangle" || tool === "circle") {
-        effective = computeRectLikeCorners(worldForTool, worldForTool, mods);
+    if (tool === "line") {
+      const CLOSE_TOL_PX = 10;
+      const closeTolWorld = CLOSE_TOL_PX / scale;
+
+      const current = lineDraftRef.current;
+      if (!current) {
+        const nextDraft = {
+          pointsWorld: [worldForTool],
+          currentWorld: worldForTool,
+        };
+        lineDraftRef.current = nextDraft;
+        setLineDraft(nextDraft);
+        return;
       }
+
+      const pts = current.pointsWorld;
+      const first = pts[0];
+      const canClose = pts.length >= 3;
+      const isCloseClick =
+        canClose && dist(worldForTool, first) <= closeTolWorld;
+
+      if (isCloseClick) {
+        const closedFig = makePolylineLineFigure(pts, true, "aci7");
+        if (closedFig) {
+          setFigures((prev) => [...prev, closedFig]);
+          setSelectedFigureId(closedFig.id);
+        }
+        lineDraftRef.current = null;
+        setLineDraft(null);
+        return;
+      }
+
+      const last = pts[pts.length - 1];
+      const placedWorld =
+        !resolvedDown.snap.isSnapped && e.evt.shiftKey && last
+          ? applyLineAngleLock(last, worldForTool)
+          : worldForTool;
+
+      if (!resolvedDown.snap.isSnapped && e.evt.altKey && pts.length === 1) {
+        // "Desenhar a partir do centro" (primeiro segmento): o 1º clique é o centro,
+        // o 2º clique define o vetor (meio comprimento).
+        const center = pts[0];
+        const v = sub(placedWorld, center);
+        if (len(v) < 0.5) {
+          const nextDraft = { ...current, currentWorld: placedWorld };
+          lineDraftRef.current = nextDraft;
+          setLineDraft(nextDraft);
+          return;
+        }
+
+        const a = sub(center, v);
+        const b = add(center, v);
+        const nextDraft = { pointsWorld: [a, b], currentWorld: b };
+        lineDraftRef.current = nextDraft;
+        setLineDraft(nextDraft);
+        return;
+      }
+
+      if (dist(placedWorld, last) < 0.5) {
+        // Ignore near-duplicate clicks.
+        const nextDraft = { ...current, currentWorld: placedWorld };
+        lineDraftRef.current = nextDraft;
+        setLineDraft(nextDraft);
+        return;
+      }
+
+      const nextDraft = {
+        pointsWorld: [...pts, placedWorld],
+        currentWorld: placedWorld,
+      };
+      lineDraftRef.current = nextDraft;
+      setLineDraft(nextDraft);
+      return;
+    }
+
+    if (tool === "rectangle" || tool === "circle") {
+      const mods: DraftMods = { shift: e.evt.shiftKey, alt: e.evt.altKey };
+      const effective = computeRectLikeCorners(
+        worldForTool,
+        worldForTool,
+        mods
+      );
       setDraft({
         tool,
         startWorld: worldForTool,
@@ -3086,12 +3243,24 @@ export default function Canvas() {
       return;
     }
 
+    if (tool === "line" && lineDraftRef.current) {
+      const current = lineDraftRef.current;
+      const last = current.pointsWorld[current.pointsWorld.length - 1];
+      const nextWorld =
+        !resolvedMove.snap.isSnapped && e.evt.shiftKey && last
+          ? applyLineAngleLock(last, worldForTool)
+          : worldForTool;
+
+      const nextDraft = { ...current, currentWorld: nextWorld };
+      lineDraftRef.current = nextDraft;
+      setLineDraft(nextDraft);
+      return;
+    }
+
     if (!draft) return;
 
     const mods: DraftMods = { shift: e.evt.shiftKey, alt: e.evt.altKey };
     let effective = { a: draft.startWorld, b: worldForTool };
-    if (draft.tool === "line")
-      effective = computeLineEndpoints(draft.startWorld, worldForTool, mods);
     if (draft.tool === "rectangle" || draft.tool === "circle") {
       effective = computeRectLikeCorners(draft.startWorld, worldForTool, mods);
     }
@@ -3315,8 +3484,51 @@ export default function Canvas() {
       if (evt.key === "Escape") {
         setDraft(null);
         setCurveDraft(null);
+        lineDraftRef.current = null;
+        setLineDraft(null);
         dragNodeRef.current = null;
         dragHandleRef.current = null;
+      }
+
+      const currentLineDraft = lineDraftRef.current;
+      if (tool === "line" && currentLineDraft) {
+        if (evt.key === "Enter") {
+          evt.preventDefault();
+          const pts = currentLineDraft.pointsWorld;
+          if (pts.length < 2) {
+            lineDraftRef.current = null;
+            setLineDraft(null);
+            return;
+          }
+
+          const finalized = makePolylineLineFigure(pts, false, "aci7");
+          if (finalized) {
+            setFigures((prev) => [...prev, finalized]);
+            setSelectedFigureId(finalized.id);
+          }
+          lineDraftRef.current = null;
+          setLineDraft(null);
+          return;
+        }
+
+        const isUndoLast =
+          evt.key.toLowerCase() === "z" && (evt.metaKey || evt.ctrlKey);
+
+        if (evt.key === "Backspace" || isUndoLast) {
+          evt.preventDefault();
+          evt.stopPropagation();
+          const nextPoints = currentLineDraft.pointsWorld.slice(0, -1);
+          const nextDraft =
+            nextPoints.length === 0
+              ? null
+              : {
+                  pointsWorld: nextPoints,
+                  currentWorld: currentLineDraft.currentWorld,
+                };
+          lineDraftRef.current = nextDraft;
+          setLineDraft(nextDraft);
+          return;
+        }
       }
 
       if (tool === "curve" && evt.key === "Enter" && curveDraft) {
@@ -3475,18 +3687,96 @@ export default function Canvas() {
         </Group>
       );
     }
-
-    // line
-    return (
-      <Line
-        points={[a.x, a.y, b.x, b.y]}
-        stroke={previewStroke}
-        strokeWidth={1 / scale}
-        dash={previewDash}
-        listening={false}
-      />
-    );
   }, [draft, previewDash, previewStroke, scale]);
+
+  const lineDraftPreview = useMemo(() => {
+    if (!lineDraft) return null;
+
+    const fixed = lineDraft.pointsWorld;
+    const live = lineDraft.currentWorld;
+    const isAltCenter = modifierKeys.alt && fixed.length === 1;
+    const pts = isAltCenter
+      ? (() => {
+          const center = fixed[0];
+          const v = sub(live, center);
+          const a = sub(center, v);
+          const b = add(center, v);
+          return [a, b];
+        })()
+      : [...fixed, live];
+    if (pts.length === 0) return null;
+
+    const flat: number[] = [];
+    for (const p of pts) {
+      flat.push(p.x, p.y);
+    }
+
+    const canClose = fixed.length >= 3;
+    const first = fixed[0];
+    const closeTolWorld = 10 / scale;
+    const isCloseHover =
+      !!first && canClose && dist(live, first) <= closeTolWorld;
+
+    return (
+      <>
+        {pts.length >= 2 ? (
+          <Line
+            points={flat}
+            stroke={previewStroke}
+            strokeWidth={1 / scale}
+            dash={previewDash}
+            listening={false}
+            lineCap="round"
+            lineJoin="round"
+          />
+        ) : null}
+
+        {isCloseHover ? (
+          <Line
+            points={[live.x, live.y, first.x, first.y]}
+            stroke="#16a34a"
+            strokeWidth={1.5 / scale}
+            dash={[4 / scale, 4 / scale]}
+            listening={false}
+            lineCap="round"
+            lineJoin="round"
+          />
+        ) : null}
+
+        {fixed.map((p, idx) => (
+          <Circle
+            key={`line-draft-pt:${idx}`}
+            x={p.x}
+            y={p.y}
+            radius={3.5 / scale}
+            fill={
+              idx === 0 && canClose
+                ? isCloseHover
+                  ? "#16a34a"
+                  : previewStroke
+                : previewStroke
+            }
+            opacity={0.9}
+            listening={false}
+          />
+        ))}
+
+        {isAltCenter ? (
+          <Circle
+            key="line-draft-center"
+            x={fixed[0].x}
+            y={fixed[0].y}
+            radius={4.5 / scale}
+            stroke={previewStroke}
+            strokeWidth={1 / scale}
+            fill="transparent"
+            opacity={0.9}
+            listening={false}
+          />
+        ) : null}
+      </>
+    );
+  }, [lineDraft, modifierKeys.alt, previewDash, previewStroke, scale]);
 
   const curveDraftPreview = useMemo(() => {
     if (!curveDraft) return null;
@@ -3527,7 +3817,6 @@ export default function Canvas() {
         const ry = Math.abs(b.y - a.y) / 2;
         temp = makeEllipseFigure(center, rx, ry, "aci7");
       }
-      if (draft.tool === "line") temp = makeLineFigure(a, b, "line", "aci7");
 
       if (temp) {
         const fig = withComputedFigureMeasures(temp);
@@ -3576,8 +3865,33 @@ export default function Canvas() {
       }
     }
 
+    if (lineDraft) {
+      const pts = [...lineDraft.pointsWorld, lineDraft.currentWorld];
+      const temp = makePolylineLineFigure(pts, false, "aci7");
+      if (temp) {
+        const fig = withComputedFigureMeasures(temp);
+        nodes.push(
+          <Group
+            key="mgrp:line-draft"
+            x={fig.x}
+            y={fig.y}
+            rotation={fig.rotation || 0}
+            listening={false}
+          >
+            <MemoizedMeasureOverlay
+              figure={fig}
+              scale={scale}
+              isDark={isDark}
+              selectedEdge={null}
+              hoveredEdge={null}
+            />
+          </Group>
+        );
+      }
+    }
+
     return nodes.length ? <>{nodes}</> : null;
-  }, [curveDraft, draft, isDark, measureDisplayMode, scale]);
+  }, [curveDraft, draft, isDark, lineDraft, measureDisplayMode, scale]);
 
   const figuresById = useMemo(() => {
     return new Map(figures.map((f) => [f.id, f] as const));
@@ -5075,6 +5389,8 @@ export default function Canvas() {
             ) : null}
 
             {draftPreview}
+
+            {lineDraftPreview}
 
             {curveDraftPreview}
 

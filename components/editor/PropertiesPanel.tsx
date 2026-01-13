@@ -124,15 +124,15 @@ export function PropertiesPanel() {
 
   const [circleRxDraft, setCircleRxDraft] = useState<string>("0,00");
   const [circleRxError, setCircleRxError] = useState<string | null>(null);
-  const [circleRxEditingForId, setCircleRxEditingForId] = useState<string | null>(
-    null
-  );
+  const [circleRxEditingForId, setCircleRxEditingForId] = useState<
+    string | null
+  >(null);
 
   const [circleRyDraft, setCircleRyDraft] = useState<string>("0,00");
   const [circleRyError, setCircleRyError] = useState<string | null>(null);
-  const [circleRyEditingForId, setCircleRyEditingForId] = useState<string | null>(
-    null
-  );
+  const [circleRyEditingForId, setCircleRyEditingForId] = useState<
+    string | null
+  >(null);
 
   const [circleCircDraft, setCircleCircDraft] = useState<string>("0,00");
   const [circleCircError, setCircleCircError] = useState<string | null>(null);
@@ -1489,7 +1489,9 @@ export function PropertiesPanel() {
                             }
                             type="text"
                             inputMode="decimal"
-                            value={isEditingCircleRx ? circleRxDraft : circleRxValue}
+                            value={
+                              isEditingCircleRx ? circleRxDraft : circleRxValue
+                            }
                             onFocus={() => {
                               if (!selectedFigureId) return;
                               setCircleRxDraft(circleRxValue);
@@ -1558,7 +1560,9 @@ export function PropertiesPanel() {
                             }
                             type="text"
                             inputMode="decimal"
-                            value={isEditingCircleRy ? circleRyDraft : circleRyValue}
+                            value={
+                              isEditingCircleRy ? circleRyDraft : circleRyValue
+                            }
                             onFocus={() => {
                               if (!selectedFigureId) return;
                               setCircleRyDraft(circleRyValue);

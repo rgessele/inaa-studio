@@ -75,20 +75,21 @@ test("imã: linha faz snap no contorno de outra figura", async ({ page }) => {
   // Coordinates are relative to the stage container top-left (scale=1).
   const start = { x: 220, y: 200 };
   const end = { x: 203, y: 60 }; // should snap to x=200 on the right edge
+  const third = { x: 260, y: 220 };
 
   const startX = clamp(box!.x + start.x, box!.x + 1, box!.x + box!.width - 2);
-  const startY = clamp(
-    box!.y + start.y,
-    box!.y + 1,
-    box!.y + box!.height - 2
-  );
+  const startY = clamp(box!.y + start.y, box!.y + 1, box!.y + box!.height - 2);
   const endX = clamp(box!.x + end.x, box!.x + 1, box!.x + box!.width - 2);
   const endY = clamp(box!.y + end.y, box!.y + 1, box!.y + box!.height - 2);
 
-  await page.mouse.move(startX, startY);
-  await page.mouse.down();
-  await page.mouse.move(endX, endY);
-  await page.mouse.up();
+  const thirdX = clamp(box!.x + third.x, box!.x + 1, box!.x + box!.width - 2);
+  const thirdY = clamp(box!.y + third.y, box!.y + 1, box!.y + box!.height - 2);
+
+  // New Line tool flow: click points; close by clicking the first point.
+  await page.mouse.click(startX, startY);
+  await page.mouse.click(endX, endY);
+  await page.mouse.click(thirdX, thirdY);
+  await page.mouse.click(startX, startY);
 
   await expect
     .poll(async () => {
