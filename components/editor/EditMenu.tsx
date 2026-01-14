@@ -7,9 +7,22 @@ interface EditMenuProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  onCopy: () => void;
+  onPaste: () => void;
+  canCopy: boolean;
+  canPaste: boolean;
 }
 
-export function EditMenu({ onUndo, onRedo, canUndo, canRedo }: EditMenuProps) {
+export function EditMenu({
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  onCopy,
+  onPaste,
+  canCopy,
+  canPaste,
+}: EditMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -19,6 +32,8 @@ export function EditMenu({ onUndo, onRedo, canUndo, canRedo }: EditMenuProps) {
 
   const shortcutUndo = isMac ? "⌘Z" : "Ctrl+Z";
   const shortcutRedo = isMac ? "⇧⌘Z" : "Ctrl+Shift+Z / Ctrl+Y";
+  const shortcutCopy = isMac ? "⌘C" : "Ctrl+C";
+  const shortcutPaste = isMac ? "⌘V" : "Ctrl+V";
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -80,6 +95,36 @@ export function EditMenu({ onUndo, onRedo, canUndo, canRedo }: EditMenuProps) {
             <span>Refazer</span>
             <span className="text-[10px] text-text-muted dark:text-text-muted-dark">
               {shortcutRedo}
+            </span>
+          </button>
+
+          <div className="my-1 h-px w-full bg-gray-200 dark:bg-gray-700" />
+
+          <button
+            className={itemClass(canCopy)}
+            onClick={() => {
+              if (!canCopy) return;
+              onCopy();
+              setIsOpen(false);
+            }}
+          >
+            <span>Copiar</span>
+            <span className="text-[10px] text-text-muted dark:text-text-muted-dark">
+              {shortcutCopy}
+            </span>
+          </button>
+
+          <button
+            className={itemClass(canPaste)}
+            onClick={() => {
+              if (!canPaste) return;
+              onPaste();
+              setIsOpen(false);
+            }}
+          >
+            <span>Colar</span>
+            <span className="text-[10px] text-text-muted dark:text-text-muted-dark">
+              {shortcutPaste}
             </span>
           </button>
         </div>

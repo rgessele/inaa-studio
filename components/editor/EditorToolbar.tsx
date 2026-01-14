@@ -49,6 +49,10 @@ export function EditorToolbar() {
     setMagnetEnabled,
     selectedFigureId,
     deleteSelected,
+    canCopy,
+    copySelection,
+    canPaste,
+    paste,
   } = useEditor();
   const [showExportModal, setShowExportModal] = useState(false);
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
@@ -613,6 +617,52 @@ export function EditorToolbar() {
                 ]}
                 expanded={redoTooltip.expanded}
                 details={["Refaz a última ação desfeita."]}
+              />
+            </button>
+
+            <button
+              type="button"
+              onClick={copySelection}
+              disabled={!canCopy}
+              className={`group relative w-full aspect-square flex items-center justify-center rounded transition-all ${
+                !canCopy
+                  ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                  : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+              }`}
+              aria-label="Copiar"
+            >
+              <span className="material-symbols-outlined text-[22px]">
+                content_copy
+              </span>
+              <ToolbarTooltip
+                isMac={isMac}
+                title="Copiar"
+                shortcuts={[{ cmdOrCtrl: true, key: "C" }]}
+                expanded={undoTooltip.expanded}
+                details={["Copia a seleção para o clipboard interno."]}
+              />
+            </button>
+
+            <button
+              type="button"
+              onClick={paste}
+              disabled={!canPaste}
+              className={`group relative w-full aspect-square flex items-center justify-center rounded transition-all ${
+                !canPaste
+                  ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                  : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+              }`}
+              aria-label="Colar"
+            >
+              <span className="material-symbols-outlined text-[22px]">
+                content_paste
+              </span>
+              <ToolbarTooltip
+                isMac={isMac}
+                title="Colar"
+                shortcuts={[{ cmdOrCtrl: true, key: "V" }]}
+                expanded={undoTooltip.expanded}
+                details={["Cola criando novas figuras com offset."]}
               />
             </button>
 

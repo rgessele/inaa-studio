@@ -23,6 +23,7 @@ import { DEFAULT_UNIT, DEFAULT_PIXELS_PER_UNIT } from "./constants";
 import { useHistory } from "./useHistory";
 import { createDefaultExportSettings } from "./exportSettings";
 import { withComputedFigureMeasures } from "./figureMeasures";
+import { figureWorldBoundingBox } from "./figurePath";
 
 import type { Figure } from "./types";
 
@@ -64,6 +65,12 @@ interface EditorContextType {
     anchor: EdgeAnchor
   ) => void;
   deleteSelected: () => void;
+
+  // Clipboard (internal): Copy/Paste selection
+  canCopy: boolean;
+  copySelection: () => void;
+  canPaste: boolean;
+  paste: () => void;
   scale: number;
   setScale: (scale: number) => void;
   position: { x: number; y: number };
@@ -156,6 +163,15 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   }>({ shift: false, alt: false, meta: false, ctrl: false });
   const [selectedFigureIds, setSelectedFigureIdsState] = useState<string[]>([]);
   const [selectedEdge, setSelectedEdge] = useState<SelectedEdge>(null);
+
+  type ClipboardPayload = {
+    figures: Figure[];
+    pasteCount: number;
+    bbox: { x: number; y: number; width: number; height: number } | null;
+  };
+
+  const clipboardRef = useRef<ClipboardPayload | null>(null);
+  const [clipboardHasData, setClipboardHasData] = useState(false);
 
   const [edgeAnchorPrefs, setEdgeAnchorPrefs] = useState<
     Record<string, EdgeAnchor>
@@ -534,6 +550,149 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setSelectedEdge(null);
   }, []);
 
+  const canCopy = useMemo(() => {
+    return selectedFigureIds.length > 0 || Boolean(selectedEdge);
+  }, [selectedEdge, selectedFigureIds.length]);
+
+  const computeFiguresBoundingBox = useCallback((figs: Figure[]) => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const f of figs) {
+      const b = figureWorldBoundingBox(f);
+      if (!b) continue;
+      minX = Math.min(minX, b.x);
+      minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x + b.width);
+      maxY = Math.max(maxY, b.y + b.height);
+    }
+
+    if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }, []);
+
+  const copySelection = useCallback(() => {
+    const currentFigures = figures || [];
+    const effectiveSelectedIds =
+      selectedFigureIds.length > 0
+        ? selectedFigureIds
+        : selectedEdge
+          ? [selectedEdge.figureId]
+          : [];
+
+    if (effectiveSelectedIds.length === 0) return;
+
+    const byId = new Map<string, Figure>(
+      currentFigures.map((f) => [f.id, f])
+    );
+
+    const selectedSet = new Set<string>(effectiveSelectedIds);
+    const hasAnyBase = effectiveSelectedIds.some((id) => {
+      const f = byId.get(id);
+      return Boolean(f) && f!.kind !== "seam";
+    });
+
+    const idsToCopy = new Set<string>();
+
+    if (hasAnyBase) {
+      for (const id of selectedSet) idsToCopy.add(id);
+
+      // If base figures are selected, include derived seams for those bases.
+      for (const f of currentFigures) {
+        if (f.kind !== "seam") continue;
+        if (!f.parentId) continue;
+        if (selectedSet.has(f.parentId)) idsToCopy.add(f.id);
+      }
+    } else {
+      // Seams-only selection: copy only what is selected.
+      for (const id of selectedSet) idsToCopy.add(id);
+    }
+
+    const orderedToCopy = currentFigures.filter((f) => idsToCopy.has(f.id));
+    if (orderedToCopy.length === 0) return;
+
+    const cloned = JSON.parse(JSON.stringify(orderedToCopy)) as Figure[];
+    clipboardRef.current = {
+      figures: cloned,
+      pasteCount: 0,
+      bbox: computeFiguresBoundingBox(orderedToCopy),
+    };
+    setClipboardHasData(true);
+  }, [computeFiguresBoundingBox, figures, selectedEdge, selectedFigureIds]);
+
+  const canPaste = clipboardHasData && Boolean(clipboardRef.current);
+
+  const paste = useCallback(() => {
+    const payload = clipboardRef.current;
+    if (!payload) return;
+    if (!payload.figures.length) return;
+
+    const nextPasteIndex = payload.pasteCount + 1;
+    payload.pasteCount = nextPasteIndex;
+    const delta = 20 * nextPasteIndex;
+
+    const oldToNewFigId = new Map<string, string>();
+
+    const draft = payload.figures.map((src) => {
+      const newFigId = makeId("fig");
+      oldToNewFigId.set(src.id, newFigId);
+
+      const oldToNewNodeId = new Map<string, string>();
+      const nodes = src.nodes.map((n) => {
+        const newNodeId = makeId("n");
+        oldToNewNodeId.set(n.id, newNodeId);
+        return {
+          ...n,
+          id: newNodeId,
+          inHandle: n.inHandle ? { ...n.inHandle } : undefined,
+          outHandle: n.outHandle ? { ...n.outHandle } : undefined,
+        };
+      });
+
+      const edges = src.edges.map((e) => {
+        const from = oldToNewNodeId.get(e.from);
+        const to = oldToNewNodeId.get(e.to);
+        if (!from || !to) {
+          // Should not happen, but keep data consistent.
+          return {
+            ...e,
+            id: makeId("e"),
+            from: from ?? e.from,
+            to: to ?? e.to,
+          };
+        }
+        return { ...e, id: makeId("e"), from, to };
+      });
+
+      return {
+        ...src,
+        id: newFigId,
+        x: src.x + delta,
+        y: src.y + delta,
+        nodes,
+        edges,
+        measures: undefined,
+      } satisfies Figure;
+    });
+
+    const pasted = draft.map((newFig, index) => {
+      const src = payload.figures[index];
+      if (newFig.kind === "seam" && src.parentId) {
+        const mappedParent = oldToNewFigId.get(src.parentId);
+        if (mappedParent) {
+          return { ...newFig, parentId: mappedParent };
+        }
+        return { ...newFig, parentId: undefined, sourceSignature: undefined };
+      }
+      return newFig;
+    });
+
+    setFigures((prev) => [...(prev || []), ...pasted], true);
+    setSelectedFigureIds(pasted.map((f) => f.id));
+  }, [makeId, setFigures, setSelectedFigureIds]);
+
   // Load a project into the editor
   const loadProject = useCallback(
     (
@@ -777,6 +936,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         getEdgeAnchorPreference,
         setEdgeAnchorPreference,
         deleteSelected,
+        canCopy,
+        copySelection,
+        canPaste,
+        paste,
         scale,
         setScale,
         position,

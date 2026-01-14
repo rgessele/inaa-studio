@@ -21,6 +21,7 @@ interface FigureRendererProps {
   opacity: number;
   dash?: number[];
   hitStrokeWidth: number;
+  hitFillEnabled?: boolean;
   listening?: boolean;
   draggable?: boolean;
   onPointerDown?: (e: Konva.KonvaEventObject<PointerEvent>) => void;
@@ -66,6 +67,7 @@ const FigureRenderer = ({
   opacity,
   dash,
   hitStrokeWidth,
+  hitFillEnabled = true,
   listening = true,
   draggable,
   onPointerDown,
@@ -241,6 +243,7 @@ const FigureRenderer = ({
         stroke={stroke}
         strokeWidth={strokeWidth}
         fill={figure.fill ?? "transparent"}
+        fillEnabled={hitFillEnabled}
         closed={figure.closed}
         dash={dash}
         lineCap="round"
@@ -423,6 +426,7 @@ const arePropsEqual = (
     prev.strokeWidth === next.strokeWidth &&
     prev.opacity === next.opacity &&
     prev.hitStrokeWidth === next.hitStrokeWidth &&
+    prev.hitFillEnabled === next.hitFillEnabled &&
     prev.listening === next.listening &&
     prev.draggable === next.draggable &&
     prev.showNodes === next.showNodes &&

@@ -11,7 +11,17 @@ import { useToolShortcuts } from "./useToolShortcuts";
 import { ToolModifiersOverlay } from "./ToolModifiersOverlay";
 
 function EditorLayoutContent({ children }: { children: React.ReactNode }) {
-  const { undo, redo, setTool, deleteSelected, selectedFigureId } = useEditor();
+  const {
+    undo,
+    redo,
+    setTool,
+    deleteSelected,
+    selectedFigureId,
+    copySelection,
+    paste,
+    canCopy,
+    canPaste,
+  } = useEditor();
   const searchParams = useSearchParams();
   const embedded =
     searchParams.get("embedded") === "1" || searchParams.get("embed") === "1";
@@ -22,6 +32,10 @@ function EditorLayoutContent({ children }: { children: React.ReactNode }) {
     onRedo: redo,
     onDeleteSelected: deleteSelected,
     canDeleteSelected: Boolean(selectedFigureId),
+    onCopySelection: copySelection,
+    canCopy,
+    onPaste: paste,
+    canPaste,
     enabled: !embedded,
   });
 

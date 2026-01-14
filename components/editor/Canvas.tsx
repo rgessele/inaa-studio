@@ -221,6 +221,112 @@ function findHoveredFigureId(
   return bestD <= thresholdWorld ? bestId : null;
 }
 
+function pickFigureIdByEdgePriority(
+  figures: Figure[],
+  pWorld: Vec2,
+  opts: { thresholdWorld: number; samples: number }
+): string | null {
+  const thresholdWorld = Math.max(0, opts.thresholdWorld);
+  const samples = Math.max(6, opts.samples);
+
+  // Track best hit per *base* id (so seams select their parent).
+  const bestByBaseId = new Map<
+    string,
+    { d: number; z: number; inside: boolean; area: number }
+  >();
+
+  let anyInside = false;
+
+  for (let i = 0; i < figures.length; i++) {
+    const fig = figures[i];
+    const baseId = fig.kind === "seam" ? (fig.parentId ?? fig.id) : fig.id;
+
+    const poly = figureWorldPolyline(fig, samples);
+    const hit = nearestOnPolylineWorld(pWorld, poly);
+    if (!hit) continue;
+
+    let inside = false;
+    if (fig.closed && poly.length >= 6) {
+      const polyPts: Vec2[] = [];
+      for (let k = 0; k < poly.length; k += 2) {
+        polyPts.push({ x: poly[k], y: poly[k + 1] });
+      }
+      // Remove duplicate last point if present.
+      if (
+        polyPts.length >= 3 &&
+        dist(polyPts[0], polyPts[polyPts.length - 1]) < 1e-3
+      ) {
+        polyPts.pop();
+      }
+      inside = pointInPolygon(pWorld, polyPts);
+    }
+
+    // Approximate size for tie-break when multiple shapes contain the point.
+    let area = Number.POSITIVE_INFINITY;
+    if (poly.length >= 6) {
+      let minX = poly[0];
+      let minY = poly[1];
+      let maxX = poly[0];
+      let maxY = poly[1];
+      for (let k = 2; k < poly.length; k += 2) {
+        minX = Math.min(minX, poly[k]);
+        minY = Math.min(minY, poly[k + 1]);
+        maxX = Math.max(maxX, poly[k]);
+        maxY = Math.max(maxY, poly[k + 1]);
+      }
+      area = Math.max(0, (maxX - minX) * (maxY - minY));
+    }
+
+    // Open figures: require proximity to contour.
+    // Closed figures: allow selection anywhere inside.
+    if (!inside && hit.d > thresholdWorld) continue;
+
+    if (inside) anyInside = true;
+
+    const existing = bestByBaseId.get(baseId);
+    if (
+      !existing ||
+      hit.d < existing.d - 1e-6 ||
+      (Math.abs(hit.d - existing.d) <= 1e-6 && i > existing.z)
+    ) {
+      bestByBaseId.set(baseId, { d: hit.d, z: i, inside, area });
+    }
+  }
+
+  let bestId: string | null = null;
+  let bestD = Number.POSITIVE_INFINITY;
+  let bestZ = -1;
+  let bestArea = Number.POSITIVE_INFINITY;
+  for (const [id, v] of bestByBaseId.entries()) {
+    // If any closed shape contains the pointer, restrict competition to inside shapes.
+    if (anyInside && !v.inside) continue;
+
+    if (v.d < bestD - 1e-6) {
+      bestId = id;
+      bestD = v.d;
+      bestArea = v.area;
+      bestZ = v.z;
+      continue;
+    }
+
+    if (Math.abs(v.d - bestD) <= 1e-6) {
+      // Prefer the most specific (smallest) containing shape.
+      if (v.area < bestArea - 1e-3) {
+        bestId = id;
+        bestArea = v.area;
+        bestZ = v.z;
+        continue;
+      }
+      if (Math.abs(v.area - bestArea) <= 1e-3 && v.z > bestZ) {
+        bestId = id;
+        bestZ = v.z;
+      }
+    }
+  }
+
+  return bestId;
+}
+
 function useIsDarkMode(): boolean {
   const [isDark, setIsDark] = useState(false);
   useEffect(() => {
@@ -251,6 +357,22 @@ function resolveStrokeColor(
   // Back-compat: older projects defaulted to black; treat that as "auto".
   if (s === "#000" || s === "#000000") return resolveAci7(isDark);
   return stroke;
+}
+
+function isEffectivelyTransparentFill(fill: string | undefined): boolean {
+  if (!fill) return true;
+  const s = fill.trim().toLowerCase();
+  if (s === "transparent") return true;
+
+  // Common explicit alpha-0 formats.
+  if (/^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0(\.0+)?\s*\)$/.test(s)) {
+    return true;
+  }
+  if (/^#([0-9a-f]{8})$/.test(s)) {
+    // #RRGGBBAA
+    return s.endsWith("00");
+  }
+  return false;
 }
 
 function splitPolylineAtPoint(
@@ -1627,6 +1749,11 @@ export default function Canvas() {
     positionRef.current = position;
   }, [position]);
 
+  const scaleRef = useRef(scale);
+  useEffect(() => {
+    scaleRef.current = scale;
+  }, [scale]);
+
   const panRafRef = useRef<number | null>(null);
   const panPositionRef = useRef<Vec2 | null>(null);
 
@@ -1708,6 +1835,43 @@ export default function Canvas() {
     startBounds: BoundingBox | null;
   } | null>(null);
 
+  const snapSelectionDeltaToGuidesRef = useRef<
+    (
+      startBounds: BoundingBox | null,
+      dx: number,
+      dy: number
+    ) => { dx: number; dy: number }
+  >((_startBounds, dx, dy) => ({ dx, dy }));
+
+  const selectDirectDragRef = useRef<{
+    active: boolean;
+    anchorFigureId: string;
+    affectedIds: string[];
+    startPositions: Map<string, Vec2>;
+    startBounds: BoundingBox | null;
+    startWorld: Vec2;
+    lastWorld: Vec2;
+  } | null>(null);
+
+  const containerClientRectRef = useRef<DOMRect | null>(null);
+  useEffect(() => {
+    containerClientRectRef.current = containerClientRect;
+  }, [containerClientRect]);
+
+  const clientToWorld = useCallback((clientX: number, clientY: number) => {
+    const rect =
+      containerClientRectRef.current ??
+      containerRef.current?.getBoundingClientRect() ??
+      null;
+    if (!rect) return null;
+
+    const local = { x: clientX - rect.left, y: clientY - rect.top };
+    return {
+      x: (local.x - positionRef.current.x) / scaleRef.current,
+      y: (local.y - positionRef.current.y) / scaleRef.current,
+    } satisfies Vec2;
+  }, []);
+
   const [dragPreviewPositions, setDragPreviewPositions] = useState<Map<
     string,
     Vec2
@@ -1734,6 +1898,244 @@ export default function Canvas() {
     },
     [dragPreviewPositions]
   );
+
+  const handleSelectDirectDragMove = useCallback(
+    (world: Vec2): boolean => {
+      const direct = selectDirectDragRef.current;
+      if (!direct) return false;
+
+      direct.lastWorld = world;
+
+      const MIN_DRAG_PX = 3;
+      const minDragWorld = MIN_DRAG_PX / scale;
+
+      if (!direct.active) {
+        const d = dist(world, direct.startWorld);
+        if (d < minDragWorld) return false;
+
+        const anchorId = direct.anchorFigureId;
+        const isAnchorSelected = new Set(selectedFigureIds).has(anchorId);
+        const baseIdsToMove = isAnchorSelected ? selectedFigureIds : [anchorId];
+
+        const affectedIds = figures
+          .filter(
+            (f) =>
+              baseIdsToMove.includes(f.id) ||
+              (f.kind === "seam" &&
+                f.parentId &&
+                baseIdsToMove.includes(f.parentId))
+          )
+          .map((f) => f.id);
+
+        let startBounds: BoundingBox | null = null;
+        for (const f of figures) {
+          if (!affectedIds.includes(f.id)) continue;
+          const bb = figureWorldBoundingBox(f);
+          if (!bb) continue;
+          if (!startBounds) {
+            startBounds = { ...bb };
+          } else {
+            const x0 = Math.min(startBounds.x, bb.x);
+            const y0 = Math.min(startBounds.y, bb.y);
+            const x1 = Math.max(startBounds.x + startBounds.width, bb.x + bb.width);
+            const y1 = Math.max(startBounds.y + startBounds.height, bb.y + bb.height);
+            startBounds = {
+              x: x0,
+              y: y0,
+              width: x1 - x0,
+              height: y1 - y0,
+            };
+          }
+        }
+
+        const startPositions = new Map<string, Vec2>();
+        for (const id of affectedIds) {
+          const f = figures.find((ff) => ff.id === id);
+          if (!f) continue;
+          const tr = getRuntimeFigureTransform(f);
+          startPositions.set(id, { x: tr.x, y: tr.y });
+        }
+
+        if (dragPreviewRafRef.current != null) {
+          cancelAnimationFrame(dragPreviewRafRef.current);
+          dragPreviewRafRef.current = null;
+        }
+        dragPreviewPendingRef.current = null;
+        setDragPreviewPositions(null);
+
+        selectDirectDragRef.current = {
+          ...direct,
+          active: true,
+          affectedIds,
+          startPositions,
+          startBounds,
+        };
+      }
+
+      const active = selectDirectDragRef.current;
+      if (!active?.active) return false;
+
+      const dxRaw = world.x - active.startWorld.x;
+      const dyRaw = world.y - active.startWorld.y;
+
+      let dx = dxRaw;
+      let dy = dyRaw;
+      const snapped = snapSelectionDeltaToGuidesRef.current(
+        active.startBounds ?? null,
+        dx,
+        dy
+      );
+      dx = snapped.dx;
+      dy = snapped.dy;
+
+      // Magnet snap to other figures' nodes/edges (in addition to guide snapping).
+      if (magnetEnabled) {
+        const thresholdWorld = Math.max(12, measureSnapStrengthPx) / scale;
+        const exclude = new Set<string>(active.affectedIds);
+        const desiredAnchor: Vec2 = {
+          x: active.startWorld.x + dxRaw,
+          y: active.startWorld.y + dyRaw,
+        };
+
+        // We intentionally pass no guides here: guide snapping for selection is
+        // handled via bounding-box alignment above.
+        const snap = snapWorldPoint(desiredAnchor, figures, [], {
+          thresholdWorld,
+          excludeSeams: true,
+          includeNodes: true,
+          excludeFigureIds: exclude,
+        });
+
+        if (snap.isSnapped) {
+          dx = snap.pointWorld.x - active.startWorld.x;
+          dy = snap.pointWorld.y - active.startWorld.y;
+        }
+      }
+
+      const next = new Map<string, Vec2>();
+      for (const id of active.affectedIds) {
+        const start = active.startPositions.get(id);
+        if (!start) continue;
+        next.set(id, { x: start.x + dx, y: start.y + dy });
+      }
+      dragPreviewPendingRef.current = next;
+      requestDragPreviewRender();
+      return true;
+    },
+    [
+      figures,
+      getRuntimeFigureTransform,
+      magnetEnabled,
+      measureSnapStrengthPx,
+      requestDragPreviewRender,
+      scale,
+      selectedFigureIds,
+    ]
+  );
+
+  const commitSelectDirectDrag = useCallback((): boolean => {
+    const direct = selectDirectDragRef.current;
+    if (!direct) return false;
+    selectDirectDragRef.current = null;
+
+    if (!direct.active) {
+      dragPreviewPendingRef.current = null;
+      setDragPreviewPositions(null);
+      return false;
+    }
+
+    const dxRaw = direct.lastWorld.x - direct.startWorld.x;
+    const dyRaw = direct.lastWorld.y - direct.startWorld.y;
+
+    let dx = dxRaw;
+    let dy = dyRaw;
+    const snapped = snapSelectionDeltaToGuidesRef.current(
+      direct.startBounds ?? null,
+      dx,
+      dy
+    );
+    dx = snapped.dx;
+    dy = snapped.dy;
+
+    if (magnetEnabled) {
+      const thresholdWorld = Math.max(12, measureSnapStrengthPx) / scale;
+      const exclude = new Set<string>(direct.affectedIds);
+      const desiredAnchor: Vec2 = {
+        x: direct.startWorld.x + dxRaw,
+        y: direct.startWorld.y + dyRaw,
+      };
+
+      const snap = snapWorldPoint(desiredAnchor, figures, [], {
+        thresholdWorld,
+        excludeSeams: true,
+        includeNodes: true,
+        excludeFigureIds: exclude,
+      });
+
+      if (snap.isSnapped) {
+        dx = snap.pointWorld.x - direct.startWorld.x;
+        dy = snap.pointWorld.y - direct.startWorld.y;
+      }
+    }
+
+    if (Math.abs(dx) >= 1e-6 || Math.abs(dy) >= 1e-6) {
+      const affected = new Set(direct.affectedIds);
+      setFigures((prev) =>
+        prev.map((f) =>
+          affected.has(f.id) ? { ...f, x: f.x + dx, y: f.y + dy } : f
+        )
+      );
+    }
+
+    dragPreviewPendingRef.current = null;
+    setDragPreviewPositions(null);
+    return true;
+  }, [figures, magnetEnabled, measureSnapStrengthPx, scale, setFigures]);
+
+  useEffect(() => {
+    const onMove = (evt: PointerEvent | MouseEvent) => {
+      const direct = selectDirectDragRef.current;
+      if (!direct) return;
+      if (tool !== "select") return;
+
+      const world = clientToWorld(evt.clientX, evt.clientY);
+      if (!world) return;
+
+      // Consume move while dragging.
+      if (handleSelectDirectDragMove(world)) {
+        try {
+          evt.preventDefault();
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    const onUp = (evt: PointerEvent | MouseEvent | FocusEvent) => {
+      if (tool !== "select") return;
+
+      const direct = selectDirectDragRef.current;
+      if (direct && "clientX" in evt && typeof evt.clientX === "number") {
+        const world = clientToWorld(evt.clientX, (evt as MouseEvent).clientY);
+        if (world) direct.lastWorld = world;
+      }
+
+      commitSelectDirectDrag();
+    };
+
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("mousemove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
+    };
+  }, [clientToWorld, commitSelectDirectDrag, handleSelectDirectDragMove, tool]);
 
   const dragNodeRef = useRef<{
     figureId: string;
@@ -2059,6 +2461,10 @@ export default function Canvas() {
     },
     [guides, magnetEnabled, measureSnapStrengthPx, scale]
   );
+
+  useEffect(() => {
+    snapSelectionDeltaToGuidesRef.current = snapSelectionDeltaToGuides;
+  }, [snapSelectionDeltaToGuides]);
 
   useEffect(() => {
     // Keep seam figures synced when their parent/base geometry changes.
@@ -2712,28 +3118,61 @@ export default function Canvas() {
     const isBackground =
       e.target === stage || e.target === backgroundRef.current;
 
-    // Select tool: allow forgiving click selection (hit slop) and marquee selection.
-    if (tool === "select" && isBackground && isLeftClick) {
+    // Select tool: edge-priority selection (closest contour) + marquee selection.
+    if (tool === "select" && isLeftClick) {
       const HIT_SLOP_PX = 10;
       const thresholdWorld = HIT_SLOP_PX / scale;
-      const hitId = findHoveredFigureId(figures, world, thresholdWorld);
 
-      if (hitId) {
+      const pickedId = pickFigureIdByEdgePriority(figures, world, {
+        thresholdWorld,
+        samples: 60,
+      });
+
+      if (pickedId) {
+        // Reset any in-progress direct drag candidate.
+        selectDirectDragRef.current = null;
+
         if (e.evt.shiftKey) {
-          toggleSelectedFigureId(hitId);
+          toggleSelectedFigureId(pickedId);
         } else {
-          setSelectedFigureIds([hitId]);
+          setSelectedFigureIds([pickedId]);
+
+          // Market-standard: click+drag should move immediately even if the
+          // figure wasn't selected before. We implement a Stage-level drag so it
+          // works regardless of Konva hit-testing/z-order.
+          if (!selectedIdsSet.has(pickedId)) {
+            if (e.evt instanceof PointerEvent) {
+              try {
+                stage.container().setPointerCapture(e.evt.pointerId);
+              } catch {
+                // ignore
+              }
+            }
+
+            selectDirectDragRef.current = {
+              active: false,
+              anchorFigureId: pickedId,
+              affectedIds: [],
+              startPositions: new Map(),
+              startBounds: null,
+              startWorld: world,
+              lastWorld: world,
+            };
+          }
         }
         setMarqueeDraft(null);
         return;
       }
 
-      setMarqueeDraft({
-        startWorld: world,
-        currentWorld: world,
-        additive: e.evt.shiftKey,
-      });
-      return;
+      // Start marquee selection (only makes sense when not clicking on a figure).
+      if (isBackground) {
+        setMarqueeDraft({
+          startWorld: world,
+          currentWorld: world,
+          additive: e.evt.shiftKey,
+        });
+        return;
+      }
     }
 
     // Background click clears selection (all other tools)
@@ -3044,6 +3483,10 @@ export default function Canvas() {
       y: (pos.y - position.y) / scale,
     };
 
+    if (tool === "select" && handleSelectDirectDragMove(world)) {
+      return;
+    }
+
     // Cursor badge: keep native cursor, but show a small tool icon near it.
     const activeEl = document.activeElement;
     const isTyping =
@@ -3312,6 +3755,11 @@ export default function Canvas() {
 
   const handlePointerUp = () => {
     isPointerDownRef.current = false;
+
+    if (tool === "select") {
+      const didCommit = commitSelectDirectDrag();
+      if (didCommit) return;
+    }
 
     if (isPanning) {
       setIsPanning(false);
@@ -5019,7 +5467,16 @@ export default function Canvas() {
                   opacity={opacity}
                   dash={dash}
                   hitStrokeWidth={hitStrokeWidth}
-                  draggable={tool === "select" && selectedIdsSet.has(baseId)}
+                  hitFillEnabled={
+                    tool !== "select" ||
+                    selectedIdsSet.has(baseId) ||
+                    !isEffectivelyTransparentFill(fig.fill)
+                  }
+                  draggable={
+                    tool === "select" &&
+                    selectedIdsSet.has(baseId) &&
+                    !selectDirectDragRef.current
+                  }
                   showNodes={showNodes}
                   showMeasures={showMeasures}
                   pointLabelsMode={pointLabelsMode}
@@ -5065,6 +5522,12 @@ export default function Canvas() {
                     // Pan should work anywhere and must not select figures.
                     // Do not stop propagation so Stage handlers can start panning.
                     if (tool === "pan" || isMiddlePressed) {
+                      return;
+                    }
+
+                    // Select tool: let the Stage handler perform edge-priority picking.
+                    // We only intercept here for Option/Alt edge sub-selection.
+                    if (tool === "select" && !e.evt.altKey) {
                       return;
                     }
 
@@ -5229,6 +5692,7 @@ export default function Canvas() {
                   onDragStart={() => {
                     if (tool !== "select") return;
                     if (!selectedIdsSet.has(baseId)) return;
+                    if (selectDirectDragRef.current) return;
 
                     if (dragPreviewRafRef.current != null) {
                       cancelAnimationFrame(dragPreviewRafRef.current);
@@ -5295,6 +5759,7 @@ export default function Canvas() {
                     const sync = selectionDragSyncRef.current;
                     if (!sync) return;
                     if (sync.anchorFigureId !== fig.id) return;
+                    if (selectDirectDragRef.current) return;
 
                     const stage = stageRef.current;
                     if (!stage) return;
@@ -5348,6 +5813,7 @@ export default function Canvas() {
                     const sync = selectionDragSyncRef.current;
                     selectionDragSyncRef.current = null;
                     if (!sync || sync.anchorFigureId !== fig.id) return;
+                    if (selectDirectDragRef.current) return;
 
                     const anchorStart = sync.startPositions.get(
                       sync.anchorFigureId

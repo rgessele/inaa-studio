@@ -7,6 +7,10 @@ interface KeyboardShortcutsOptions {
   onRedo: () => void;
   onDeleteSelected?: () => void;
   canDeleteSelected?: boolean;
+  onCopySelection?: () => void;
+  canCopy?: boolean;
+  onPaste?: () => void;
+  canPaste?: boolean;
   enabled?: boolean;
 }
 
@@ -15,6 +19,10 @@ export function useKeyboardShortcuts({
   onRedo,
   onDeleteSelected,
   canDeleteSelected = false,
+  onCopySelection,
+  canCopy = false,
+  onPaste,
+  canPaste = false,
   enabled = true,
 }: KeyboardShortcutsOptions) {
   useEffect(() => {
@@ -53,6 +61,32 @@ export function useKeyboardShortcuts({
       const isMac = /Mac|iPhone|iPod|iPad/.test(navigator.userAgent);
       const cmdOrCtrl = isMac ? event.metaKey : event.ctrlKey;
 
+      // Copy: Cmd/Ctrl+C
+      if (
+        cmdOrCtrl &&
+        (event.key === "c" || event.key === "C") &&
+        !event.shiftKey &&
+        !event.altKey
+      ) {
+        if (!canCopy || !onCopySelection) return;
+        event.preventDefault();
+        onCopySelection();
+        return;
+      }
+
+      // Paste: Cmd/Ctrl+V
+      if (
+        cmdOrCtrl &&
+        (event.key === "v" || event.key === "V") &&
+        !event.shiftKey &&
+        !event.altKey
+      ) {
+        if (!onPaste) return;
+        event.preventDefault();
+        onPaste();
+        return;
+      }
+
       // Undo: Ctrl+Z (or Cmd+Z on Mac)
       if (cmdOrCtrl && event.key === "z" && !event.shiftKey) {
         event.preventDefault();
@@ -80,5 +114,15 @@ export function useKeyboardShortcuts({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [onUndo, onRedo, onDeleteSelected, canDeleteSelected, enabled]);
+  }, [
+    onUndo,
+    onRedo,
+    onDeleteSelected,
+    canDeleteSelected,
+    onCopySelection,
+    canCopy,
+    onPaste,
+    canPaste,
+    enabled,
+  ]);
 }

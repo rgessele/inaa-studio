@@ -28,6 +28,10 @@ export function EditorHeader() {
     redo,
     canUndo,
     canRedo,
+    canCopy,
+    copySelection,
+    canPaste,
+    paste,
   } = useEditor();
   const router = useRouter();
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -303,6 +307,10 @@ export function EditorHeader() {
               onRedo={redo}
               canUndo={canUndo}
               canRedo={canRedo}
+              canCopy={canCopy}
+              onCopy={copySelection}
+              canPaste={canPaste}
+              onPaste={paste}
             />
             <button className="hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-primary dark:hover:text-white px-3 py-1.5 rounded transition-colors">
               Objeto

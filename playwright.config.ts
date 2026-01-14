@@ -80,12 +80,14 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: `npm run dev -- --port ${e2ePort}`,
+    command: `npm run dev`,
     url: `http://127.0.0.1:${e2ePort}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
       ...process.env,
+      // Ensure Next binds to the same port Playwright uses as baseURL.
+      PORT: String(e2ePort),
       E2E_TESTS: "1",
       E2E_TOKEN: e2eToken,
       NEXT_PUBLIC_E2E_TESTS: "1",
