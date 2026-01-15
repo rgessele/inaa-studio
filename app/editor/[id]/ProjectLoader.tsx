@@ -20,7 +20,15 @@ export default function ProjectLoader({ project }: ProjectLoaderProps) {
     const figures = project.design_data?.figures ?? [];
     const pageGuideSettings = project.design_data?.pageGuideSettings;
     const guides = project.design_data?.guides ?? [];
-    loadProject(figures, project.id, project.name, pageGuideSettings, guides);
+    const meta = project.design_data?.meta;
+    loadProject(
+      figures,
+      project.id,
+      project.name,
+      pageGuideSettings,
+      guides,
+      meta
+    );
   }, [project, loadProject]);
 
   return null; // This component only handles loading, no UI

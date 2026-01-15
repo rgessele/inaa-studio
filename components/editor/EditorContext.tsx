@@ -140,16 +140,23 @@ interface EditorContextType {
   setProjectId: (id: string | null) => void;
   projectName: string;
   setProjectName: (name: string) => void;
+  projectMeta: DesignDataV2["meta"] | undefined;
   hasUnsavedChanges: boolean;
-  markProjectSaved: () => void;
+  markProjectSaved: (snapshot?: {
+    figures: Figure[];
+    pageGuideSettings: PageGuideSettings;
+    guides: GuideLine[];
+  }) => void;
   loadProject: (
     figures: Figure[],
     projectId: string,
     projectName: string,
     pageGuideSettings?: PageGuideSettings,
-    guides?: GuideLine[]
+    guides?: GuideLine[],
+    meta?: DesignDataV2["meta"]
   ) => void;
 }
+import type { DesignDataV2 } from "./types";
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
 
@@ -209,6 +216,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   // Project state
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("Projeto Sem Nome");
+  const [projectMeta, setProjectMeta] = useState<DesignDataV2["meta"]>();
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string>("[]");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
@@ -622,7 +630,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setClipboardHasData(true);
   }, [computeFiguresBoundingBox, figures, selectedEdge, selectedFigureIds]);
 
-  const canPaste = clipboardHasData && Boolean(clipboardRef.current);
+  const canPaste = clipboardHasData;
 
   const paste = useCallback(() => {
     const payload = clipboardRef.current;
@@ -700,7 +708,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       projectId: string,
       projectName: string,
       nextPageGuideSettings?: PageGuideSettings,
-      nextGuides?: GuideLine[]
+      nextGuides?: GuideLine[],
+      meta?: DesignDataV2["meta"]
     ) => {
       const effectivePageGuideSettings =
         nextPageGuideSettings ?? pageGuideSettingsRef.current;
@@ -708,6 +717,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       setFigures(figures, false); // Load without saving to history
       setProjectId(projectId);
       setProjectName(projectName);
+      setProjectMeta(meta);
       if (nextPageGuideSettings) {
         setPageGuideSettings(nextPageGuideSettings);
       }
@@ -727,11 +737,28 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     [setFigures]
   );
 
-  const markProjectSaved = useCallback(() => {
-    setLastSavedSnapshot(
-      JSON.stringify({ figures: figures || [], pageGuideSettings, guides })
-    );
-  }, [figures, guides, pageGuideSettings]);
+  const markProjectSaved = useCallback(
+    (snapshot?: {
+      figures: Figure[];
+      pageGuideSettings: PageGuideSettings;
+      guides: GuideLine[];
+    }) => {
+      const effective = snapshot ?? {
+        figures: figures || [],
+        pageGuideSettings,
+        guides,
+      };
+
+      setLastSavedSnapshot(
+        JSON.stringify({
+          figures: effective.figures,
+          pageGuideSettings: effective.pageGuideSettings,
+          guides: effective.guides,
+        })
+      );
+    },
+    [figures, guides, pageGuideSettings]
+  );
 
   React.useEffect(() => {
     if (process.env.NEXT_PUBLIC_E2E_TESTS !== "1") return;
@@ -1000,6 +1027,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setProjectId,
         projectName,
         setProjectName,
+        projectMeta,
         hasUnsavedChanges,
         markProjectSaved,
         loadProject,

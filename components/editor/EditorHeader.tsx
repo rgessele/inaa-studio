@@ -20,6 +20,7 @@ export function EditorHeader() {
     setProjectId,
     projectName,
     setProjectName,
+    projectMeta,
     pageGuideSettings,
     guides,
     hasUnsavedChanges,
@@ -56,6 +57,284 @@ export function EditorHeader() {
   const themeTooltip = useDelayedTooltip(true);
   const profileTooltip = useDelayedTooltip(true);
   const signOutTooltip = useDelayedTooltip(true);
+
+  const AUTO_SAVE_IDLE_MS = 2500;
+  const AUTO_SAVE_MAX_INTERVAL_MS = 10000;
+  const AUTO_SAVE_MIN_INTERVAL_MS = 5000;
+  const AUTO_SAVE_MAX_RETRY_MS = 120000;
+  const AUTO_SAVE_ERROR_TOAST_COOLDOWN_MS = 30000;
+
+  const latestStateRef = useRef({
+    projectId,
+    projectName,
+    projectMeta,
+    figures,
+    pageGuideSettings,
+    guides,
+    hasUnsavedChanges,
+  });
+
+  useEffect(() => {
+    latestStateRef.current = {
+      projectId,
+      projectName,
+      projectMeta,
+      figures,
+      pageGuideSettings,
+      guides,
+      hasUnsavedChanges,
+    };
+  }, [
+    projectId,
+    projectName,
+    projectMeta,
+    figures,
+    pageGuideSettings,
+    guides,
+    hasUnsavedChanges,
+  ]);
+
+  const isSavingRef = useRef(isSaving);
+  useEffect(() => {
+    isSavingRef.current = isSaving;
+  }, [isSaving]);
+
+  const autoSaveInFlightRef = useRef(false);
+  const autoSaveLastAttemptAtRef = useRef(0);
+  const autoSaveDirtySinceRef = useRef<number | null>(null);
+  const autoSavePrevUnsavedRef = useRef(false);
+  const autoSaveRetryDelayMsRef = useRef(AUTO_SAVE_MAX_INTERVAL_MS);
+  const autoSaveLastErrorToastAtRef = useRef(0);
+
+  const autoSaveIdleTimerRef = useRef<number | null>(null);
+  const autoSaveMaxTimerRef = useRef<number | null>(null);
+  const autoSaveRetryTimerRef = useRef<number | null>(null);
+
+  const clearAutoSaveTimers = useCallback(() => {
+    if (autoSaveIdleTimerRef.current != null) {
+      window.clearTimeout(autoSaveIdleTimerRef.current);
+      autoSaveIdleTimerRef.current = null;
+    }
+    if (autoSaveMaxTimerRef.current != null) {
+      window.clearTimeout(autoSaveMaxTimerRef.current);
+      autoSaveMaxTimerRef.current = null;
+    }
+    if (autoSaveRetryTimerRef.current != null) {
+      window.clearTimeout(autoSaveRetryTimerRef.current);
+      autoSaveRetryTimerRef.current = null;
+    }
+  }, []);
+
+  const runAutoSave = useCallback(
+    async (reason: "idle" | "time" | "visibility" | "retry") => {
+      if (process.env.NEXT_PUBLIC_E2E_TESTS === "1") return;
+
+      const snapshotNow = latestStateRef.current;
+      if (!snapshotNow.projectId) return;
+      if (!snapshotNow.hasUnsavedChanges) return;
+      if (autoSaveInFlightRef.current) return;
+      if (isSavingRef.current) return;
+
+      const now = Date.now();
+      const sinceLastAttempt = now - autoSaveLastAttemptAtRef.current;
+      if (sinceLastAttempt < AUTO_SAVE_MIN_INTERVAL_MS) {
+        const delay = AUTO_SAVE_MIN_INTERVAL_MS - sinceLastAttempt;
+        if (autoSaveRetryTimerRef.current != null) {
+          window.clearTimeout(autoSaveRetryTimerRef.current);
+        }
+        autoSaveRetryTimerRef.current = window.setTimeout(() => {
+          void runAutoSave("retry");
+        }, delay);
+        return;
+      }
+
+      autoSaveInFlightRef.current = true;
+      autoSaveLastAttemptAtRef.current = now;
+
+      const savedSnapshot = {
+        figures: snapshotNow.figures,
+        pageGuideSettings: snapshotNow.pageGuideSettings,
+        guides: snapshotNow.guides,
+      };
+
+      try {
+        const result = await saveProject(
+          snapshotNow.projectName,
+          savedSnapshot.figures,
+          savedSnapshot.pageGuideSettings,
+          savedSnapshot.guides,
+          snapshotNow.projectId,
+          snapshotNow.projectMeta
+        );
+
+        if (result.success) {
+          markProjectSaved(savedSnapshot);
+          autoSaveRetryDelayMsRef.current = AUTO_SAVE_MAX_INTERVAL_MS;
+        } else {
+          const delay = autoSaveRetryDelayMsRef.current;
+          autoSaveRetryDelayMsRef.current = Math.min(
+            autoSaveRetryDelayMsRef.current * 2,
+            AUTO_SAVE_MAX_RETRY_MS
+          );
+
+          const toastNow = Date.now();
+          if (
+            toastNow - autoSaveLastErrorToastAtRef.current >=
+            AUTO_SAVE_ERROR_TOAST_COOLDOWN_MS
+          ) {
+            autoSaveLastErrorToastAtRef.current = toastNow;
+            setToast({
+              message:
+                result.error || "Falha no auto-save. Tentando novamente...",
+              type: "error",
+              isVisible: true,
+            });
+          }
+
+          if (autoSaveRetryTimerRef.current != null) {
+            window.clearTimeout(autoSaveRetryTimerRef.current);
+          }
+          autoSaveRetryTimerRef.current = window.setTimeout(() => {
+            void runAutoSave("retry");
+          }, delay);
+        }
+      } catch (error) {
+        console.error("Auto-save error:", error);
+        const delay = autoSaveRetryDelayMsRef.current;
+        autoSaveRetryDelayMsRef.current = Math.min(
+          autoSaveRetryDelayMsRef.current * 2,
+          AUTO_SAVE_MAX_RETRY_MS
+        );
+
+        const toastNow = Date.now();
+        if (
+          toastNow - autoSaveLastErrorToastAtRef.current >=
+          AUTO_SAVE_ERROR_TOAST_COOLDOWN_MS
+        ) {
+          autoSaveLastErrorToastAtRef.current = toastNow;
+          setToast({
+            message: "Falha no auto-save. Tentando novamente...",
+            type: "error",
+            isVisible: true,
+          });
+        }
+
+        if (autoSaveRetryTimerRef.current != null) {
+          window.clearTimeout(autoSaveRetryTimerRef.current);
+        }
+        autoSaveRetryTimerRef.current = window.setTimeout(() => {
+          void runAutoSave("retry");
+        }, delay);
+      } finally {
+        autoSaveInFlightRef.current = false;
+
+        // If changes kept happening, make sure timers are still armed.
+        // (We don't reschedule here directly to avoid extra work; the next render
+        // from state updates will arm them.)
+        if (reason === "visibility") {
+          // Best effort: don't keep visibility-triggered idle timers around.
+          if (autoSaveIdleTimerRef.current != null) {
+            window.clearTimeout(autoSaveIdleTimerRef.current);
+            autoSaveIdleTimerRef.current = null;
+          }
+        }
+      }
+    },
+    [
+      AUTO_SAVE_ERROR_TOAST_COOLDOWN_MS,
+      AUTO_SAVE_MAX_INTERVAL_MS,
+      AUTO_SAVE_MAX_RETRY_MS,
+      AUTO_SAVE_MIN_INTERVAL_MS,
+      markProjectSaved,
+    ]
+  );
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_E2E_TESTS === "1") return;
+
+    if (!projectId) {
+      autoSavePrevUnsavedRef.current = false;
+      autoSaveDirtySinceRef.current = null;
+      autoSaveRetryDelayMsRef.current = AUTO_SAVE_MAX_INTERVAL_MS;
+      clearAutoSaveTimers();
+      return;
+    }
+
+    if (!hasUnsavedChanges) {
+      autoSavePrevUnsavedRef.current = false;
+      autoSaveDirtySinceRef.current = null;
+      autoSaveRetryDelayMsRef.current = AUTO_SAVE_MAX_INTERVAL_MS;
+      clearAutoSaveTimers();
+      return;
+    }
+
+    if (!autoSavePrevUnsavedRef.current) {
+      autoSaveDirtySinceRef.current = Date.now();
+      autoSavePrevUnsavedRef.current = true;
+    }
+
+    // Idle-save
+    if (autoSaveIdleTimerRef.current != null) {
+      window.clearTimeout(autoSaveIdleTimerRef.current);
+    }
+    autoSaveIdleTimerRef.current = window.setTimeout(() => {
+      void runAutoSave("idle");
+    }, AUTO_SAVE_IDLE_MS);
+
+    // Time-save: guarantee save within max interval since first dirty
+    const dirtySince = autoSaveDirtySinceRef.current ?? Date.now();
+    const dueAt = dirtySince + AUTO_SAVE_MAX_INTERVAL_MS;
+    const delay = Math.max(dueAt - Date.now(), 0);
+    if (autoSaveMaxTimerRef.current != null) {
+      window.clearTimeout(autoSaveMaxTimerRef.current);
+    }
+    autoSaveMaxTimerRef.current = window.setTimeout(() => {
+      void runAutoSave("time");
+    }, delay);
+
+    return () => {
+      if (autoSaveIdleTimerRef.current != null) {
+        window.clearTimeout(autoSaveIdleTimerRef.current);
+        autoSaveIdleTimerRef.current = null;
+      }
+      if (autoSaveMaxTimerRef.current != null) {
+        window.clearTimeout(autoSaveMaxTimerRef.current);
+        autoSaveMaxTimerRef.current = null;
+      }
+    };
+  }, [
+    AUTO_SAVE_IDLE_MS,
+    AUTO_SAVE_MAX_INTERVAL_MS,
+    clearAutoSaveTimers,
+    figures,
+    guides,
+    hasUnsavedChanges,
+    pageGuideSettings,
+    projectId,
+    projectName,
+    runAutoSave,
+  ]);
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_E2E_TESTS === "1") return;
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        void runAutoSave("visibility");
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [runAutoSave]);
+
+  useEffect(() => {
+    return () => {
+      clearAutoSaveTimers();
+    };
+  }, [clearAutoSaveTimers]);
 
   useEffect(() => {
     let isMounted = true;
@@ -114,11 +393,16 @@ export function EditorHeader() {
       figures,
       pageGuideSettings,
       guides,
-      projectId
+      projectId,
+      projectMeta
     );
 
     if (result.success) {
-      markProjectSaved();
+      markProjectSaved({
+        figures,
+        pageGuideSettings,
+        guides,
+      });
       setToast({
         message: "Projeto salvo com sucesso!",
         type: "success",
@@ -138,6 +422,7 @@ export function EditorHeader() {
     markProjectSaved,
     projectId,
     projectName,
+    projectMeta,
     figures,
     pageGuideSettings,
     guides,
@@ -216,13 +501,18 @@ export function EditorHeader() {
       figures,
       pageGuideSettings,
       guides,
-      projectId
+      projectId,
+      projectMeta
     );
 
     if (result.success && result.projectId) {
       setProjectName(name);
       setProjectId(result.projectId);
-      markProjectSaved();
+      markProjectSaved({
+        figures,
+        pageGuideSettings,
+        guides,
+      });
       setToast({
         message: "Projeto salvo com sucesso!",
         type: "success",
@@ -258,7 +548,11 @@ export function EditorHeader() {
     if (result.success && result.projectId) {
       setProjectName(name);
       setProjectId(result.projectId);
-      markProjectSaved();
+      markProjectSaved({
+        figures,
+        pageGuideSettings,
+        guides,
+      });
       setToast({
         message: "Cópia salva com sucesso!",
         type: "success",

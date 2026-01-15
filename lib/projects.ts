@@ -21,7 +21,8 @@ export async function saveProject(
   figures: Figure[],
   pageGuideSettings: PageGuideSettings,
   guides: GuideLine[],
-  projectId: string | null = null
+  projectId: string | null = null,
+  meta?: DesignDataV2["meta"]
 ): Promise<{ success: boolean; projectId?: string; error?: string }> {
   try {
     const supabase = createClient();
@@ -42,28 +43,35 @@ export async function saveProject(
     };
 
     if (projectId) {
-      // Update existing project - preserve existing design_data (e.g., meta)
-      const { data: existing, error: loadError } = await supabase
-        .from("projects")
-        .select("design_data")
-        .eq("id", projectId)
-        .eq("user_id", user.id)
-        .single();
+      // Update existing project. If meta is provided, avoid extra round-trip.
+      let effectiveMeta = meta;
+      let effectivePageGuideSettings = pageGuideSettings;
 
-      if (loadError) {
-        console.error("Error loading project before update:", loadError);
-        return { success: false, error: loadError.message };
+      if (!effectiveMeta) {
+        const { data: existing, error: loadError } = await supabase
+          .from("projects")
+          .select("design_data")
+          .eq("id", projectId)
+          .eq("user_id", user.id)
+          .single();
+
+        if (loadError) {
+          console.error("Error loading project before update:", loadError);
+          return { success: false, error: loadError.message };
+        }
+
+        const existingDesign = existing?.design_data as DesignDataV2 | undefined;
+        effectiveMeta = existingDesign?.meta;
+        effectivePageGuideSettings =
+          pageGuideSettings ?? existingDesign?.pageGuideSettings;
       }
 
       const mergedDesignData: DesignDataV2 = {
         version: 2,
         figures,
-        pageGuideSettings:
-          pageGuideSettings ??
-          (existing?.design_data as DesignDataV2 | undefined)
-            ?.pageGuideSettings,
+        pageGuideSettings: effectivePageGuideSettings,
         guides,
-        meta: (existing?.design_data as DesignDataV2 | undefined)?.meta,
+        meta: effectiveMeta,
       };
 
       const { error } = await supabase
@@ -82,7 +90,7 @@ export async function saveProject(
       // Insert new project
       const projectData = {
         ...baseProjectData,
-        design_data: { version: 2, figures, pageGuideSettings, guides },
+        design_data: { version: 2, figures, pageGuideSettings, guides, meta },
       };
 
       const { data, error } = await supabase
