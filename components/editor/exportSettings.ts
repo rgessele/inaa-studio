@@ -18,7 +18,7 @@ export interface ExportSettings {
   dashedLines: boolean;
   showBaseSize: boolean;
   toolFilter: Record<
-    "rectangle" | "circle" | "line" | "curve" | "dart",
+    "rectangle" | "circle" | "line" | "curve" | "dart" | "text",
     boolean
   >;
 }
@@ -61,6 +61,7 @@ export function createDefaultExportSettings(): ExportSettings {
       line: true,
       curve: true,
       dart: true,
+      text: true,
     },
   };
 }

@@ -805,12 +805,18 @@ export function EditorToolbar() {
 
             <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
 
-            <StaticToolbarButton
+            <ToolButton
+              active={tool === "text"}
+              onClick={() => handleToolChange("text")}
               icon="text_fields"
-              ariaLabel="Texto"
               isMac={isMac}
-              tooltipTitle="Texto"
-              tooltipDetails={["Em breve."]}
+              title="Texto"
+              shortcuts={[{ key: "T" }]}
+              details={[
+                "Clique no canvas para inserir texto.",
+                "Duplo-clique para editar.",
+                "Use o painel de propriedades para fonte, tamanho e cor.",
+              ]}
             />
             <ToolButton
               active={tool === "measure"}

@@ -17,7 +17,8 @@ test.describe("prefs: persistence", () => {
     );
     expect(raw).toBe("0.8");
 
-    await page.reload({ waitUntil: "networkidle" });
+    // Firefox can drop custom bypass headers on reload; re-navigate instead.
+    await page.goto("/editor", { waitUntil: "networkidle" });
 
     await expect
       .poll(async () => (await getEditorState(page)).gridContrast)

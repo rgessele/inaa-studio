@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Stage, Layer, Line, Rect } from "react-konva";
 import type Konva from "konva";
 import { useEditor } from "./EditorContext";
-import { figureLocalPolyline } from "./figurePath";
+import { figureLocalPolyline, figureWorldBoundingBox } from "./figurePath";
 
 const MINIMAP_WIDTH = 240;
 const MINIMAP_HEIGHT = 160;
@@ -59,6 +59,17 @@ export function Minimap() {
     };
   }, [getStage, stageSize.width, stageSize.height]);
 
+  const figureBoundsById = useMemo(() => {
+    const out = new Map<
+      string,
+      { x: number; y: number; width: number; height: number } | null
+    >();
+    for (const f of figures) {
+      out.set(f.id, figureWorldBoundingBox(f));
+    }
+    return out;
+  }, [figures]);
+
   // Calculate world bounds of all figures
   const worldBounds = useMemo(() => {
     if (figures.length === 0) {
@@ -71,13 +82,12 @@ export function Minimap() {
     let maxY = -Infinity;
 
     for (const f of figures) {
-      // Use a simplified bounding box estimation from nodes
-      for (const n of f.nodes) {
-        if (n.x < minX) minX = n.x;
-        if (n.x > maxX) maxX = n.x;
-        if (n.y < minY) minY = n.y;
-        if (n.y > maxY) maxY = n.y;
-      }
+      const bb = figureBoundsById.get(f.id) ?? null;
+      if (!bb) continue;
+      minX = Math.min(minX, bb.x);
+      minY = Math.min(minY, bb.y);
+      maxX = Math.max(maxX, bb.x + bb.width);
+      maxY = Math.max(maxY, bb.y + bb.height);
     }
 
     // Add some padding around figures
@@ -94,7 +104,7 @@ export function Minimap() {
       width: Math.max(width, 100) + 200,
       height: Math.max(height, 100) + 200,
     };
-  }, [figures]);
+  }, [figureBoundsById, figures]);
 
   // Calculate minimap scale to fit world bounds
   const minimapScale = useMemo(() => {
@@ -209,6 +219,27 @@ export function Minimap() {
 
           {/* Simplified figures */}
           {figures.map((f) => {
+            if (f.tool === "text") {
+              const bb = figureBoundsById.get(f.id) ?? null;
+              if (!bb) return null;
+              const isSelected = selectedFigureIds.includes(f.id);
+
+              return (
+                <Rect
+                  key={f.id}
+                  x={(bb.x - worldBounds.x) * minimapScale}
+                  y={(bb.y - worldBounds.y) * minimapScale}
+                  width={bb.width * minimapScale}
+                  height={bb.height * minimapScale}
+                  stroke={isSelected ? "#2563eb" : "#9ca3af"}
+                  strokeWidth={isSelected ? 2 : 1}
+                  fill="transparent"
+                  listening={false}
+                  perfectDrawEnabled={false}
+                />
+              );
+            }
+
             // Transform figure to minimap coordinates
             // f.x, f.y are in world coords
             // We need to shift by worldBounds.x, worldBounds.y and scale

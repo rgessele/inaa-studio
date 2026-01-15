@@ -60,7 +60,9 @@ export async function saveProject(
           return { success: false, error: loadError.message };
         }
 
-        const existingDesign = existing?.design_data as DesignDataV2 | undefined;
+        const existingDesign = existing?.design_data as
+          | DesignDataV2
+          | undefined;
         effectiveMeta = existingDesign?.meta;
         effectivePageGuideSettings =
           pageGuideSettings ?? existingDesign?.pageGuideSettings;

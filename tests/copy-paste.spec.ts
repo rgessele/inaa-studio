@@ -11,13 +11,11 @@ test("copy/paste: duplica seleção via atalho", async ({ page }) => {
   });
 
   page.on("pageerror", (err) => {
-    // eslint-disable-next-line no-console
     console.log("PAGEERROR:", err.message);
   });
 
   page.on("console", (msg) => {
     if (msg.type() !== "error") return;
-    // eslint-disable-next-line no-console
     console.log("CONSOLE(error):", msg.text());
   });
 
@@ -67,9 +65,7 @@ test("copy/paste: duplica seleção via atalho", async ({ page }) => {
   expect(after.length).toBe(before.length + 1);
 
   const afterBases = after.filter((f) => !f.kind);
-  expect(afterBases.length).toBe(
-    before.filter((f) => !f.kind).length + 1
-  );
+  expect(afterBases.length).toBe(before.filter((f) => !f.kind).length + 1);
 
   // Verify the pasted figure is offset from the original.
   const pasted = afterBases[afterBases.length - 1];

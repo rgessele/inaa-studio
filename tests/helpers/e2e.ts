@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 export async function initE2EState(page: Page) {
   await page.addInitScript(() => {
@@ -75,6 +75,19 @@ declare global {
         y: number;
         rotation: number;
         closed: boolean;
+        textValue?: string;
+        textFontFamily?: string;
+        textFontSizePx?: number;
+        textFill?: string;
+        textAlign?: "left" | "center" | "right";
+        textLineHeight?: number;
+        textLetterSpacing?: number;
+        textWidthPx?: number;
+        textWrap?: "none" | "word" | "char";
+        textPaddingPx?: number;
+        textBackgroundEnabled?: boolean;
+        textBackgroundFill?: string;
+        textBackgroundOpacity?: number;
         nodes: Array<{
           id: string;
           x: number;
@@ -111,4 +124,25 @@ export async function getEditorState(page: Page) {
     }
     return window.__INAA_DEBUG__.getState();
   });
+}
+
+export async function dragOnCanvas(
+  page: Page,
+  canvas: Locator,
+  opts: {
+    source: { x: number; y: number };
+    target: { x: number; y: number };
+    steps?: number;
+  }
+) {
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("canvas boundingBox not available");
+
+  const steps = opts.steps ?? 12;
+  await page.mouse.move(box.x + opts.source.x, box.y + opts.source.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + opts.target.x, box.y + opts.target.y, {
+    steps,
+  });
+  await page.mouse.up();
 }

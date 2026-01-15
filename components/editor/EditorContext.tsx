@@ -592,9 +592,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
     if (effectiveSelectedIds.length === 0) return;
 
-    const byId = new Map<string, Figure>(
-      currentFigures.map((f) => [f.id, f])
-    );
+    const byId = new Map<string, Figure>(currentFigures.map((f) => [f.id, f]));
 
     const selectedSet = new Set<string>(effectiveSelectedIds);
     const hasAnyBase = effectiveSelectedIds.some((id) => {
@@ -840,6 +838,19 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           y: f.y,
           rotation: f.rotation || 0,
           closed: f.closed,
+          textValue: f.textValue,
+          textFontFamily: f.textFontFamily,
+          textFontSizePx: f.textFontSizePx,
+          textFill: f.textFill,
+          textAlign: f.textAlign,
+          textLineHeight: f.textLineHeight,
+          textLetterSpacing: f.textLetterSpacing,
+          textWidthPx: f.textWidthPx,
+          textWrap: f.textWrap,
+          textPaddingPx: f.textPaddingPx,
+          textBackgroundEnabled: f.textBackgroundEnabled,
+          textBackgroundFill: f.textBackgroundFill,
+          textBackgroundOpacity: f.textBackgroundOpacity,
           nodes: f.nodes.map((n) => ({
             id: n.id,
             x: n.x,

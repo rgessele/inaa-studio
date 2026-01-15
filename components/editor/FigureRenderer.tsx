@@ -56,6 +56,18 @@ function resolveAci7(isDark: boolean): string {
   return isDark ? "#ffffff" : "#000000";
 }
 
+function resolveStrokeColor(
+  stroke: string | undefined,
+  isDark: boolean
+): string {
+  if (!stroke) return resolveAci7(isDark);
+  const s = stroke.toLowerCase();
+  if (s === "aci7") return resolveAci7(isDark);
+  // Back-compat: older projects defaulted to black; treat that as "auto".
+  if (s === "#000" || s === "#000000") return resolveAci7(isDark);
+  return stroke;
+}
+
 const FigureRenderer = ({
   figure,
   x,
@@ -89,11 +101,16 @@ const FigureRenderer = ({
   onNameOffsetChange,
   onNameOffsetCommit,
 }: FigureRendererProps) => {
+  const isTextFigure = figure.tool === "text";
+
   // Memoize the polyline calculation so it doesn't run on every render
   // unless the figure geometry changes.
   // Note: figureLocalPolyline depends on figure.nodes and figure.closed.
   // We assume 'figure' prop reference changes when these change.
-  const pts = React.useMemo(() => figureLocalPolyline(figure, 60), [figure]);
+  const pts = React.useMemo(
+    () => (isTextFigure ? [] : figureLocalPolyline(figure, 60)),
+    [figure, isTextFigure]
+  );
 
   const pointLabelFill = resolveAci7(isDark);
   const pointLabelOpacity = 0.35;
@@ -222,6 +239,102 @@ const FigureRenderer = ({
 
   const handleSize = 10 / scale;
   const handleGap = 6 / scale;
+
+  const textValue = (figure.textValue ?? "").toString();
+  const textFontSizePx = (() => {
+    const v = figure.textFontSizePx;
+    if (!Number.isFinite(v ?? NaN)) return 18;
+    return Math.max(6, Math.min(300, v as number));
+  })();
+  const textFontFamily =
+    figure.textFontFamily ??
+    "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+  const textAlign = figure.textAlign ?? "left";
+  const textFill = figure.textFill ?? resolveStrokeColor(figure.stroke, isDark);
+  const textLineHeight = (() => {
+    const v = figure.textLineHeight;
+    if (!Number.isFinite(v ?? NaN)) return 1.25;
+    return Math.max(0.8, Math.min(3, v as number));
+  })();
+  const textLetterSpacing = (() => {
+    const v = figure.textLetterSpacing;
+    if (!Number.isFinite(v ?? NaN)) return 0;
+    return Math.max(-2, Math.min(20, v as number));
+  })();
+  const textWrap = figure.textWrap ?? "word";
+  const textWidthPx =
+    Number.isFinite(figure.textWidthPx ?? NaN) && (figure.textWidthPx ?? 0) > 0
+      ? (figure.textWidthPx as number)
+      : undefined;
+  const textPaddingPx = (() => {
+    const v = figure.textPaddingPx;
+    if (!Number.isFinite(v ?? NaN)) return 0;
+    return Math.max(0, Math.min(50, v as number));
+  })();
+  const textBgEnabled = figure.textBackgroundEnabled === true;
+  const textBgFill = figure.textBackgroundFill ?? "#ffffff";
+  const textBgOpacity = (() => {
+    const v = figure.textBackgroundOpacity;
+    if (!Number.isFinite(v ?? NaN)) return 1;
+    return Math.max(0, Math.min(1, v as number));
+  })();
+
+  if (isTextFigure) {
+    return (
+      <Group
+        name={name}
+        ref={forwardRef}
+        x={x}
+        y={y}
+        rotation={rotation}
+        opacity={opacity}
+        listening={listening}
+        draggable={draggable}
+        onPointerDown={onPointerDown}
+        onDragStart={onDragStart}
+        onDragMove={onDragMove}
+        onDragEnd={onDragEnd}
+      >
+        {textBgEnabled ? (
+          <Rect
+            x={-textPaddingPx}
+            y={-textPaddingPx}
+            width={(textWidthPx ?? 1) + textPaddingPx * 2}
+            height={textFontSizePx * textLineHeight + textPaddingPx * 2}
+            fill={textBgFill}
+            opacity={textBgOpacity}
+            listening={false}
+            perfectDrawEnabled={false}
+          />
+        ) : null}
+        <Text
+          x={0}
+          y={0}
+          text={textValue}
+          fontSize={textFontSizePx}
+          fontFamily={textFontFamily}
+          fontStyle={
+            figure.textFontStyle === "italic"
+              ? "italic"
+              : figure.textFontWeight === "bold" ||
+                  (typeof figure.textFontWeight === "number" &&
+                    figure.textFontWeight >= 600)
+                ? "bold"
+                : "normal"
+          }
+          fill={textFill}
+          align={textAlign}
+          lineHeight={textLineHeight}
+          letterSpacing={textLetterSpacing}
+          width={textWidthPx}
+          wrap={textWidthPx ? textWrap : "none"}
+          listening={true}
+          name="inaa-text"
+          perfectDrawEnabled={false}
+        />
+      </Group>
+    );
+  }
 
   return (
     <Group

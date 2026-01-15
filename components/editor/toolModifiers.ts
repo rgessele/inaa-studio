@@ -75,6 +75,7 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
     },
   ],
   curve: [],
+  text: [],
   dart: [],
 };
 

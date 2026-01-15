@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { getEditorState, gotoEditor } from "./helpers/e2e";
+import { dragOnCanvas, getEditorState, gotoEditor } from "./helpers/e2e";
 
 test("select chooses nearest contour (edge priority) under overlap", async ({
   page,
@@ -176,7 +176,14 @@ test("select: direct drag snaps to nodes/edges when magnet is enabled", async ({
           closed: true,
           fill: "transparent",
           nodes: [
-            { id: "t1", x: 0, y: 0, mode: "corner", inHandle: null, outHandle: null },
+            {
+              id: "t1",
+              x: 0,
+              y: 0,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
             {
               id: "t2",
               x: 200,
@@ -193,7 +200,14 @@ test("select: direct drag snaps to nodes/edges when magnet is enabled", async ({
               inHandle: null,
               outHandle: null,
             },
-            { id: "t4", x: 0, y: 120, mode: "corner", inHandle: null, outHandle: null },
+            {
+              id: "t4",
+              x: 0,
+              y: 120,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
           ],
           edges: [
             { id: "te1", from: "t1", to: "t2", kind: "line" },
@@ -219,7 +233,14 @@ test("select: direct drag snaps to nodes/edges when magnet is enabled", async ({
           rotation: 0,
           closed: false,
           nodes: [
-            { id: "l1", x: 0, y: 0, mode: "corner", inHandle: null, outHandle: null },
+            {
+              id: "l1",
+              x: 0,
+              y: 0,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
             {
               id: "l2",
               x: 120,
@@ -246,8 +267,9 @@ test("select: direct drag snaps to nodes/edges when magnet is enabled", async ({
   await expect
     .poll(async () => {
       return (
-        (await page.evaluate(() => window.__INAA_DEBUG__?.getState().magnetEnabled)) ??
-        false
+        (await page.evaluate(
+          () => window.__INAA_DEBUG__?.getState().magnetEnabled
+        )) ?? false
       );
     })
     .toBe(true);
@@ -298,7 +320,9 @@ test("select: direct drag snaps to nodes/edges when magnet is enabled", async ({
   expect(figLine!.y).toBeCloseTo(0, 0);
 });
 
-test("select prefers inner closed shape even if drawn first", async ({ page }) => {
+test("select prefers inner closed shape even if drawn first", async ({
+  page,
+}) => {
   await gotoEditor(page);
 
   await page.evaluate(() => {
@@ -465,10 +489,38 @@ test("can drag-move inner shape even when outer is visually on top", async ({
           closed: true,
           fill: "transparent",
           nodes: [
-            { id: "i1", x: 320, y: 260, mode: "corner", inHandle: null, outHandle: null },
-            { id: "i2", x: 440, y: 260, mode: "corner", inHandle: null, outHandle: null },
-            { id: "i3", x: 440, y: 380, mode: "corner", inHandle: null, outHandle: null },
-            { id: "i4", x: 320, y: 380, mode: "corner", inHandle: null, outHandle: null },
+            {
+              id: "i1",
+              x: 320,
+              y: 260,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
+            {
+              id: "i2",
+              x: 440,
+              y: 260,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
+            {
+              id: "i3",
+              x: 440,
+              y: 380,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
+            {
+              id: "i4",
+              x: 320,
+              y: 380,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
           ],
           edges: [
             { id: "ie1", from: "i1", to: "i2", kind: "line" },
@@ -476,7 +528,12 @@ test("can drag-move inner shape even when outer is visually on top", async ({
             { id: "ie3", from: "i3", to: "i4", kind: "line" },
             { id: "ie4", from: "i4", to: "i1", kind: "line" },
           ],
-          style: { stroke: "#000000", strokeWidth: 2, fill: "rgba(0,0,0,0)", opacity: 1 },
+          style: {
+            stroke: "#000000",
+            strokeWidth: 2,
+            fill: "rgba(0,0,0,0)",
+            opacity: 1,
+          },
         },
         {
           id: "outer",
@@ -489,10 +546,38 @@ test("can drag-move inner shape even when outer is visually on top", async ({
           closed: true,
           fill: "transparent",
           nodes: [
-            { id: "o1", x: 220, y: 160, mode: "corner", inHandle: null, outHandle: null },
-            { id: "o2", x: 540, y: 160, mode: "corner", inHandle: null, outHandle: null },
-            { id: "o3", x: 540, y: 480, mode: "corner", inHandle: null, outHandle: null },
-            { id: "o4", x: 220, y: 480, mode: "corner", inHandle: null, outHandle: null },
+            {
+              id: "o1",
+              x: 220,
+              y: 160,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
+            {
+              id: "o2",
+              x: 540,
+              y: 160,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
+            {
+              id: "o3",
+              x: 540,
+              y: 480,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
+            {
+              id: "o4",
+              x: 220,
+              y: 480,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
           ],
           edges: [
             { id: "oe1", from: "o1", to: "o2", kind: "line" },
@@ -500,7 +585,12 @@ test("can drag-move inner shape even when outer is visually on top", async ({
             { id: "oe3", from: "o3", to: "o4", kind: "line" },
             { id: "oe4", from: "o4", to: "o1", kind: "line" },
           ],
-          style: { stroke: "#000000", strokeWidth: 2, fill: "rgba(0,0,0,0)", opacity: 1 },
+          style: {
+            stroke: "#000000",
+            strokeWidth: 2,
+            fill: "rgba(0,0,0,0)",
+            opacity: 1,
+          },
         },
       ],
     });
@@ -523,9 +613,9 @@ test("can drag-move inner shape even when outer is visually on top", async ({
   });
 
   // Drag inside the inner shape.
-  await stageCanvas.dragTo(stageCanvas, {
-    sourcePosition: { x: 380, y: 320 },
-    targetPosition: { x: 430, y: 360 },
+  await dragOnCanvas(page, stageCanvas, {
+    source: { x: 380, y: 320 },
+    target: { x: 430, y: 360 },
   });
 
   await expect
@@ -586,7 +676,12 @@ test("direct drag does not jump when releasing over another figure", async ({
             },
           ],
           edges: [{ id: "le1", from: "l1", to: "l2", kind: "line" }],
-          style: { stroke: "#000000", strokeWidth: 2, fill: "rgba(0,0,0,0)", opacity: 1 },
+          style: {
+            stroke: "#000000",
+            strokeWidth: 2,
+            fill: "rgba(0,0,0,0)",
+            opacity: 1,
+          },
         },
         {
           id: "rect",
@@ -599,10 +694,38 @@ test("direct drag does not jump when releasing over another figure", async ({
           closed: true,
           fill: "transparent",
           nodes: [
-            { id: "r1", x: 360, y: 220, mode: "corner", inHandle: null, outHandle: null },
-            { id: "r2", x: 560, y: 220, mode: "corner", inHandle: null, outHandle: null },
-            { id: "r3", x: 560, y: 380, mode: "corner", inHandle: null, outHandle: null },
-            { id: "r4", x: 360, y: 380, mode: "corner", inHandle: null, outHandle: null },
+            {
+              id: "r1",
+              x: 360,
+              y: 220,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
+            {
+              id: "r2",
+              x: 560,
+              y: 220,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
+            {
+              id: "r3",
+              x: 560,
+              y: 380,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
+            {
+              id: "r4",
+              x: 360,
+              y: 380,
+              mode: "corner",
+              inHandle: null,
+              outHandle: null,
+            },
           ],
           edges: [
             { id: "re1", from: "r1", to: "r2", kind: "line" },
@@ -610,7 +733,12 @@ test("direct drag does not jump when releasing over another figure", async ({
             { id: "re3", from: "r3", to: "r4", kind: "line" },
             { id: "re4", from: "r4", to: "r1", kind: "line" },
           ],
-          style: { stroke: "#000000", strokeWidth: 2, fill: "rgba(0,0,0,0)", opacity: 1 },
+          style: {
+            stroke: "#000000",
+            strokeWidth: 2,
+            fill: "rgba(0,0,0,0)",
+            opacity: 1,
+          },
         },
       ],
     });
@@ -633,9 +761,9 @@ test("direct drag does not jump when releasing over another figure", async ({
   });
 
   // Drag the line and release on top of the rectangle.
-  await stageCanvas.dragTo(stageCanvas, {
-    sourcePosition: { x: 300, y: 140 },
-    targetPosition: { x: 460, y: 300 },
+  await dragOnCanvas(page, stageCanvas, {
+    source: { x: 300, y: 140 },
+    target: { x: 460, y: 300 },
   });
 
   await expect

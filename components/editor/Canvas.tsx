@@ -12,6 +12,7 @@ import React, {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import {
   Circle,
@@ -209,6 +210,29 @@ function findHoveredFigureId(
   let bestId: string | null = null;
 
   for (const fig of figures) {
+    if (fig.tool === "text") {
+      const b = figureWorldBoundingBox(fig);
+      if (!b) continue;
+      const dx =
+        pWorld.x < b.x
+          ? b.x - pWorld.x
+          : pWorld.x > b.x + b.width
+            ? pWorld.x - (b.x + b.width)
+            : 0;
+      const dy =
+        pWorld.y < b.y
+          ? b.y - pWorld.y
+          : pWorld.y > b.y + b.height
+            ? pWorld.y - (b.y + b.height)
+            : 0;
+      const d = Math.hypot(dx, dy);
+      if (d < bestD) {
+        bestD = d;
+        bestId = fig.id;
+      }
+      continue;
+    }
+
     const poly = figureWorldPolyline(fig, 60);
     const hit = nearestOnPolylineWorld(pWorld, poly);
     if (!hit) continue;
@@ -240,6 +264,42 @@ function pickFigureIdByEdgePriority(
   for (let i = 0; i < figures.length; i++) {
     const fig = figures[i];
     const baseId = fig.kind === "seam" ? (fig.parentId ?? fig.id) : fig.id;
+
+    if (fig.tool === "text") {
+      const b = figureWorldBoundingBox(fig);
+      if (!b) continue;
+      const inside =
+        pWorld.x >= b.x &&
+        pWorld.x <= b.x + b.width &&
+        pWorld.y >= b.y &&
+        pWorld.y <= b.y + b.height;
+      const dx =
+        pWorld.x < b.x
+          ? b.x - pWorld.x
+          : pWorld.x > b.x + b.width
+            ? pWorld.x - (b.x + b.width)
+            : 0;
+      const dy =
+        pWorld.y < b.y
+          ? b.y - pWorld.y
+          : pWorld.y > b.y + b.height
+            ? pWorld.y - (b.y + b.height)
+            : 0;
+      const d = Math.hypot(dx, dy);
+
+      // Text figures must follow the same hit contract as other figures:
+      // - inside always counts
+      // - otherwise require proximity within threshold
+      if (!inside && d > thresholdWorld) continue;
+
+      const prev = bestByBaseId.get(baseId);
+      const area = Math.max(0, b.width) * Math.max(0, b.height);
+      if (!prev || d < prev.d) {
+        bestByBaseId.set(baseId, { d, z: i, inside, area });
+      }
+      if (inside) anyInside = true;
+      continue;
+    }
 
     const poly = figureWorldPolyline(fig, samples);
     const hit = nearestOnPolylineWorld(pWorld, poly);
@@ -1094,31 +1154,6 @@ function clampHandle(anchor: Vec2, handle: Vec2, maxLen: number): Vec2 {
   return add(anchor, mul(v, s));
 }
 
-function makeLineFigure(
-  a: Vec2,
-  b: Vec2,
-  tool: Figure["tool"],
-  stroke: string
-): Figure {
-  const n1: FigureNode = { id: id("n"), x: a.x, y: a.y, mode: "corner" };
-  const n2: FigureNode = { id: id("n"), x: b.x, y: b.y, mode: "corner" };
-  const e: FigureEdge = { id: id("e"), from: n1.id, to: n2.id, kind: "line" };
-  return {
-    id: id("fig"),
-    tool,
-    x: 0,
-    y: 0,
-    rotation: 0,
-    closed: false,
-    nodes: [n1, n2],
-    edges: [e],
-    stroke,
-    strokeWidth: 2,
-    fill: "transparent",
-    opacity: 1,
-  };
-}
-
 function makePolylineLineFigure(
   points: Vec2[],
   closed: boolean,
@@ -1476,6 +1511,14 @@ export default function Canvas() {
     pageGuideSettings,
   } = useEditor();
 
+  const isMac = useSyncExternalStore(
+    () => () => {
+      // no-op: OS does not change during a session
+    },
+    () => /Mac|iPhone|iPod|iPad/.test(navigator.userAgent),
+    () => false
+  );
+
   const nodeLabelsByFigureId = React.useMemo(() => {
     return computeNodeLabels(figures, pointLabelsMode);
   }, [figures, pointLabelsMode]);
@@ -1560,6 +1603,39 @@ export default function Canvas() {
   const [edgeEditDraft, setEdgeEditDraft] = useState<EdgeEditDraft>(null);
   const edgeEditInputRef = useRef<HTMLInputElement | null>(null);
   const lastEdgeEditFocusKeyRef = useRef<string | null>(null);
+
+  type TextEditDraft = {
+    figureId: string;
+    value: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    isNew: boolean;
+    didEdit: boolean;
+  } | null;
+
+  const [textEditDraft, setTextEditDraft] = useState<TextEditDraft>(null);
+  const textEditTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const lastTextEditFocusKeyRef = useRef<string | null>(null);
+  const skipNextTextBlurRef = useRef(false);
+
+  useEffect(() => {
+    if (!textEditDraft) {
+      lastTextEditFocusKeyRef.current = null;
+      return;
+    }
+
+    const key = textEditDraft.figureId;
+    if (lastTextEditFocusKeyRef.current === key) return;
+    lastTextEditFocusKeyRef.current = key;
+
+    const id = requestAnimationFrame(() => {
+      textEditTextareaRef.current?.focus();
+      textEditTextareaRef.current?.select();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [textEditDraft]);
 
   useEffect(() => {
     if (!edgeEditDraft) {
@@ -1937,8 +2013,14 @@ export default function Canvas() {
           } else {
             const x0 = Math.min(startBounds.x, bb.x);
             const y0 = Math.min(startBounds.y, bb.y);
-            const x1 = Math.max(startBounds.x + startBounds.width, bb.x + bb.width);
-            const y1 = Math.max(startBounds.y + startBounds.height, bb.y + bb.height);
+            const x1 = Math.max(
+              startBounds.x + startBounds.width,
+              bb.x + bb.width
+            );
+            const y1 = Math.max(
+              startBounds.y + startBounds.height,
+              bb.y + bb.height
+            );
             startBounds = {
               x: x0,
               y: y0,
@@ -2262,6 +2344,43 @@ export default function Canvas() {
     return out;
   }, [figures, selectedFigureIds, tool]);
 
+  const selectionHitBounds = useMemo((): BoundingBox | null => {
+    if (tool !== "select") return null;
+    if (transformTargetIds.length === 0) return null;
+
+    let bounds: BoundingBox | null = null;
+    for (const id of transformTargetIds) {
+      const fig = figures.find((f) => f.id === id);
+      if (!fig) continue;
+      const tr = getRuntimeFigureTransform(fig);
+      const bb = figureWorldBoundingBox({
+        ...fig,
+        x: tr.x,
+        y: tr.y,
+        rotation: tr.rotation,
+      });
+      if (!bb) continue;
+      if (!bounds) {
+        bounds = { ...bb };
+      } else {
+        const x0 = Math.min(bounds.x, bb.x);
+        const y0 = Math.min(bounds.y, bb.y);
+        const x1 = Math.max(bounds.x + bounds.width, bb.x + bb.width);
+        const y1 = Math.max(bounds.y + bounds.height, bb.y + bb.height);
+        bounds = {
+          x: x0,
+          y: y0,
+          width: x1 - x0,
+          height: y1 - y0,
+        };
+      }
+    }
+
+    // Avoid creating a hit target for degenerate selections.
+    if (!bounds || bounds.width < 1e-6 || bounds.height < 1e-6) return null;
+    return bounds;
+  }, [figures, getRuntimeFigureTransform, tool, transformTargetIds]);
+
   useEffect(() => {
     const transformer = transformerRef.current;
     if (!transformer) return;
@@ -2333,6 +2452,45 @@ export default function Canvas() {
           if (didScale) {
             const sx = u.scaleX;
             const sy = u.scaleY;
+
+            if (next.tool === "text") {
+              const baseWidth =
+                Number.isFinite(next.textWidthPx ?? NaN) &&
+                (next.textWidthPx ?? 0) > 0
+                  ? (next.textWidthPx as number)
+                  : 260;
+              const baseFontSize =
+                Number.isFinite(next.textFontSizePx ?? NaN) &&
+                (next.textFontSizePx ?? 0) > 0
+                  ? (next.textFontSizePx as number)
+                  : 18;
+              const basePadding =
+                Number.isFinite(next.textPaddingPx ?? NaN) &&
+                (next.textPaddingPx ?? 0) >= 0
+                  ? (next.textPaddingPx as number)
+                  : 0;
+
+              const absSx = Math.abs(sx);
+              const absSy = Math.abs(sy);
+              const avgScale = (absSx + absSy) / 2;
+
+              next = {
+                ...next,
+                textWidthPx: Math.round(
+                  Math.max(20, Math.min(4000, baseWidth * absSx))
+                ),
+                textFontSizePx: Math.round(
+                  Math.max(6, Math.min(300, baseFontSize * absSy))
+                ),
+                textPaddingPx: Math.max(
+                  0,
+                  Math.min(50, basePadding * avgScale)
+                ),
+              };
+
+              return next;
+            }
+
             next = {
               ...next,
               nodes: next.nodes.map((n) => ({
@@ -2370,7 +2528,8 @@ export default function Canvas() {
         tool === "line" ||
         tool === "rectangle" ||
         tool === "circle" ||
-        tool === "curve";
+        tool === "curve" ||
+        tool === "text";
       const isMeasure = tool === "measure";
 
       const shouldSnap = (magnetEnabled && isDrawingTool) || isMeasure;
@@ -2902,6 +3061,96 @@ export default function Canvas() {
     [figures]
   );
 
+  const computeTextEditDraft = useCallback(
+    (fig: Figure) => {
+      if (fig.kind === "seam" || fig.tool !== "text") return null;
+
+      // screenX/screenY are already in Stage/container coordinates.
+      // This overlay is positioned inside the same container, so we must NOT
+      // offset by getBoundingClientRect().
+      const screenX = fig.x * scale + position.x;
+      const screenY = fig.y * scale + position.y;
+
+      const fontSize = (() => {
+        const v = fig.textFontSizePx;
+        if (!Number.isFinite(v ?? NaN)) return 18;
+        return Math.max(6, Math.min(300, v as number));
+      })();
+      const lineHeight = (() => {
+        const v = fig.textLineHeight;
+        if (!Number.isFinite(v ?? NaN)) return 1.25;
+        return Math.max(0.8, Math.min(3, v as number));
+      })();
+
+      const widthWorld =
+        Number.isFinite(fig.textWidthPx ?? NaN) && (fig.textWidthPx ?? 0) > 0
+          ? (fig.textWidthPx as number)
+          : 260;
+      const lines = ((fig.textValue ?? "") as string).split("\n");
+      const approxLines = Math.max(1, Math.min(10, lines.length));
+      const heightWorld = Math.max(
+        60,
+        approxLines * fontSize * lineHeight + 18
+      );
+
+      return {
+        figureId: fig.id,
+        value: (fig.textValue ?? "") as string,
+        x: screenX,
+        y: screenY,
+        width: Math.max(160, widthWorld * scale),
+        height: Math.max(60, heightWorld * scale),
+      };
+    },
+    [position.x, position.y, scale]
+  );
+
+  const openInlineTextEdit = useCallback(
+    (figureId: string) => {
+      const fig = figures.find((f) => f.id === figureId);
+      if (!fig) return;
+      const draft = computeTextEditDraft(fig);
+      if (!draft) return;
+      setTextEditDraft({ ...draft, isNew: false, didEdit: false });
+    },
+    [computeTextEditDraft, figures]
+  );
+
+  const openInlineTextEditForFigure = useCallback(
+    (fig: Figure, opts?: { isNew?: boolean }) => {
+      const draft = computeTextEditDraft(fig);
+      if (!draft) return;
+      setTextEditDraft({
+        ...draft,
+        isNew: opts?.isNew === true,
+        didEdit: false,
+      });
+    },
+    [computeTextEditDraft]
+  );
+
+  const removeTextFigure = useCallback(
+    (figureId: string) => {
+      setFigures((prev) => prev.filter((f) => f.id !== figureId));
+      setSelectedFigureIds(selectedFigureIds.filter((id) => id !== figureId));
+      if (selectedFigureId === figureId) {
+        setSelectedFigureId(null);
+      }
+      if (selectedEdge && selectedEdge.figureId === figureId) {
+        setSelectedEdge(null);
+      }
+    },
+    [
+      selectedEdge,
+      selectedFigureId,
+      selectedFigureIds,
+      setFigures,
+      setSelectedEdge,
+      setSelectedFigureId,
+      setSelectedFigureIds,
+    ]
+  );
+
   const applyEdgeLengthEdit = useCallback(
     (
       draft: {
@@ -2932,6 +3181,20 @@ export default function Canvas() {
     [parseCmInput, setFigures]
   );
 
+  const applyTextEdit = useCallback(
+    (figureId: string, value: string) => {
+      setFigures((prev) =>
+        prev.map((f) => {
+          if (f.id !== figureId) return f;
+          if (f.kind === "seam") return f;
+          if (f.tool !== "text") return f;
+          return { ...f, textValue: value };
+        })
+      );
+    },
+    [setFigures]
+  );
+
   const handleStageDblClick = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       if (tool !== "select") return;
@@ -2951,6 +3214,13 @@ export default function Canvas() {
       if (!figId) return;
       const fig = figures.find((f) => f.id === figId);
       if (!fig || fig.kind === "seam") return;
+
+      if (fig.tool === "text") {
+        setSelectedFigureIds([fig.id]);
+        setSelectedEdge(null);
+        openInlineTextEdit(fig.id);
+        return;
+      }
 
       const local = worldToFigureLocal(fig, world);
       const hit = findNearestEdge(fig, local);
@@ -3008,6 +3278,7 @@ export default function Canvas() {
       figures,
       getEdgeAnchorPreference,
       openInlineEdgeEdit,
+      openInlineTextEdit,
       position.x,
       position.y,
       scale,
@@ -3118,6 +3389,72 @@ export default function Canvas() {
     const isBackground =
       e.target === stage || e.target === backgroundRef.current;
 
+    if (tool === "text" && isLeftClick) {
+      e.evt.preventDefault();
+      e.evt.stopPropagation();
+
+      // If an inline editor is open and the user clicks elsewhere on the canvas,
+      // do NOT auto-commit placeholder text. Commit only if they actually edited.
+      if (textEditDraft) {
+        skipNextTextBlurRef.current = true;
+        const draft = textEditDraft;
+        setTextEditDraft(null);
+
+        const trimmed = (draft.value ?? "").trim();
+        if (draft.didEdit) {
+          applyTextEdit(draft.figureId, draft.value);
+        } else if (draft.isNew && trimmed === "") {
+          removeTextFigure(draft.figureId);
+        }
+        // Continue: allow placing a new text at the clicked location.
+      }
+
+      // If clicking an existing text figure, just select it.
+      const thresholdWorld = 10 / scale;
+      const hitId = findHoveredFigureId(figures, world, thresholdWorld);
+      const hit = hitId ? figures.find((f) => f.id === hitId) : null;
+      if (hit && hit.kind !== "seam" && hit.tool === "text") {
+        setSelectedFigureIds([hit.id]);
+        setSelectedEdge(null);
+        openInlineTextEdit(hit.id);
+        return;
+      }
+
+      const resolvedDown = getSnappedWorldForTool(world, "down");
+      const newFig: Figure = {
+        id: id("fig"),
+        tool: "text",
+        x: resolvedDown.world.x,
+        y: resolvedDown.world.y,
+        rotation: 0,
+        nodes: [],
+        edges: [],
+        closed: false,
+        stroke: "aci7",
+        strokeWidth: 1,
+        opacity: 1,
+        textValue: "",
+        textFontFamily:
+          "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+        textFontSizePx: 18,
+        textAlign: "left",
+        textWrap: "word",
+        textWidthPx: 260,
+        textLineHeight: 1.25,
+        textLetterSpacing: 0,
+        textPaddingPx: 0,
+        textBackgroundEnabled: false,
+        textBackgroundFill: "#ffffff",
+        textBackgroundOpacity: 1,
+      };
+
+      setFigures((prev) => [...prev, newFig]);
+      setSelectedFigureIds([newFig.id]);
+      setSelectedEdge(null);
+      openInlineTextEditForFigure(newFig, { isNew: true });
+      return;
+    }
+
     // Select tool: edge-priority selection (closest contour) + marquee selection.
     if (tool === "select" && isLeftClick) {
       const HIT_SLOP_PX = 10;
@@ -3162,6 +3499,54 @@ export default function Canvas() {
         }
         setMarqueeDraft(null);
         return;
+      }
+
+      // If clicking on empty background *inside the current selection bbox*,
+      // start dragging the existing selection (market-standard behavior).
+      // This must not interfere with picking figures inside/under the selection.
+      if (isBackground && selectionHitBounds && selectedFigureIds.length) {
+        const withinBounds =
+          world.x >= selectionHitBounds.x &&
+          world.y >= selectionHitBounds.y &&
+          world.x <= selectionHitBounds.x + selectionHitBounds.width &&
+          world.y <= selectionHitBounds.y + selectionHitBounds.height;
+
+        if (withinBounds) {
+          e.evt.preventDefault();
+          if (e.evt instanceof PointerEvent) {
+            try {
+              stage.container().setPointerCapture(e.evt.pointerId);
+            } catch {
+              // ignore
+            }
+          }
+
+          // Reset any in-progress direct drag candidate.
+          selectDirectDragRef.current = null;
+
+          if (dragPreviewRafRef.current != null) {
+            cancelAnimationFrame(dragPreviewRafRef.current);
+            dragPreviewRafRef.current = null;
+          }
+          dragPreviewPendingRef.current = null;
+          setDragPreviewPositions(null);
+
+          const anchorFigureId = selectedFigureId ?? selectedFigureIds[0];
+          if (!anchorFigureId) return;
+
+          selectDirectDragRef.current = {
+            active: false,
+            anchorFigureId,
+            affectedIds: [],
+            startPositions: new Map(),
+            startBounds: null,
+            startWorld: world,
+            lastWorld: world,
+          };
+
+          setMarqueeDraft(null);
+          return;
+        }
       }
 
       // Start marquee selection (only makes sense when not clicking on a figure).
@@ -5262,6 +5647,85 @@ export default function Canvas() {
               <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400">
                 cm
               </span>
+            </div>
+          </div>
+        ) : null}
+
+        {textEditDraft ? (
+          <div
+            className="absolute z-50"
+            style={{ left: textEditDraft.x, top: textEditDraft.y }}
+            onMouseDown={(evt) => {
+              evt.preventDefault();
+              evt.stopPropagation();
+            }}
+          >
+            <div className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-subtle p-2">
+              <textarea
+                data-testid="text-inline-editor"
+                ref={(node) => {
+                  textEditTextareaRef.current = node;
+                }}
+                className="bg-transparent text-xs text-gray-900 dark:text-gray-100 outline-none resize-none"
+                style={{
+                  width: textEditDraft.width,
+                  height: textEditDraft.height,
+                }}
+                value={textEditDraft.value}
+                placeholder="Texto"
+                onChange={(evt) => {
+                  const next = evt.target.value;
+                  setTextEditDraft((prev) =>
+                    prev ? { ...prev, value: next, didEdit: true } : prev
+                  );
+                }}
+                onKeyDown={(evt) => {
+                  if (evt.key === "Escape") {
+                    evt.preventDefault();
+                    skipNextTextBlurRef.current = true;
+                    if (textEditDraft.isNew && !textEditDraft.didEdit) {
+                      removeTextFigure(textEditDraft.figureId);
+                    }
+                    setTextEditDraft(null);
+                    return;
+                  }
+                  if (evt.key === "Enter" && (evt.metaKey || evt.ctrlKey)) {
+                    evt.preventDefault();
+                    skipNextTextBlurRef.current = true;
+                    applyTextEdit(textEditDraft.figureId, textEditDraft.value);
+                    setTextEditDraft(null);
+                  }
+                }}
+                onBlur={() => {
+                  if (skipNextTextBlurRef.current) {
+                    skipNextTextBlurRef.current = false;
+                    return;
+                  }
+
+                  const trimmed = (textEditDraft.value ?? "").trim();
+                  if (textEditDraft.didEdit) {
+                    applyTextEdit(textEditDraft.figureId, textEditDraft.value);
+                    setTextEditDraft(null);
+                    return;
+                  }
+
+                  // If the user never typed and this was a freshly created text,
+                  // discard it (avoid writing placeholder text into the canvas).
+                  if (textEditDraft.isNew && trimmed === "") {
+                    removeTextFigure(textEditDraft.figureId);
+                    setTextEditDraft(null);
+                    return;
+                  }
+
+                  // Otherwise, just close without mutating.
+                  setTextEditDraft(null);
+                }}
+              />
+              <div className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+                {isMac
+                  ? "⌘⏎ aplica • Esc cancela"
+                  : "Ctrl+Enter aplica • Esc cancela"}
+              </div>
             </div>
           </div>
         ) : null}

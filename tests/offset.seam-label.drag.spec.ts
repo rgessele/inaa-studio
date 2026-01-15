@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { gotoEditor } from "./helpers/e2e";
+import { dragOnCanvas, gotoEditor } from "./helpers/e2e";
 
 function dist(a: { x: number; y: number }, b: { x: number; y: number }) {
   const dx = a.x - b.x;
@@ -55,9 +55,9 @@ test.describe("offset tool - seam label", () => {
     await page.keyboard.press("V");
     await stageCanvas.click({ position: { x: 100, y: 60 } });
 
-    await stageCanvas.dragTo(stageCanvas, {
-      sourcePosition: { x: 100, y: 60 },
-      targetPosition: { x: 220, y: 160 },
+    await dragOnCanvas(page, stageCanvas, {
+      source: { x: 100, y: 60 },
+      target: { x: 220, y: 160 },
     });
 
     const after = await getLabelPos();

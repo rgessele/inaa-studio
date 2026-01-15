@@ -11,6 +11,7 @@ const TOOL_KEY_TO_TOOL: Record<string, Tool> = {
   KeyC: "circle",
   KeyL: "line",
   KeyU: "curve",
+  KeyT: "text",
   KeyM: "measure",
   KeyO: "offset",
   KeyD: "dart",

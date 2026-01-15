@@ -326,6 +326,98 @@ export async function generateTiledPDF(
     );
 
     figuresInTile.forEach((figure) => {
+      if (figure.tool === "text") {
+        const value = (figure.textValue ?? "").toString();
+        if (!value.trim()) return;
+
+        const fontSize = (() => {
+          const v = figure.textFontSizePx;
+          if (!Number.isFinite(v ?? NaN)) return 18;
+          return Math.max(6, Math.min(300, v as number));
+        })();
+        const lineHeight = (() => {
+          const v = figure.textLineHeight;
+          if (!Number.isFinite(v ?? NaN)) return 1.25;
+          return Math.max(0.8, Math.min(3, v as number));
+        })();
+        const width =
+          Number.isFinite(figure.textWidthPx ?? NaN) &&
+          (figure.textWidthPx ?? 0) > 0
+            ? (figure.textWidthPx as number)
+            : undefined;
+
+        const rawTextFill = figure.textFill ?? figure.stroke;
+        const textFill = (() => {
+          if (!rawTextFill) return "#000000";
+          const s = rawTextFill.trim().toLowerCase();
+          if (s === "aci7" || s === "#000" || s === "#000000") return "#000000";
+          return rawTextFill;
+        })();
+
+        const padding = (() => {
+          const v = figure.textPaddingPx;
+          if (!Number.isFinite(v ?? NaN)) return 0;
+          return Math.max(0, Math.min(50, v as number));
+        })();
+
+        const bgEnabled = figure.textBackgroundEnabled === true;
+        const bgFill = figure.textBackgroundFill ?? "#ffffff";
+        const bgOpacity = (() => {
+          const v = figure.textBackgroundOpacity;
+          if (!Number.isFinite(v ?? NaN)) return 1;
+          return Math.max(0, Math.min(1, v as number));
+        })();
+
+        if (bgEnabled) {
+          const approxCharWidth = fontSize * 0.62;
+          const longest = value
+            .split("\n")
+            .reduce((m, l) => Math.max(m, l.length), 0);
+          const wLocal =
+            (width ?? Math.max(12, longest * approxCharWidth)) + padding * 2;
+          const hLocal =
+            Math.max(1, value.split("\n").length) * fontSize * lineHeight +
+            padding * 2;
+
+          tileLayer.add(
+            new Konva.Rect({
+              x: figure.x - tileX - padding,
+              y: figure.y - tileY - padding,
+              width: wLocal,
+              height: hLocal,
+              fill: bgFill,
+              opacity: (figure.opacity ?? 1) * bgOpacity,
+              rotation: figure.rotation || 0,
+              listening: false,
+              name: "inaa-text-bg",
+            })
+          );
+        }
+
+        tileLayer.add(
+          new Konva.Text({
+            x: figure.x - tileX,
+            y: figure.y - tileY,
+            text: value,
+            fontSize,
+            fontFamily:
+              figure.textFontFamily ??
+              "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+            fill: textFill,
+            opacity: figure.opacity ?? 1,
+            rotation: figure.rotation || 0,
+            align: figure.textAlign ?? "left",
+            lineHeight,
+            letterSpacing: figure.textLetterSpacing ?? 0,
+            width,
+            wrap: width ? (figure.textWrap ?? "word") : "none",
+            listening: false,
+            name: "inaa-text",
+          })
+        );
+        return;
+      }
+
       const poly = figureWorldPolyline(figure, 60);
       if (poly.length < 4) return;
 
@@ -490,6 +582,101 @@ export function generateSVG(
   svg += `width="${viewBox.width}px" height="${viewBox.height}px">\n`;
 
   for (const fig of filtered) {
+    if (fig.tool === "text") {
+      const value = (fig.textValue ?? "").toString();
+      if (value.trim()) {
+        const fontSize = (() => {
+          const v = fig.textFontSizePx;
+          if (!Number.isFinite(v ?? NaN)) return 18;
+          return Math.max(6, Math.min(300, v as number));
+        })();
+        const lineHeight = (() => {
+          const v = fig.textLineHeight;
+          if (!Number.isFinite(v ?? NaN)) return 1.25;
+          return Math.max(0.8, Math.min(3, v as number));
+        })();
+        const align = fig.textAlign ?? "left";
+        const anchor =
+          align === "center" ? "middle" : align === "right" ? "end" : "start";
+        const x = fig.x;
+        const y = fig.y;
+        const rot = fig.rotation || 0;
+        const fontFamily = (fig.textFontFamily ?? "sans-serif").replace(
+          /"/g,
+          "&quot;"
+        );
+
+        const textFill = (fig.textFill ?? "#000").replace(/"/g, "&quot;");
+        const paddingPx = (() => {
+          const v = fig.textPaddingPx;
+          if (!Number.isFinite(v ?? NaN)) return 0;
+          return Math.max(0, Math.min(50, v as number));
+        })();
+        const bgEnabled = fig.textBackgroundEnabled === true;
+        const bgFill = (fig.textBackgroundFill ?? "#ffffff").replace(
+          /"/g,
+          "&quot;"
+        );
+        const bgOpacity = (() => {
+          const v = fig.textBackgroundOpacity;
+          if (!Number.isFinite(v ?? NaN)) return 1;
+          return Math.max(0, Math.min(1, v as number));
+        })();
+
+        // Escape basic XML entities; preserve newlines using <tspan>.
+        const escaped = value
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+        const parts = escaped.split("\n");
+
+        if (bgEnabled) {
+          const approxCharWidth = fontSize * 0.62;
+          const longest = value
+            .split("\n")
+            .reduce((m, l) => Math.max(m, l.length), 0);
+          const widthLocal =
+            ((Number.isFinite(fig.textWidthPx ?? NaN) &&
+            (fig.textWidthPx ?? 0) > 0
+              ? (fig.textWidthPx as number)
+              : Math.max(12, longest * approxCharWidth)) as number) +
+            paddingPx * 2;
+          const heightLocal =
+            Math.max(1, value.split("\n").length) * fontSize * lineHeight +
+            paddingPx * 2;
+
+          svg += `  <g class="inaa-text-group"`;
+          if (rot) svg += ` transform="rotate(${rot} ${x} ${y})"`;
+          svg += `>\n`;
+          svg += `    <rect x="${x - paddingPx}" y="${y - paddingPx}" width="${widthLocal}" height="${heightLocal}"`;
+          svg += ` fill="${bgFill}" fill-opacity="${(fig.opacity ?? 1) * bgOpacity}" />\n`;
+        }
+
+        svg += bgEnabled ? `    ` : `  `;
+        svg += `<text class="inaa-text" x="${x}" y="${y}"`;
+        svg += ` font-family="${fontFamily}" font-size="${fontSize}"`;
+        svg += ` fill="${textFill}" fill-opacity="${fig.opacity ?? 1}"`;
+        svg += ` text-anchor="${anchor}" dominant-baseline="hanging"`;
+        svg += ` letter-spacing="${fig.textLetterSpacing ?? 0}"`;
+        svg += ` style="white-space: pre;"`;
+        if (rot && !bgEnabled) svg += ` transform="rotate(${rot} ${x} ${y})"`;
+        svg += `>`;
+
+        if (parts.length === 1) {
+          svg += parts[0] ?? "";
+        } else {
+          for (let i = 0; i < parts.length; i++) {
+            const dy = i === 0 ? 0 : fontSize * lineHeight;
+            svg += `<tspan x="${x}" dy="${dy}">${parts[i] ?? ""}</tspan>`;
+          }
+        }
+
+        svg += `</text>\n`;
+        if (bgEnabled) svg += `  </g>\n`;
+      }
+      continue;
+    }
+
     const points = figureWorldPolyline(fig, 120);
     const d = polylineToSvgPath(points, fig.closed);
     if (!d) continue;

@@ -197,6 +197,73 @@ export function figureWorldPolyline(
 export function figureWorldBoundingBox(
   figure: Figure
 ): { x: number; y: number; width: number; height: number } | null {
+  if (figure.tool === "text") {
+    const text = (figure.textValue ?? "").toString();
+    const fontSize = (() => {
+      const v = figure.textFontSizePx;
+      if (!Number.isFinite(v ?? NaN)) return 18;
+      return Math.max(6, Math.min(300, v as number));
+    })();
+    const lineHeight = (() => {
+      const v = figure.textLineHeight;
+      if (!Number.isFinite(v ?? NaN)) return 1.25;
+      return Math.max(0.8, Math.min(3, v as number));
+    })();
+
+    const explicitWidth =
+      Number.isFinite(figure.textWidthPx ?? NaN) &&
+      (figure.textWidthPx ?? 0) > 0
+        ? (figure.textWidthPx as number)
+        : null;
+
+    const padding = (() => {
+      const v = figure.textPaddingPx;
+      if (!Number.isFinite(v ?? NaN)) return 0;
+      return Math.max(0, Math.min(50, v as number));
+    })();
+
+    const lines = text.split("\n");
+
+    const approxCharWidth = fontSize * 0.62;
+    const maxLineChars = explicitWidth
+      ? Math.max(1, Math.floor(explicitWidth / Math.max(1, approxCharWidth)))
+      : null;
+
+    const approxWrappedLineCount = lines.reduce((acc, line) => {
+      if (!maxLineChars) return acc + 1;
+      const len = Math.max(1, line.length);
+      return acc + Math.max(1, Math.ceil(len / maxLineChars));
+    }, 0);
+
+    const longestLineLen = lines.reduce((m, l) => Math.max(m, l.length), 0);
+    const widthLocal =
+      (explicitWidth ?? Math.max(12, longestLineLen * approxCharWidth)) +
+      padding * 2;
+    const heightLocal =
+      Math.max(1, approxWrappedLineCount) * fontSize * lineHeight + padding * 2;
+
+    const cornersLocal = [
+      { x: -padding, y: -padding },
+      { x: widthLocal - padding, y: -padding },
+      { x: widthLocal - padding, y: heightLocal - padding },
+      { x: -padding, y: heightLocal - padding },
+    ];
+
+    const cornersWorld = cornersLocal.map((p) => figureLocalToWorld(figure, p));
+    let minX = cornersWorld[0]!.x;
+    let minY = cornersWorld[0]!.y;
+    let maxX = cornersWorld[0]!.x;
+    let maxY = cornersWorld[0]!.y;
+    for (let i = 1; i < cornersWorld.length; i++) {
+      const p = cornersWorld[i]!;
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }
+
   const pts = figureWorldPolyline(figure, 40);
   if (pts.length < 2) return null;
   let minX = pts[0];

@@ -1,4 +1,10 @@
-export type DrawingTool = "rectangle" | "circle" | "line" | "curve" | "dart";
+export type DrawingTool =
+  | "rectangle"
+  | "circle"
+  | "line"
+  | "curve"
+  | "dart"
+  | "text";
 export type Tool =
   | DrawingTool
   | "select"
@@ -179,6 +185,28 @@ export interface Figure {
   nodes: FigureNode[];
   edges: FigureEdge[];
   closed: boolean;
+
+  // =====================
+  // Text tool (tool === "text")
+  // =====================
+  textValue?: string;
+  textFontFamily?: string;
+  textFontSizePx?: number;
+  textFontStyle?: "normal" | "italic";
+  textFontWeight?: number | "normal" | "bold";
+  textDecoration?: "none" | "underline" | "line-through";
+  textFill?: string;
+  textAlign?: "left" | "center" | "right";
+  textLineHeight?: number;
+  textLetterSpacing?: number;
+  // When set, text wraps/clips like a text box (local/world px).
+  textWidthPx?: number;
+  textWrap?: "none" | "word" | "char";
+  textPaddingPx?: number;
+
+  textBackgroundEnabled?: boolean;
+  textBackgroundFill?: string;
+  textBackgroundOpacity?: number;
 
   // Curve classification (Styled Curves): only meaningful when tool === "curve".
   curveType?: CurveType;

@@ -1,6 +1,11 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useEditor } from "./EditorContext";
 import { figureWorldBoundingBox } from "./figurePath";
 import { cmToPx, pxToCm } from "./measureUnits";
@@ -47,6 +52,33 @@ export function PropertiesPanel() {
     unfoldAxis,
     setUnfoldAxis,
   } = useEditor();
+
+  const isDark = useSyncExternalStore(
+    (onStoreChange) => {
+      if (typeof document === "undefined") return () => {};
+      const root = document.documentElement;
+      const obs = new MutationObserver(() => onStoreChange());
+      obs.observe(root, { attributes: true, attributeFilter: ["class"] });
+      return () => obs.disconnect();
+    },
+    () =>
+      typeof document !== "undefined" &&
+      document.documentElement.classList.contains("dark"),
+    () => false
+  );
+
+  const resolveAci7 = useCallback(
+    () => (isDark ? "#ffffff" : "#000000"),
+    [isDark]
+  );
+
+  const isMac = useSyncExternalStore(
+    () => () => {
+      // no-op: OS does not change during a session
+    },
+    () => /Mac|iPhone|iPod|iPad/.test(navigator.userAgent),
+    () => false
+  );
 
   const makeLocalId = useCallback((prefix: string): string => {
     return typeof crypto !== "undefined" && crypto.randomUUID
@@ -306,11 +338,70 @@ export function PropertiesPanel() {
   const [figureNameDraft, setFigureNameDraft] = useState<string>("");
   const [isEditingFigureName, setIsEditingFigureName] = useState(false);
 
+  const [textValueDraft, setTextValueDraft] = useState<string>("");
+  const [isEditingTextValue, setIsEditingTextValue] = useState(false);
+  const [textWidthDraft, setTextWidthDraft] = useState<string>("");
+  const [isEditingTextWidth, setIsEditingTextWidth] = useState(false);
+  const [textLineHeightDraft, setTextLineHeightDraft] = useState<string>("");
+  const [isEditingTextLineHeight, setIsEditingTextLineHeight] = useState(false);
+  const [textLetterSpacingDraft, setTextLetterSpacingDraft] =
+    useState<string>("");
+  const [isEditingTextLetterSpacing, setIsEditingTextLetterSpacing] =
+    useState(false);
+  const [textPaddingDraft, setTextPaddingDraft] = useState<string>("");
+  const [isEditingTextPadding, setIsEditingTextPadding] = useState(false);
+  const [textBgOpacityDraft, setTextBgOpacityDraft] = useState<string>("");
+  const [isEditingTextBgOpacity, setIsEditingTextBgOpacity] = useState(false);
+
   React.useEffect(() => {
     if (!selectedFigure) return;
     if (isEditingFigureName) return;
     setFigureNameDraft(selectedFigure.name ?? "");
   }, [isEditingFigureName, selectedFigure]);
+
+  React.useEffect(() => {
+    if (!selectedFigure) return;
+    if (selectedFigure.tool !== "text") return;
+    if (!isEditingTextValue) {
+      setTextValueDraft((selectedFigure.textValue ?? "") as string);
+    }
+    if (!isEditingTextWidth) {
+      const w = selectedFigure.textWidthPx;
+      setTextWidthDraft(
+        Number.isFinite(w ?? NaN) && (w ?? 0) > 0
+          ? formatPtBrDecimalFixed(w as number, 0)
+          : ""
+      );
+    }
+    if (!isEditingTextLineHeight) {
+      const v = selectedFigure.textLineHeight;
+      const safe = Number.isFinite(v ?? NaN) ? (v as number) : 1.25;
+      setTextLineHeightDraft(formatPtBrDecimalFixed(safe, 2));
+    }
+    if (!isEditingTextLetterSpacing) {
+      const v = selectedFigure.textLetterSpacing;
+      const safe = Number.isFinite(v ?? NaN) ? (v as number) : 0;
+      setTextLetterSpacingDraft(formatPtBrDecimalFixed(safe, 1));
+    }
+    if (!isEditingTextPadding) {
+      const v = selectedFigure.textPaddingPx;
+      const safe = Number.isFinite(v ?? NaN) ? (v as number) : 0;
+      setTextPaddingDraft(formatPtBrDecimalFixed(safe, 0));
+    }
+    if (!isEditingTextBgOpacity) {
+      const v = selectedFigure.textBackgroundOpacity;
+      const safe = Number.isFinite(v ?? NaN) ? (v as number) : 1;
+      setTextBgOpacityDraft(formatPtBrDecimalFixed(safe, 2));
+    }
+  }, [
+    isEditingTextBgOpacity,
+    isEditingTextLetterSpacing,
+    isEditingTextLineHeight,
+    isEditingTextPadding,
+    isEditingTextValue,
+    isEditingTextWidth,
+    selectedFigure,
+  ]);
 
   const applyFigureNameDraft = (raw: string) => {
     if (!selectedFigure) return;
@@ -322,6 +413,101 @@ export function PropertiesPanel() {
       })
     );
     setFigureNameDraft(trimmed);
+  };
+
+  const applyTextValueDraft = (raw: string) => {
+    if (!selectedFigure) return;
+    if (selectedFigure.tool !== "text") return;
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id !== selectedFigure.id) return f;
+        if (f.kind === "seam") return f;
+        if (f.tool !== "text") return f;
+        return { ...f, textValue: raw };
+      })
+    );
+  };
+
+  const applyTextWidthDraft = (raw: string) => {
+    if (!selectedFigure) return;
+    if (selectedFigure.tool !== "text") return;
+
+    const v = raw.trim().length ? parsePtBrDecimal(raw) : null;
+    const nextWidth =
+      v == null || !Number.isFinite(v) || v <= 0 ? undefined : Math.max(10, v);
+
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id !== selectedFigure.id) return f;
+        if (f.kind === "seam") return f;
+        if (f.tool !== "text") return f;
+        return { ...f, textWidthPx: nextWidth };
+      })
+    );
+  };
+
+  const applyTextLineHeightDraft = (raw: string) => {
+    if (!selectedFigure) return;
+    if (selectedFigure.tool !== "text") return;
+    const v = parsePtBrDecimal(raw);
+    if (v == null) return;
+    const safe = Math.max(0.8, Math.min(3, v));
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id !== selectedFigure.id) return f;
+        if (f.kind === "seam") return f;
+        if (f.tool !== "text") return f;
+        return { ...f, textLineHeight: safe };
+      })
+    );
+  };
+
+  const applyTextLetterSpacingDraft = (raw: string) => {
+    if (!selectedFigure) return;
+    if (selectedFigure.tool !== "text") return;
+    const v = parsePtBrDecimal(raw);
+    if (v == null) return;
+    const safe = Math.max(-2, Math.min(20, v));
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id !== selectedFigure.id) return f;
+        if (f.kind === "seam") return f;
+        if (f.tool !== "text") return f;
+        return { ...f, textLetterSpacing: safe };
+      })
+    );
+  };
+
+  const applyTextPaddingDraft = (raw: string) => {
+    if (!selectedFigure) return;
+    if (selectedFigure.tool !== "text") return;
+    const v = parsePtBrDecimal(raw);
+    if (v == null) return;
+    const safe = Math.max(0, Math.min(50, v));
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id !== selectedFigure.id) return f;
+        if (f.kind === "seam") return f;
+        if (f.tool !== "text") return f;
+        return { ...f, textPaddingPx: safe };
+      })
+    );
+  };
+
+  const applyTextBgOpacityDraft = (raw: string) => {
+    if (!selectedFigure) return;
+    if (selectedFigure.tool !== "text") return;
+    const v = parsePtBrDecimal(raw);
+    if (v == null) return;
+    const safe = Math.max(0, Math.min(1, v));
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id !== selectedFigure.id) return f;
+        if (f.kind === "seam") return f;
+        if (f.tool !== "text") return f;
+        return { ...f, textBackgroundOpacity: safe };
+      })
+    );
   };
 
   const curveSelection =
@@ -1696,6 +1882,710 @@ export function PropertiesPanel() {
                       ? "Editar a circunferência ajusta o raio."
                       : "Editar a circunferência escala a elipse mantendo a proporção (Rx/Ry)."}
                   </p>
+
+                  <div className="h-px bg-gray-200 dark:bg-gray-700"></div>
+                </div>
+              ) : null}
+
+              {selectedFigure?.tool === "text" &&
+              selectedFigure.kind !== "seam" &&
+              selectedFigureIds.length === 1 ? (
+                <div className="space-y-3">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Texto
+                    </span>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                      {isMac ? "⌘⏎ no canvas" : "Ctrl+Enter no canvas"}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Conteúdo
+                    </span>
+                    <textarea
+                      data-testid="text-content"
+                      className={
+                        "w-full " +
+                        inputBaseClass +
+                        " " +
+                        inputFocusClass +
+                        " !text-left resize-y min-h-[72px]"
+                      }
+                      value={textValueDraft}
+                      placeholder="Digite o texto…"
+                      onFocus={() => setIsEditingTextValue(true)}
+                      onChange={(e) => setTextValueDraft(e.target.value)}
+                      onBlur={() => {
+                        setIsEditingTextValue(false);
+                        applyTextValueDraft(textValueDraft);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setIsEditingTextValue(false);
+                          setTextValueDraft(
+                            (selectedFigure.textValue ?? "") as string
+                          );
+                          (e.currentTarget as HTMLTextAreaElement).blur();
+                        }
+                      }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                        Fonte
+                      </span>
+                      <select
+                        data-testid="text-font-family"
+                        className={
+                          "w-full " +
+                          inputBaseClass +
+                          " " +
+                          inputFocusClass +
+                          " !text-left"
+                        }
+                        value={
+                          selectedFigure.textFontFamily ??
+                          "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
+                        }
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setFigures((prev) =>
+                            prev.map((f) =>
+                              f.id === selectedFigure.id &&
+                              f.kind !== "seam" &&
+                              f.tool === "text"
+                                ? { ...f, textFontFamily: v }
+                                : f
+                            )
+                          );
+                        }}
+                      >
+                        <option value="Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif">
+                          Inter / System
+                        </option>
+                        <option value="Arial, Helvetica, sans-serif">
+                          Arial
+                        </option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="Times New Roman, Times, serif">
+                          Times
+                        </option>
+                        <option value="Courier New, Courier, monospace">
+                          Courier
+                        </option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                        Cor
+                      </span>
+                      <input
+                        data-testid="text-fill"
+                        className={
+                          "w-full " + inputBaseClass + " " + inputFocusClass
+                        }
+                        type="color"
+                        value={(() => {
+                          const rawFill = selectedFigure.textFill;
+                          if (typeof rawFill === "string") {
+                            const s = rawFill.trim().toLowerCase();
+                            if (/^#[0-9a-f]{6}$/.test(s)) return s;
+                            if (
+                              s === "aci7" ||
+                              s === "#000" ||
+                              s === "#000000"
+                            ) {
+                              return resolveAci7();
+                            }
+                          }
+
+                          const rawStroke = selectedFigure.stroke;
+                          if (typeof rawStroke !== "string")
+                            return resolveAci7();
+                          const s = rawStroke.trim().toLowerCase();
+                          if (!s) return resolveAci7();
+                          if (s === "aci7" || s === "#000" || s === "#000000") {
+                            return resolveAci7();
+                          }
+                          if (/^#[0-9a-f]{6}$/.test(s)) return s;
+
+                          return resolveAci7();
+                        })()}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setFigures((prev) =>
+                            prev.map((f) =>
+                              f.id === selectedFigure.id &&
+                              f.kind !== "seam" &&
+                              f.tool === "text"
+                                ? { ...f, textFill: v }
+                                : f
+                            )
+                          );
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                        Tamanho
+                      </span>
+                      <select
+                        data-testid="text-font-size"
+                        className={
+                          "w-full " +
+                          inputBaseClass +
+                          " " +
+                          inputFocusClass +
+                          " !text-left"
+                        }
+                        value={String(
+                          Math.round(selectedFigure.textFontSizePx ?? 18)
+                        )}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          const safe = Number.isFinite(v)
+                            ? Math.max(6, Math.min(300, v))
+                            : 18;
+                          setFigures((prev) =>
+                            prev.map((f) =>
+                              f.id === selectedFigure.id &&
+                              f.kind !== "seam" &&
+                              f.tool === "text"
+                                ? { ...f, textFontSizePx: safe }
+                                : f
+                            )
+                          );
+                        }}
+                      >
+                        {(() => {
+                          const v = Math.round(
+                            selectedFigure.textFontSizePx ?? 18
+                          );
+                          const allowed = new Set([
+                            10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64, 80,
+                            96,
+                          ]);
+                          if (allowed.has(v)) return null;
+                          return <option value={String(v)}>{v} px</option>;
+                        })()}
+                        <option value="10">10 px</option>
+                        <option value="12">12 px</option>
+                        <option value="14">14 px</option>
+                        <option value="16">16 px</option>
+                        <option value="18">18 px</option>
+                        <option value="20">20 px</option>
+                        <option value="24">24 px</option>
+                        <option value="28">28 px</option>
+                        <option value="32">32 px</option>
+                        <option value="40">40 px</option>
+                        <option value="48">48 px</option>
+                        <option value="64">64 px</option>
+                        <option value="80">80 px</option>
+                        <option value="96">96 px</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                        Alinhamento
+                      </span>
+                      <select
+                        data-testid="text-align"
+                        className={
+                          "w-full " +
+                          inputBaseClass +
+                          " " +
+                          inputFocusClass +
+                          " !text-left"
+                        }
+                        value={selectedFigure.textAlign ?? "left"}
+                        onChange={(e) => {
+                          const v = e.target.value as
+                            | "left"
+                            | "center"
+                            | "right";
+                          setFigures((prev) =>
+                            prev.map((f) =>
+                              f.id === selectedFigure.id &&
+                              f.kind !== "seam" &&
+                              f.tool === "text"
+                                ? { ...f, textAlign: v }
+                                : f
+                            )
+                          );
+                        }}
+                      >
+                        <option value="left">Esquerda</option>
+                        <option value="center">Centro</option>
+                        <option value="right">Direita</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                        Quebra
+                      </span>
+                      <select
+                        data-testid="text-wrap"
+                        className={
+                          "w-full " +
+                          inputBaseClass +
+                          " " +
+                          inputFocusClass +
+                          " !text-left"
+                        }
+                        value={selectedFigure.textWrap ?? "word"}
+                        onChange={(e) => {
+                          const v = e.target.value as "word" | "char" | "none";
+                          setFigures((prev) =>
+                            prev.map((f) =>
+                              f.id === selectedFigure.id &&
+                              f.kind !== "seam" &&
+                              f.tool === "text"
+                                ? { ...f, textWrap: v }
+                                : f
+                            )
+                          );
+                        }}
+                      >
+                        <option value="word">Palavra</option>
+                        <option value="char">Caractere</option>
+                        <option value="none">Sem quebra</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                        Largura (px)
+                      </span>
+                      <input
+                        data-testid="text-width"
+                        className={
+                          "w-full " +
+                          inputBaseClass +
+                          " " +
+                          inputFocusClass +
+                          " !text-left"
+                        }
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="auto"
+                        value={textWidthDraft}
+                        onFocus={() => setIsEditingTextWidth(true)}
+                        onChange={(e) => setTextWidthDraft(e.target.value)}
+                        onBlur={() => {
+                          setIsEditingTextWidth(false);
+                          applyTextWidthDraft(textWidthDraft);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setIsEditingTextWidth(false);
+                            const w = selectedFigure.textWidthPx;
+                            setTextWidthDraft(
+                              Number.isFinite(w ?? NaN) && (w ?? 0) > 0
+                                ? formatPtBrDecimalFixed(w as number, 0)
+                                : ""
+                            );
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                        Line-height
+                      </span>
+                      <input
+                        data-testid="text-line-height"
+                        className={
+                          "w-full " +
+                          inputBaseClass +
+                          " " +
+                          inputFocusClass +
+                          " !text-left"
+                        }
+                        type="text"
+                        inputMode="decimal"
+                        value={textLineHeightDraft}
+                        onFocus={() => setIsEditingTextLineHeight(true)}
+                        onChange={(e) => setTextLineHeightDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                            e.preventDefault();
+                            const dir: 1 | -1 = e.key === "ArrowUp" ? 1 : -1;
+                            const fallback =
+                              selectedFigure.textLineHeight ?? 1.25;
+                            const next = bumpNumericValue({
+                              raw: textLineHeightDraft,
+                              fallback,
+                              direction: dir,
+                              step: 0.05,
+                              min: 0.8,
+                              max: 3,
+                            });
+                            const nextStr = formatPtBrDecimalFixed(next, 2);
+                            setTextLineHeightDraft(nextStr);
+                            applyTextLineHeightDraft(nextStr);
+                            return;
+                          }
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setIsEditingTextLineHeight(false);
+                            const v = selectedFigure.textLineHeight ?? 1.25;
+                            setTextLineHeightDraft(
+                              formatPtBrDecimalFixed(v, 2)
+                            );
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }
+                        }}
+                        onWheel={(e) => {
+                          if (document.activeElement !== e.currentTarget)
+                            return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const dir: 1 | -1 = e.deltaY < 0 ? 1 : -1;
+                          const fallback =
+                            selectedFigure.textLineHeight ?? 1.25;
+                          const next = bumpNumericValue({
+                            raw: textLineHeightDraft,
+                            fallback,
+                            direction: dir,
+                            step: 0.05,
+                            min: 0.8,
+                            max: 3,
+                          });
+                          const nextStr = formatPtBrDecimalFixed(next, 2);
+                          setTextLineHeightDraft(nextStr);
+                          applyTextLineHeightDraft(nextStr);
+                        }}
+                        onBlur={() => {
+                          setIsEditingTextLineHeight(false);
+                          applyTextLineHeightDraft(textLineHeightDraft);
+                        }}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                        Espaçamento
+                      </span>
+                      <input
+                        data-testid="text-letter-spacing"
+                        className={
+                          "w-full " +
+                          inputBaseClass +
+                          " " +
+                          inputFocusClass +
+                          " !text-left"
+                        }
+                        type="text"
+                        inputMode="decimal"
+                        value={textLetterSpacingDraft}
+                        onFocus={() => setIsEditingTextLetterSpacing(true)}
+                        onChange={(e) =>
+                          setTextLetterSpacingDraft(e.target.value)
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                            e.preventDefault();
+                            const dir: 1 | -1 = e.key === "ArrowUp" ? 1 : -1;
+                            const fallback =
+                              selectedFigure.textLetterSpacing ?? 0;
+                            const next = bumpNumericValue({
+                              raw: textLetterSpacingDraft,
+                              fallback,
+                              direction: dir,
+                              step: 0.5,
+                              min: -2,
+                              max: 20,
+                            });
+                            const nextStr = formatPtBrDecimalFixed(next, 1);
+                            setTextLetterSpacingDraft(nextStr);
+                            applyTextLetterSpacingDraft(nextStr);
+                            return;
+                          }
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setIsEditingTextLetterSpacing(false);
+                            const v = selectedFigure.textLetterSpacing ?? 0;
+                            setTextLetterSpacingDraft(
+                              formatPtBrDecimalFixed(v, 1)
+                            );
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }
+                        }}
+                        onWheel={(e) => {
+                          if (document.activeElement !== e.currentTarget)
+                            return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const dir: 1 | -1 = e.deltaY < 0 ? 1 : -1;
+                          const fallback =
+                            selectedFigure.textLetterSpacing ?? 0;
+                          const next = bumpNumericValue({
+                            raw: textLetterSpacingDraft,
+                            fallback,
+                            direction: dir,
+                            step: 0.5,
+                            min: -2,
+                            max: 20,
+                          });
+                          const nextStr = formatPtBrDecimalFixed(next, 1);
+                          setTextLetterSpacingDraft(nextStr);
+                          applyTextLetterSpacingDraft(nextStr);
+                        }}
+                        onBlur={() => {
+                          setIsEditingTextLetterSpacing(false);
+                          applyTextLetterSpacingDraft(textLetterSpacingDraft);
+                        }}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                        Padding
+                      </span>
+                      <input
+                        data-testid="text-padding"
+                        className={
+                          "w-full " +
+                          inputBaseClass +
+                          " " +
+                          inputFocusClass +
+                          " !text-left"
+                        }
+                        type="text"
+                        inputMode="decimal"
+                        value={textPaddingDraft}
+                        onFocus={() => setIsEditingTextPadding(true)}
+                        onChange={(e) => setTextPaddingDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                            e.preventDefault();
+                            const dir: 1 | -1 = e.key === "ArrowUp" ? 1 : -1;
+                            const fallback = selectedFigure.textPaddingPx ?? 0;
+                            const next = bumpNumericValue({
+                              raw: textPaddingDraft,
+                              fallback,
+                              direction: dir,
+                              step: 1,
+                              min: 0,
+                              max: 50,
+                            });
+                            const nextStr = formatPtBrDecimalFixed(next, 0);
+                            setTextPaddingDraft(nextStr);
+                            applyTextPaddingDraft(nextStr);
+                            return;
+                          }
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setIsEditingTextPadding(false);
+                            const v = selectedFigure.textPaddingPx ?? 0;
+                            setTextPaddingDraft(formatPtBrDecimalFixed(v, 0));
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }
+                        }}
+                        onWheel={(e) => {
+                          if (document.activeElement !== e.currentTarget)
+                            return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const dir: 1 | -1 = e.deltaY < 0 ? 1 : -1;
+                          const fallback = selectedFigure.textPaddingPx ?? 0;
+                          const next = bumpNumericValue({
+                            raw: textPaddingDraft,
+                            fallback,
+                            direction: dir,
+                            step: 1,
+                            min: 0,
+                            max: 50,
+                          });
+                          const nextStr = formatPtBrDecimalFixed(next, 0);
+                          setTextPaddingDraft(nextStr);
+                          applyTextPaddingDraft(nextStr);
+                        }}
+                        onBlur={() => {
+                          setIsEditingTextPadding(false);
+                          applyTextPaddingDraft(textPaddingDraft);
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200">
+                      <input
+                        data-testid="text-bg-enabled"
+                        type="checkbox"
+                        checked={selectedFigure.textBackgroundEnabled === true}
+                        onChange={(e) => {
+                          const enabled = e.target.checked;
+                          setFigures((prev) =>
+                            prev.map((f) =>
+                              f.id === selectedFigure.id &&
+                              f.kind !== "seam" &&
+                              f.tool === "text"
+                                ? { ...f, textBackgroundEnabled: enabled }
+                                : f
+                            )
+                          );
+                        }}
+                      />
+                      Fundo
+                    </label>
+
+                    {selectedFigure.textBackgroundEnabled === true ? (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                            Cor do fundo
+                          </span>
+                          <input
+                            data-testid="text-bg-fill"
+                            className={
+                              "w-full " + inputBaseClass + " " + inputFocusClass
+                            }
+                            type="color"
+                            value={(() => {
+                              const raw =
+                                selectedFigure.textBackgroundFill ?? "#ffffff";
+                              return /^#[0-9a-fA-F]{6}$/.test(raw)
+                                ? raw
+                                : "#ffffff";
+                            })()}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setFigures((prev) =>
+                                prev.map((f) =>
+                                  f.id === selectedFigure.id &&
+                                  f.kind !== "seam" &&
+                                  f.tool === "text"
+                                    ? { ...f, textBackgroundFill: v }
+                                    : f
+                                )
+                              );
+                            }}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider block">
+                            Opacidade
+                          </span>
+                          <input
+                            data-testid="text-bg-opacity"
+                            className={
+                              "w-full " +
+                              inputBaseClass +
+                              " " +
+                              inputFocusClass +
+                              " !text-left"
+                            }
+                            type="text"
+                            inputMode="decimal"
+                            value={textBgOpacityDraft}
+                            onFocus={() => setIsEditingTextBgOpacity(true)}
+                            onChange={(e) =>
+                              setTextBgOpacityDraft(e.target.value)
+                            }
+                            onKeyDown={(e) => {
+                              if (
+                                e.key === "ArrowUp" ||
+                                e.key === "ArrowDown"
+                              ) {
+                                e.preventDefault();
+                                const dir: 1 | -1 =
+                                  e.key === "ArrowUp" ? 1 : -1;
+                                const fallback =
+                                  selectedFigure.textBackgroundOpacity ?? 1;
+                                const next = bumpNumericValue({
+                                  raw: textBgOpacityDraft,
+                                  fallback,
+                                  direction: dir,
+                                  step: 0.05,
+                                  min: 0,
+                                  max: 1,
+                                });
+                                const nextStr = formatPtBrDecimalFixed(next, 2);
+                                setTextBgOpacityDraft(nextStr);
+                                applyTextBgOpacityDraft(nextStr);
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                setIsEditingTextBgOpacity(false);
+                                const v =
+                                  selectedFigure.textBackgroundOpacity ?? 1;
+                                setTextBgOpacityDraft(
+                                  formatPtBrDecimalFixed(v, 2)
+                                );
+                                (e.currentTarget as HTMLInputElement).blur();
+                              }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                (e.currentTarget as HTMLInputElement).blur();
+                              }
+                            }}
+                            onWheel={(e) => {
+                              if (document.activeElement !== e.currentTarget)
+                                return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const dir: 1 | -1 = e.deltaY < 0 ? 1 : -1;
+                              const fallback =
+                                selectedFigure.textBackgroundOpacity ?? 1;
+                              const next = bumpNumericValue({
+                                raw: textBgOpacityDraft,
+                                fallback,
+                                direction: dir,
+                                step: 0.05,
+                                min: 0,
+                                max: 1,
+                              });
+                              const nextStr = formatPtBrDecimalFixed(next, 2);
+                              setTextBgOpacityDraft(nextStr);
+                              applyTextBgOpacityDraft(nextStr);
+                            }}
+                            onBlur={() => {
+                              setIsEditingTextBgOpacity(false);
+                              applyTextBgOpacityDraft(textBgOpacityDraft);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
 
                   <div className="h-px bg-gray-200 dark:bg-gray-700"></div>
                 </div>
