@@ -66,6 +66,11 @@ import { Minimap } from "./Minimap";
 import { MemoizedFigure } from "./FigureRenderer";
 import { computeNodeLabels } from "./pointLabels";
 import { MemoizedMeasureOverlay } from "./MeasureOverlay";
+import {
+  makeSeamFigure,
+  recomputeSeamFigure,
+  seamSourceSignature,
+} from "./seamFigure";
 
 const MIN_ZOOM_SCALE = 0.1;
 const MAX_ZOOM_SCALE = 10;
@@ -129,35 +134,6 @@ type EdgeContextMenuState = {
   edgeId: string;
   edgeKind: "line" | "cubic";
 } | null;
-
-function seamSourceSignature(base: Figure, offsetCm?: number): string {
-  // Exclude computed measures to avoid churn.
-  const offsetKey = Number.isFinite(offsetCm)
-    ? Math.round((offsetCm as number) * 10000) / 10000
-    : null;
-  const sig = {
-    x: base.x,
-    y: base.y,
-    rotation: base.rotation ?? 0,
-    closed: base.closed,
-    offsetCm: offsetKey,
-    nodes: base.nodes.map((n) => ({
-      id: n.id,
-      x: n.x,
-      y: n.y,
-      mode: n.mode,
-      inHandle: n.inHandle ? { x: n.inHandle.x, y: n.inHandle.y } : null,
-      outHandle: n.outHandle ? { x: n.outHandle.x, y: n.outHandle.y } : null,
-    })),
-    edges: base.edges.map((e) => ({
-      id: e.id,
-      from: e.from,
-      to: e.to,
-      kind: e.kind,
-    })),
-  };
-  return JSON.stringify(sig);
-}
 
 function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
   // Ray casting; poly is assumed closed (first point not repeated).
@@ -1008,143 +984,6 @@ function unfoldFigure(
   };
 }
 
-function signedArea(points: Vec2[]): number {
-  let a = 0;
-  for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    const q = points[(i + 1) % points.length];
-    a += p.x * q.y - q.x * p.y;
-  }
-  return a / 2;
-}
-
-function normalize(v: Vec2): Vec2 {
-  const l = Math.hypot(v.x, v.y);
-  if (l < 1e-9) return { x: 0, y: 0 };
-  return { x: v.x / l, y: v.y / l };
-}
-
-function lineIntersection(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2): Vec2 | null {
-  const x1 = p1.x;
-  const y1 = p1.y;
-  const x2 = p2.x;
-  const y2 = p2.y;
-  const x3 = p3.x;
-  const y3 = p3.y;
-  const x4 = p4.x;
-  const y4 = p4.y;
-
-  const den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-  if (Math.abs(den) < 1e-9) return null;
-
-  const px =
-    ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / den;
-  const py =
-    ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / den;
-  return { x: px, y: py };
-}
-
-function offsetClosedPolyline(points: Vec2[], offsetPx: number): Vec2[] | null {
-  if (points.length < 3) return null;
-
-  // remove duplicate last point if present
-  const pts = [...points];
-  const first = pts[0];
-  const last = pts[pts.length - 1];
-  if (dist(first, last) < 1e-6) pts.pop();
-  if (pts.length < 3) return null;
-
-  const area = signedArea(pts);
-  // We use the right-hand normal (dy, -dx). For CCW polygons (area > 0),
-  // the right normal points outward; for CW, it points inward.
-  const outwardSign = area > 0 ? 1 : -1;
-
-  // edge outward normals
-  const normals: Vec2[] = [];
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[i];
-    const b = pts[(i + 1) % pts.length];
-    const d = normalize(sub(b, a));
-    const right = { x: d.y, y: -d.x };
-    normals.push(mul(right, outwardSign));
-  }
-
-  const out: Vec2[] = [];
-  for (let i = 0; i < pts.length; i++) {
-    const pPrev = pts[(i - 1 + pts.length) % pts.length];
-    const p = pts[i];
-    const pNext = pts[(i + 1) % pts.length];
-
-    const nPrev = normals[(i - 1 + normals.length) % normals.length];
-    const n = normals[i];
-
-    // offset lines for prev and current edges
-    const a1 = add(pPrev, mul(nPrev, offsetPx));
-    const a2 = add(p, mul(nPrev, offsetPx));
-    const b1 = add(p, mul(n, offsetPx));
-    const b2 = add(pNext, mul(n, offsetPx));
-
-    const hit = lineIntersection(a1, a2, b1, b2);
-    out.push(hit ?? add(p, mul(n, offsetPx)));
-  }
-
-  return out;
-}
-
-function makeSeamFigure(base: Figure, offsetValueCm: number): Figure | null {
-  if (!base.closed) return null;
-  const pts = figureLocalPolyline(base, 60);
-  if (pts.length < 6) return null;
-  const poly: Vec2[] = [];
-  for (let i = 0; i < pts.length; i += 2) {
-    poly.push({ x: pts[i], y: pts[i + 1] });
-  }
-  const offsetPx = offsetValueCm * PX_PER_CM;
-  const out = offsetClosedPolyline(poly, offsetPx);
-  if (!out) return null;
-
-  const sourceSignature = seamSourceSignature(base, offsetValueCm);
-
-  const nodes: FigureNode[] = out.map((p) => ({
-    id: id("n"),
-    x: p.x,
-    y: p.y,
-    mode: "corner",
-  }));
-  const edges: FigureEdge[] = [];
-  for (let i = 0; i < nodes.length; i++) {
-    const a = nodes[i];
-    const b = nodes[(i + 1) % nodes.length];
-    edges.push({ id: id("e"), from: a.id, to: b.id, kind: "line" });
-  }
-
-  return {
-    ...base,
-    id: id("fig"),
-    kind: "seam",
-    parentId: base.id,
-    offsetCm: offsetValueCm,
-    sourceSignature,
-    dash: [5, 5],
-    fill: "transparent",
-    nodes,
-    edges,
-  };
-}
-
-function recomputeSeamFigure(
-  base: Figure,
-  seam: Figure,
-  offsetValueCm: number
-): Figure | null {
-  const next = makeSeamFigure(base, offsetValueCm);
-  if (!next) return null;
-  return {
-    ...next,
-    id: seam.id,
-  };
-}
-
 function clampHandle(anchor: Vec2, handle: Vec2, maxLen: number): Vec2 {
   if (!Number.isFinite(maxLen) || maxLen <= 0) return handle;
   const v = sub(handle, anchor);
@@ -1686,9 +1525,20 @@ export default function Canvas() {
   const [hoveredEdge, setHoveredEdge] = useState<EdgeHover>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredFigureId, setHoveredFigureId] = useState<string | null>(null);
+  const [hoveredSelectFigureId, setHoveredSelectFigureId] = useState<
+    string | null
+  >(null);
+  const [hoveredSelectEdge, setHoveredSelectEdge] =
+    useState<MeasureEdgeHover>(null);
+  const [edgeSelectMode, setEdgeSelectMode] = useState(false);
   const [hoveredOffsetBaseId, setHoveredOffsetBaseId] = useState<string | null>(
     null
   );
+  const [hoveredOffsetEdge, setHoveredOffsetEdge] = useState<{
+    figureId: string;
+    edgeId: string;
+  } | null>(null);
+  const [offsetRemoveMode, setOffsetRemoveMode] = useState(false);
   const [cursorBadge, setCursorBadge] = useState<{
     x: number;
     y: number;
@@ -1697,10 +1547,46 @@ export default function Canvas() {
   const offsetHoverPreview = useMemo(() => {
     if (tool !== "offset") return null;
     if (!hoveredOffsetBaseId) return null;
+    if (offsetRemoveMode) return null;
 
     const base = figures.find((f) => f.id === hoveredOffsetBaseId) ?? null;
     if (!base) return null;
     if (!base.closed) return null;
+
+    if (
+      hoveredOffsetEdge &&
+      hoveredOffsetEdge.figureId === base.id &&
+      base.tool !== "circle"
+    ) {
+      const edgeId = hoveredOffsetEdge.edgeId;
+      const existingSeam =
+        figures.find((f) => f.kind === "seam" && f.parentId === base.id) ??
+        null;
+      if (existingSeam) {
+        if (typeof existingSeam.offsetCm === "number") return null;
+        if (
+          existingSeam.offsetCm &&
+          typeof existingSeam.offsetCm === "object"
+        ) {
+          const value = existingSeam.offsetCm[edgeId];
+          if (Number.isFinite(value) && value > 0) return null;
+        }
+        if (existingSeam.seamSegmentEdgeIds?.includes(edgeId)) return null;
+      }
+      const seam = makeSeamFigure(base, { [edgeId]: offsetValueCm });
+      if (!seam || !seam.seamSegments?.length) return null;
+
+      return {
+        x: seam.x,
+        y: seam.y,
+        rotation: seam.rotation || 0,
+        closed: false,
+        dash: seam.dash ?? [5, 5],
+        stroke: resolveStrokeColor(seam.stroke, isDark),
+        segments: seam.seamSegments,
+        key: `offset-preview-edge:${hoveredOffsetBaseId}:${edgeId}`,
+      };
+    }
 
     const hasSeam = figures.some(
       (f) => f.kind === "seam" && f.parentId === hoveredOffsetBaseId
@@ -1721,7 +1607,125 @@ export default function Canvas() {
       points: pts,
       key: `offset-preview-add:${hoveredOffsetBaseId}`,
     };
-  }, [figures, hoveredOffsetBaseId, isDark, offsetValueCm, tool]);
+  }, [
+    figures,
+    hoveredOffsetBaseId,
+    hoveredOffsetEdge,
+    isDark,
+    offsetRemoveMode,
+    offsetValueCm,
+    tool,
+  ]);
+
+  const offsetRemovePreview = useMemo(() => {
+    if (tool !== "offset") return null;
+    if (!offsetRemoveMode) return null;
+    if (!hoveredOffsetBaseId) return null;
+
+    const existingSeam =
+      figures.find(
+        (f) => f.kind === "seam" && f.parentId === hoveredOffsetBaseId
+      ) ?? null;
+    if (!existingSeam) return null;
+
+    const stroke = previewRemoveStroke;
+    const dash = existingSeam.dash ?? [5, 5];
+
+    if (
+      hoveredOffsetEdge &&
+      hoveredOffsetEdge.figureId === hoveredOffsetBaseId &&
+      existingSeam.offsetCm &&
+      typeof existingSeam.offsetCm === "object" &&
+      existingSeam.seamSegments?.length &&
+      existingSeam.seamSegmentEdgeIds?.length
+    ) {
+      const edgeId = hoveredOffsetEdge.edgeId;
+      const segments = existingSeam.seamSegments.filter((_, idx) => {
+        return existingSeam.seamSegmentEdgeIds?.[idx] === edgeId;
+      });
+      if (!segments.length) return null;
+      return {
+        x: existingSeam.x,
+        y: existingSeam.y,
+        rotation: existingSeam.rotation || 0,
+        dash,
+        stroke,
+        segments,
+        key: `offset-preview-remove-edge:${hoveredOffsetBaseId}:${edgeId}`,
+      };
+    }
+
+    if (
+      hoveredOffsetEdge &&
+      hoveredOffsetEdge.figureId === hoveredOffsetBaseId
+    ) {
+      const edgeId = hoveredOffsetEdge.edgeId;
+      const base = figures.find((f) => f.id === hoveredOffsetBaseId) ?? null;
+      if (base && base.closed && base.tool !== "circle") {
+        let edgeOffsetCm: number | null = null;
+        if (typeof existingSeam.offsetCm === "number") {
+          edgeOffsetCm = existingSeam.offsetCm;
+        } else if (
+          existingSeam.offsetCm &&
+          typeof existingSeam.offsetCm === "object"
+        ) {
+          const value = existingSeam.offsetCm[edgeId];
+          if (Number.isFinite(value)) edgeOffsetCm = value;
+        }
+
+        if (edgeOffsetCm != null && edgeOffsetCm > 0) {
+          const seam = makeSeamFigure(base, { [edgeId]: edgeOffsetCm });
+          if (seam?.seamSegments?.length) {
+            return {
+              x: seam.x,
+              y: seam.y,
+              rotation: seam.rotation || 0,
+              dash,
+              stroke,
+              segments: seam.seamSegments,
+              key: `offset-preview-remove-edge:${hoveredOffsetBaseId}:${edgeId}`,
+            };
+          }
+        }
+      }
+    }
+
+    if (
+      existingSeam.offsetCm &&
+      typeof existingSeam.offsetCm === "object" &&
+      existingSeam.seamSegments?.length
+    ) {
+      return {
+        x: existingSeam.x,
+        y: existingSeam.y,
+        rotation: existingSeam.rotation || 0,
+        dash,
+        stroke,
+        segments: existingSeam.seamSegments,
+        key: `offset-preview-remove:${hoveredOffsetBaseId}`,
+      };
+    }
+
+    const pts = figureLocalPolyline(existingSeam, 60);
+    if (pts.length < 4) return null;
+    return {
+      x: existingSeam.x,
+      y: existingSeam.y,
+      rotation: existingSeam.rotation || 0,
+      dash,
+      stroke,
+      points: pts,
+      closed: existingSeam.closed,
+      key: `offset-preview-remove:${hoveredOffsetBaseId}`,
+    };
+  }, [
+    figures,
+    hoveredOffsetBaseId,
+    hoveredOffsetEdge,
+    offsetRemoveMode,
+    previewRemoveStroke,
+    tool,
+  ]);
   const [dartDraft, setDartDraft] = useState<DartDraft>(null);
   const [measureDraft, setMeasureDraft] = useState<MeasureDraft>(null);
   const [marqueeDraft, setMarqueeDraft] = useState<MarqueeDraft>(null);
@@ -3469,6 +3473,44 @@ export default function Canvas() {
         // Reset any in-progress direct drag candidate.
         selectDirectDragRef.current = null;
 
+        if (e.evt.metaKey || e.evt.ctrlKey) {
+          const fig = figures.find((f) => f.id === pickedId) ?? null;
+          if (fig && fig.kind !== "seam") {
+            const local = worldToFigureLocal(fig, world);
+            const hit = findNearestEdge(fig, local);
+            const edgeId =
+              hoveredSelectEdge && hoveredSelectEdge.figureId === fig.id
+                ? hoveredSelectEdge.edgeId
+                : hit.best && hit.bestDist <= 14 / scale
+                  ? hit.best.edgeId
+                  : null;
+            if (edgeId) {
+              const edge = fig.edges.find((ed) => ed.id === edgeId) ?? null;
+              if (edge) {
+                const preferredAnchor = getEdgeAnchorPreference(
+                  fig.id,
+                  edge.id
+                );
+                const anchor: "start" | "end" | "mid" =
+                  preferredAnchor ??
+                  (() => {
+                    const nFrom = fig.nodes.find((n) => n.id === edge.from);
+                    const nTo = fig.nodes.find((n) => n.id === edge.to);
+                    if (!nFrom || !nTo) return "end";
+                    const dFrom = dist(local, { x: nFrom.x, y: nFrom.y });
+                    const dTo = dist(local, { x: nTo.x, y: nTo.y });
+                    return dFrom <= dTo ? "start" : "end";
+                  })();
+
+                setSelectedFigureIds([fig.id]);
+                setSelectedEdge({ figureId: fig.id, edgeId: edge.id, anchor });
+                setMarqueeDraft(null);
+                return;
+              }
+            }
+          }
+        }
+
         if (e.evt.shiftKey) {
           toggleSelectedFigureId(pickedId);
         } else {
@@ -3898,6 +3940,48 @@ export default function Canvas() {
       hideCursorBadge();
     }
 
+    const nextEdgeSelectMode =
+      tool === "select" && (e.evt.metaKey || e.evt.ctrlKey);
+    if (edgeSelectMode !== nextEdgeSelectMode) {
+      setEdgeSelectMode(nextEdgeSelectMode);
+    }
+
+    if (tool === "select") {
+      const thresholdWorld = 10 / scale;
+      const edgeThresholdWorld = 14 / scale;
+      if (nextEdgeSelectMode) {
+        const figId = findHoveredFigureId(figures, world, thresholdWorld);
+        const fig = figId ? figures.find((f) => f.id === figId) : null;
+        if (fig && fig.kind !== "seam") {
+          const local = worldToFigureLocal(fig, world);
+          const hit = findNearestEdge(fig, local);
+          setHoveredSelectEdge(
+            hit.best && hit.bestDist <= edgeThresholdWorld
+              ? { figureId: fig.id, edgeId: hit.best.edgeId }
+              : null
+          );
+        } else if (hoveredSelectEdge) {
+          setHoveredSelectEdge(null);
+        }
+
+        if (hoveredSelectFigureId) setHoveredSelectFigureId(null);
+      } else {
+        if (hoveredSelectEdge) setHoveredSelectEdge(null);
+        const hitId = findHoveredFigureId(figures, world, thresholdWorld);
+        const insideId = hitId
+          ? null
+          : findHoveredClosedFigureOrSeamBaseId(figures, world, 60);
+        const nextHoveredId = hitId ?? insideId;
+        setHoveredSelectFigureId((prev) =>
+          prev === nextHoveredId ? prev : nextHoveredId
+        );
+      }
+    } else {
+      if (hoveredSelectFigureId) setHoveredSelectFigureId(null);
+      if (hoveredSelectEdge) setHoveredSelectEdge(null);
+      if (edgeSelectMode) setEdgeSelectMode(false);
+    }
+
     if (tool === "offset") {
       const thresholdWorld = 10 / scale;
       const hitId = findHoveredFigureId(figures, world, thresholdWorld);
@@ -3912,8 +3996,28 @@ export default function Canvas() {
 
       const baseId = hitBaseId ?? insideId;
       setHoveredOffsetBaseId((prev) => (prev === baseId ? prev : baseId));
+      setOffsetRemoveMode(e.evt.metaKey || e.evt.ctrlKey);
+
+      if (baseId) {
+        const base = figures.find((f) => f.id === baseId) ?? null;
+        if (base && base.closed) {
+          const local = worldToFigureLocal(base, world);
+          const hitEdge = findNearestEdge(base, local);
+          setHoveredOffsetEdge(
+            hitEdge.best && hitEdge.bestDist <= thresholdWorld
+              ? { figureId: baseId, edgeId: hitEdge.best.edgeId }
+              : null
+          );
+        } else if (hoveredOffsetEdge) {
+          setHoveredOffsetEdge(null);
+        }
+      } else if (hoveredOffsetEdge) {
+        setHoveredOffsetEdge(null);
+      }
     } else if (hoveredOffsetBaseId) {
       setHoveredOffsetBaseId(null);
+      if (hoveredOffsetEdge) setHoveredOffsetEdge(null);
+      if (offsetRemoveMode) setOffsetRemoveMode(false);
     }
 
     if (measureDisplayMode !== "never") {
@@ -5850,13 +5954,22 @@ export default function Canvas() {
               const isRemovePreview =
                 tool === "offset" &&
                 hoveredOffsetBaseId != null &&
+                offsetRemoveMode &&
+                !hoveredOffsetEdge &&
                 isSeam &&
                 fig.parentId === hoveredOffsetBaseId;
+              const isHoverFigure =
+                tool === "select" &&
+                !edgeSelectMode &&
+                hoveredSelectFigureId != null &&
+                hoveredSelectFigureId === baseId;
               const stroke = isRemovePreview
                 ? previewRemoveStroke
                 : isSelected
                   ? "#2563eb"
-                  : resolveStrokeColor(fig.stroke, isDark);
+                  : isHoverFigure
+                    ? "#3b82f6"
+                    : resolveStrokeColor(fig.stroke, isDark);
               const hasSelectedEdge =
                 !!selectedEdge && selectedEdge.figureId === baseId;
               const dimFactor = hasSelectedEdge ? (isSeam ? 0.5 : 0.25) : 1;
@@ -5950,6 +6063,7 @@ export default function Canvas() {
                   isDark={isDark}
                   selectedEdge={selectedEdge}
                   hoveredEdge={hoveredMeasureEdge}
+                  hoveredSelectEdge={hoveredSelectEdge}
                   showNameHandle={
                     tool === "select" &&
                     selectedFigureIds.length === 1 &&
@@ -6133,15 +6247,103 @@ export default function Canvas() {
                       setSelectedFigureId(baseId);
                       setOffsetTargetId(baseId);
 
-                      const existing = figures.some(
-                        (f) => f.kind === "seam" && f.parentId === baseId
-                      );
-                      if (existing) {
-                        setFigures((prev) =>
-                          prev.filter(
-                            (f) => !(f.kind === "seam" && f.parentId === baseId)
-                          )
+                      const existingSeam =
+                        figures.find(
+                          (f) => f.kind === "seam" && f.parentId === baseId
+                        ) ?? null;
+                      const isRemoveIntent = e.evt.metaKey || e.evt.ctrlKey;
+
+                      if (
+                        hoveredOffsetEdge &&
+                        hoveredOffsetEdge.figureId === baseId &&
+                        base.tool !== "circle"
+                      ) {
+                        const edgeId = hoveredOffsetEdge.edgeId;
+                        if (existingSeam) {
+                          const currentOffsets = existingSeam.offsetCm;
+                          let nextOffsets: Record<string, number> = {};
+
+                          if (typeof currentOffsets === "number") {
+                            for (const edge of base.edges) {
+                              nextOffsets[edge.id] = currentOffsets;
+                            }
+                          } else if (
+                            currentOffsets &&
+                            typeof currentOffsets === "object"
+                          ) {
+                            nextOffsets = { ...currentOffsets };
+                          }
+
+                          if (isRemoveIntent) {
+                            if (
+                              nextOffsets[edgeId] &&
+                              nextOffsets[edgeId] > 0
+                            ) {
+                              delete nextOffsets[edgeId];
+                            }
+                          } else {
+                            nextOffsets[edgeId] = offsetValueCm;
+                          }
+
+                          if (Object.keys(nextOffsets).length === 0) {
+                            if (isRemoveIntent) {
+                              setFigures((prev) =>
+                                prev.filter((f) => f.id !== existingSeam.id)
+                              );
+                            }
+                            return;
+                          }
+
+                          const updated = recomputeSeamFigure(
+                            base,
+                            existingSeam,
+                            nextOffsets
+                          );
+                          if (updated) {
+                            setFigures((prev) =>
+                              prev.map((f) =>
+                                f.id === existingSeam.id ? updated : f
+                              )
+                            );
+                          }
+                        } else {
+                          if (!isRemoveIntent) {
+                            const seam = makeSeamFigure(base, {
+                              [edgeId]: offsetValueCm,
+                            });
+                            if (seam) {
+                              setFigures((prev) => [...prev, seam]);
+                            }
+                          }
+                        }
+                        return;
+                      }
+
+                      if (isRemoveIntent) {
+                        if (existingSeam) {
+                          setFigures((prev) =>
+                            prev.filter(
+                              (f) =>
+                                !(f.kind === "seam" && f.parentId === baseId)
+                            )
+                          );
+                        }
+                        return;
+                      }
+
+                      if (existingSeam) {
+                        const updated = recomputeSeamFigure(
+                          base,
+                          existingSeam,
+                          offsetValueCm
                         );
+                        if (updated) {
+                          setFigures((prev) =>
+                            prev.map((f) =>
+                              f.id === existingSeam.id ? updated : f
+                            )
+                          );
+                        }
                         return;
                       }
 
@@ -6385,17 +6587,73 @@ export default function Canvas() {
                 rotation={offsetHoverPreview.rotation}
                 listening={false}
               >
-                <Line
-                  points={offsetHoverPreview.points}
-                  closed={offsetHoverPreview.closed}
-                  stroke={offsetHoverPreview.stroke}
-                  strokeWidth={2 / scale}
-                  dash={offsetHoverPreview.dash.map((d) => d / scale)}
-                  opacity={0.55}
-                  lineCap="round"
-                  lineJoin="round"
-                  listening={false}
-                />
+                {offsetHoverPreview.segments ? (
+                  offsetHoverPreview.segments.map((segment, idx) => (
+                    <Line
+                      key={`${offsetHoverPreview.key}:${idx}`}
+                      points={segment}
+                      closed={false}
+                      stroke={offsetHoverPreview.stroke}
+                      strokeWidth={2 / scale}
+                      dash={offsetHoverPreview.dash.map((d) => d / scale)}
+                      opacity={0.55}
+                      lineCap="round"
+                      lineJoin="round"
+                      listening={false}
+                    />
+                  ))
+                ) : (
+                  <Line
+                    points={offsetHoverPreview.points}
+                    closed={offsetHoverPreview.closed}
+                    stroke={offsetHoverPreview.stroke}
+                    strokeWidth={2 / scale}
+                    dash={offsetHoverPreview.dash.map((d) => d / scale)}
+                    opacity={0.55}
+                    lineCap="round"
+                    lineJoin="round"
+                    listening={false}
+                  />
+                )}
+              </Group>
+            ) : null}
+
+            {offsetRemovePreview ? (
+              <Group
+                key={offsetRemovePreview.key}
+                x={offsetRemovePreview.x}
+                y={offsetRemovePreview.y}
+                rotation={offsetRemovePreview.rotation}
+                listening={false}
+              >
+                {offsetRemovePreview.segments ? (
+                  offsetRemovePreview.segments.map((segment, idx) => (
+                    <Line
+                      key={`${offsetRemovePreview.key}:${idx}`}
+                      points={segment}
+                      closed={false}
+                      stroke={offsetRemovePreview.stroke}
+                      strokeWidth={2 / scale}
+                      dash={offsetRemovePreview.dash.map((d) => d / scale)}
+                      opacity={0.7}
+                      lineCap="round"
+                      lineJoin="round"
+                      listening={false}
+                    />
+                  ))
+                ) : (
+                  <Line
+                    points={offsetRemovePreview.points}
+                    closed={offsetRemovePreview.closed}
+                    stroke={offsetRemovePreview.stroke}
+                    strokeWidth={2 / scale}
+                    dash={offsetRemovePreview.dash.map((d) => d / scale)}
+                    opacity={0.7}
+                    lineCap="round"
+                    lineJoin="round"
+                    listening={false}
+                  />
+                )}
               </Group>
             ) : null}
 

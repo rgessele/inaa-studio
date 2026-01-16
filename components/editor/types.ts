@@ -164,7 +164,12 @@ export interface Figure {
   // Optional metadata (v2): derived figures like seam allowance
   kind?: "seam";
   parentId?: string;
-  offsetCm?: number;
+  // Offset cm can be uniform (number) or per-edge map (edgeId -> cm)
+  offsetCm?: number | Record<string, number>;
+  // Optional cached segments for per-edge seam rendering (local coords)
+  seamSegments?: number[][];
+  // Optional edge ids aligned with seamSegments
+  seamSegmentEdgeIds?: string[];
   // Tracks the base geometry state used to generate this derived figure.
   // Used to auto-recompute seam allowance when the parent changes.
   sourceSignature?: string;

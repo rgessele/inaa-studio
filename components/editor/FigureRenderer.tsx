@@ -2,7 +2,7 @@ import React from "react";
 import { Group, Line, Rect, Text } from "react-konva";
 import type Konva from "konva";
 import { Figure } from "./types";
-import { figureLocalPolyline } from "./figurePath";
+import { edgeLocalPoints, figureLocalPolyline } from "./figurePath";
 import { figureCentroidLocal } from "./figurePath";
 import { MemoizedNodeOverlay } from "./NodeOverlay";
 import { MemoizedMeasureOverlay } from "./MeasureOverlay";
@@ -39,6 +39,7 @@ interface FigureRendererProps {
   isDark?: boolean;
   selectedEdge?: SelectedEdge | null;
   hoveredEdge?: { figureId: string; edgeId: string } | null;
+  hoveredSelectEdge?: { figureId: string; edgeId: string } | null;
 
   // Figure name label handle (drag to reposition)
   showNameHandle?: boolean;
@@ -97,6 +98,7 @@ const FigureRenderer = ({
   isDark = false,
   selectedEdge = null,
   hoveredEdge = null,
+  hoveredSelectEdge = null,
   showNameHandle,
   onNameOffsetChange,
   onNameOffsetCommit,
@@ -351,21 +353,69 @@ const FigureRenderer = ({
       onDragMove={onDragMove}
       onDragEnd={onDragEnd}
     >
-      <Line
-        points={pts}
-        stroke={stroke}
-        strokeWidth={strokeWidth}
-        fill={figure.fill ?? "transparent"}
-        fillEnabled={hitFillEnabled}
-        closed={figure.closed}
-        dash={dash}
-        lineCap="round"
-        lineJoin="round"
-        hitStrokeWidth={hitStrokeWidth}
-        perfectDrawEnabled={false} // Optimization: Disable perfect draw
-        shadowForStrokeEnabled={false} // Optimization: Disable shadow
-        listening={listening} // Optimization: Disable events if not needed
-      />
+      {figure.kind === "seam" && figure.seamSegments?.length ? (
+        figure.seamSegments.map((segment, idx) => (
+          <Line
+            key={`seam-seg:${figure.id}:${idx}`}
+            points={segment}
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            fill={"transparent"}
+            fillEnabled={false}
+            closed={false}
+            dash={dash}
+            lineCap="round"
+            lineJoin="round"
+            hitStrokeWidth={hitStrokeWidth}
+            perfectDrawEnabled={false}
+            shadowForStrokeEnabled={false}
+            listening={listening}
+          />
+        ))
+      ) : (
+        <Line
+          points={pts}
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          fill={figure.fill ?? "transparent"}
+          fillEnabled={hitFillEnabled}
+          closed={figure.closed}
+          dash={dash}
+          lineCap="round"
+          lineJoin="round"
+          hitStrokeWidth={hitStrokeWidth}
+          perfectDrawEnabled={false} // Optimization: Disable perfect draw
+          shadowForStrokeEnabled={false} // Optimization: Disable shadow
+          listening={listening} // Optimization: Disable events if not needed
+        />
+      )}
+      {hoveredSelectEdge && hoveredSelectEdge.figureId === figure.id
+        ? (() => {
+            const edge = figure.edges.find(
+              (e) => e.id === hoveredSelectEdge.edgeId
+            );
+            if (!edge) return null;
+            const pts = edgeLocalPoints(
+              figure,
+              edge,
+              edge.kind === "line" ? 1 : 60
+            );
+            if (pts.length < 2) return null;
+            const flat: number[] = [];
+            for (const p of pts) flat.push(p.x, p.y);
+            return (
+              <Line
+                points={flat}
+                stroke="#2563eb"
+                strokeWidth={3 / scale}
+                opacity={0.9}
+                listening={false}
+                lineCap="round"
+                lineJoin="round"
+              />
+            );
+          })()
+        : null}
       {showNodes && (
         <MemoizedNodeOverlay
           figure={figure}
@@ -550,6 +600,7 @@ const arePropsEqual = (
     prev.isDark === next.isDark &&
     prev.selectedEdge === next.selectedEdge &&
     prev.hoveredEdge === next.hoveredEdge &&
+    prev.hoveredSelectEdge === next.hoveredSelectEdge &&
     prev.seamBaseCentroidLocal?.x === next.seamBaseCentroidLocal?.x &&
     prev.seamBaseCentroidLocal?.y === next.seamBaseCentroidLocal?.y &&
     prev.figure === next.figure && // Reference check for figure

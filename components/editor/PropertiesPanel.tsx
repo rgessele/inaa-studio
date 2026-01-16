@@ -34,6 +34,7 @@ import {
   formatPtBrDecimalFixed,
   parsePtBrDecimal,
 } from "@/utils/numericInput";
+import { makeSeamFigure } from "./seamFigure";
 
 export function PropertiesPanel() {
   const {
@@ -1223,8 +1224,13 @@ export function PropertiesPanel() {
 
   const seamForSelectionId = seamForSelection?.id ?? null;
   const seamForSelectionOffsetCm = seamForSelection?.offsetCm;
+  const isPerEdgeSeam =
+    !!seamForSelectionOffsetCm && typeof seamForSelectionOffsetCm === "object";
 
-  const offsetDisplayCm = seamForSelection?.offsetCm ?? offsetValueCm;
+  const offsetDisplayCm =
+    typeof seamForSelectionOffsetCm === "number"
+      ? seamForSelectionOffsetCm
+      : offsetValueCm;
 
   const inputBaseClass =
     "px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-200 text-right outline-none transition-all shadow-sm";
@@ -1238,8 +1244,8 @@ export function PropertiesPanel() {
   React.useEffect(() => {
     if (tool !== "offset") return;
     if (!seamForSelectionId) return;
-    if (!Number.isFinite(seamForSelectionOffsetCm ?? NaN)) return;
-    const next = seamForSelectionOffsetCm as number;
+    if (typeof seamForSelectionOffsetCm !== "number") return;
+    const next = seamForSelectionOffsetCm;
     if (offsetValueCm === next) return;
     setOffsetValueCm(next);
   }, [
@@ -1260,12 +1266,14 @@ export function PropertiesPanel() {
     const safe = Math.max(0.1, nextCm);
     setOffsetValueCm(safe);
 
-    // Update only this seam figure. Geometry recalculation happens in Canvas.
-    setFigures((prev) =>
-      prev.map((f) =>
-        f.id === seamForSelection.id ? { ...f, offsetCm: safe } : f
-      )
-    );
+    if (typeof seamForSelection.offsetCm !== "object") {
+      // Update only this seam figure. Geometry recalculation happens in Canvas.
+      setFigures((prev) =>
+        prev.map((f) =>
+          f.id === seamForSelection.id ? { ...f, offsetCm: safe } : f
+        )
+      );
+    }
   };
 
   const [seamOffsetDraft, setSeamOffsetDraft] = useState<string>(
@@ -1327,6 +1335,16 @@ export function PropertiesPanel() {
 
   const selectedEdgeId = selectedEdgeInfo?.edge.id ?? null;
   const selectedEdgeLengthCm = selectedEdgeInfo?.lengthCm ?? null;
+  const selectedEdgeSeamOffsetCm = (() => {
+    if (!selectedEdgeId || !seamForSelection) return null;
+    const offset = seamForSelection.offsetCm;
+    if (offset && typeof offset === "object") {
+      const value = offset[selectedEdgeId];
+      return Number.isFinite(value) ? value : null;
+    }
+    if (typeof offset === "number" && Number.isFinite(offset)) return offset;
+    return null;
+  })();
   const selectedBounds = selectedFigure
     ? figureWorldBoundingBox(selectedFigure)
     : null;
@@ -1378,6 +1396,188 @@ export function PropertiesPanel() {
     });
     setEdgeLengthDraft(formatPtBrDecimalFixed(next, 2));
     applyEdgeLength(String(next));
+  };
+
+  const [seamEdgeOffsetDraft, setSeamEdgeOffsetDraft] = useState<string>("");
+  const [seamEdgeOffsetError, setSeamEdgeOffsetError] = useState<string | null>(
+    null
+  );
+  const [isEditingSeamEdgeOffset, setIsEditingSeamEdgeOffset] = useState(false);
+
+  React.useEffect(() => {
+    if (isEditingSeamEdgeOffset) return;
+    if (!selectedEdgeId) {
+      setSeamEdgeOffsetDraft("");
+      setSeamEdgeOffsetError(null);
+      return;
+    }
+    if (selectedEdgeSeamOffsetCm == null) {
+      setSeamEdgeOffsetDraft(formatPtBrDecimalFixed(0, 2));
+      setSeamEdgeOffsetError(null);
+      return;
+    }
+    setSeamEdgeOffsetDraft(formatPtBrDecimalFixed(selectedEdgeSeamOffsetCm, 2));
+    setSeamEdgeOffsetError(null);
+  }, [
+    isEditingSeamEdgeOffset,
+    selectedEdgeId,
+    seamForSelection?.id,
+    selectedEdgeSeamOffsetCm,
+  ]);
+
+  const updateSelectedEdgeSeamOffset = (nextCm: number) => {
+    if (!selectedEdgeId || !seamForSelection) return;
+    const safe = clampMin(nextCm, 0.1);
+    setOffsetValueCm(safe);
+
+    setFigures((prev) => {
+      return prev.map((f) => {
+        if (f.id !== seamForSelection.id) return f;
+
+        let nextOffsets: Record<string, number> = {};
+        if (typeof f.offsetCm === "number") {
+          if (selectedFigure) {
+            for (const edge of selectedFigure.edges) {
+              nextOffsets[edge.id] = f.offsetCm;
+            }
+          }
+        } else if (f.offsetCm && typeof f.offsetCm === "object") {
+          nextOffsets = { ...f.offsetCm };
+        }
+
+        nextOffsets[selectedEdgeId] = safe;
+        return { ...f, offsetCm: nextOffsets };
+      });
+    });
+  };
+
+  const applySeamEdgeOffsetDraft = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) {
+      if (selectedEdgeSeamOffsetCm == null) {
+        setSeamEdgeOffsetDraft("");
+      } else {
+        setSeamEdgeOffsetDraft(
+          formatPtBrDecimalFixed(selectedEdgeSeamOffsetCm, 2)
+        );
+      }
+      setSeamEdgeOffsetError(null);
+      return;
+    }
+
+    const cm = parsePtBrDecimal(trimmed);
+    if (cm == null) {
+      setSeamEdgeOffsetError("Valor inválido");
+      return;
+    }
+    const safe = clampMin(cm, 0.1);
+    updateSelectedEdgeSeamOffset(safe);
+    setSeamEdgeOffsetDraft(formatPtBrDecimalFixed(safe, 2));
+    setSeamEdgeOffsetError(null);
+  };
+
+  const bumpSeamEdgeOffset = (direction: 1 | -1) => {
+    const fallback =
+      selectedEdgeSeamOffsetCm != null
+        ? selectedEdgeSeamOffsetCm
+        : offsetValueCm;
+    const next = bumpNumericValue({
+      raw: seamEdgeOffsetDraft,
+      fallback,
+      direction,
+      step: 0.1,
+      min: 0.1,
+    });
+    updateSelectedEdgeSeamOffset(next);
+    setSeamEdgeOffsetDraft(formatPtBrDecimalFixed(next, 2));
+    setSeamEdgeOffsetError(null);
+  };
+
+  const canEditEdgeSeam =
+    !!selectedEdgeInfo &&
+    !!selectedFigure &&
+    selectedFigure.closed &&
+    selectedFigure.kind !== "seam" &&
+    selectedFigure.tool !== "circle";
+  const edgeSeamEnabled = canEditEdgeSeam && selectedEdgeSeamOffsetCm != null;
+
+  const toggleEdgeSeamEnabled = (nextEnabled: boolean) => {
+    if (!selectedEdgeId || !selectedFigure) return;
+    if (
+      !selectedFigure.closed ||
+      selectedFigure.tool === "circle" ||
+      selectedFigure.kind === "seam"
+    ) {
+      return;
+    }
+
+    const safeOffset = clampMin(offsetValueCm, 0.1);
+
+    if (nextEnabled) {
+      if (!seamForSelection) {
+        const seam = makeSeamFigure(selectedFigure, {
+          [selectedEdgeId]: safeOffset,
+        });
+        if (seam) {
+          setFigures((prev) => [...prev, seam]);
+        }
+      } else {
+        const currentOffsets = seamForSelection.offsetCm;
+        let nextOffsets: Record<string, number> = {};
+
+        if (typeof currentOffsets === "number") {
+          for (const edge of selectedFigure.edges) {
+            nextOffsets[edge.id] = currentOffsets;
+          }
+        } else if (currentOffsets && typeof currentOffsets === "object") {
+          nextOffsets = { ...currentOffsets };
+        }
+
+        nextOffsets[selectedEdgeId] = safeOffset;
+        setFigures((prev) =>
+          prev.map((f) =>
+            f.id === seamForSelection.id ? { ...f, offsetCm: nextOffsets } : f
+          )
+        );
+      }
+
+      setOffsetValueCm(safeOffset);
+      setSeamEdgeOffsetDraft(formatPtBrDecimalFixed(safeOffset, 2));
+      setSeamEdgeOffsetError(null);
+      return;
+    }
+
+    if (!seamForSelection) {
+      setSeamEdgeOffsetDraft(formatPtBrDecimalFixed(0, 2));
+      setSeamEdgeOffsetError(null);
+      return;
+    }
+
+    const currentOffsets = seamForSelection.offsetCm;
+    let nextOffsets: Record<string, number> = {};
+
+    if (typeof currentOffsets === "number") {
+      for (const edge of selectedFigure.edges) {
+        nextOffsets[edge.id] = currentOffsets;
+      }
+    } else if (currentOffsets && typeof currentOffsets === "object") {
+      nextOffsets = { ...currentOffsets };
+    }
+
+    delete nextOffsets[selectedEdgeId];
+
+    if (Object.keys(nextOffsets).length === 0) {
+      setFigures((prev) => prev.filter((f) => f.id !== seamForSelection.id));
+    } else {
+      setFigures((prev) =>
+        prev.map((f) =>
+          f.id === seamForSelection.id ? { ...f, offsetCm: nextOffsets } : f
+        )
+      );
+    }
+
+    setSeamEdgeOffsetDraft(formatPtBrDecimalFixed(0, 2));
+    setSeamEdgeOffsetError(null);
   };
 
   const [toolOffsetDraft, setToolOffsetDraft] = useState<string>(
@@ -2737,6 +2937,7 @@ export function PropertiesPanel() {
                       type="text"
                       inputMode="decimal"
                       value={seamOffsetDraft}
+                      disabled={isPerEdgeSeam}
                       onFocus={() => setIsEditingSeamOffset(true)}
                       onChange={(e) => {
                         setSeamOffsetDraft(e.target.value);
@@ -2845,6 +3046,113 @@ export function PropertiesPanel() {
                         cm
                       </span>
                     </div>
+
+                    {canEditEdgeSeam ? (
+                      <div>
+                        <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-2 block">
+                          Margem nesta aresta
+                        </label>
+                        <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer mb-2">
+                          <input
+                            type="checkbox"
+                            checked={edgeSeamEnabled}
+                            onChange={(e) =>
+                              toggleEdgeSeamEnabled(e.target.checked)
+                            }
+                            className="w-4 h-4"
+                          />
+                          <span>
+                            {edgeSeamEnabled ? "Margem ativa" : "Ativar margem"}
+                          </span>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            className={
+                              "w-24 " +
+                              inputBaseClass +
+                              " " +
+                              inputDisabledClass +
+                              " " +
+                              (seamEdgeOffsetError
+                                ? inputErrorClass
+                                : inputFocusClass)
+                            }
+                            type="text"
+                            inputMode="decimal"
+                            placeholder={formatPtBrDecimalFixed(
+                              offsetValueCm,
+                              2
+                            )}
+                            value={seamEdgeOffsetDraft}
+                            disabled={!edgeSeamEnabled}
+                            onFocus={() => setIsEditingSeamEdgeOffset(true)}
+                            onChange={(e) => {
+                              setSeamEdgeOffsetDraft(e.target.value);
+                              setSeamEdgeOffsetError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                bumpSeamEdgeOffset(1);
+                                return;
+                              }
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                bumpSeamEdgeOffset(-1);
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                setIsEditingSeamEdgeOffset(false);
+                                if (selectedEdgeSeamOffsetCm == null) {
+                                  setSeamEdgeOffsetDraft(
+                                    formatPtBrDecimalFixed(0, 2)
+                                  );
+                                } else {
+                                  setSeamEdgeOffsetDraft(
+                                    formatPtBrDecimalFixed(
+                                      selectedEdgeSeamOffsetCm,
+                                      2
+                                    )
+                                  );
+                                }
+                                setSeamEdgeOffsetError(null);
+                                return;
+                              }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                applySeamEdgeOffsetDraft(seamEdgeOffsetDraft);
+                                setIsEditingSeamEdgeOffset(false);
+                              }
+                            }}
+                            onWheel={(e) => {
+                              if (document.activeElement !== e.currentTarget)
+                                return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              bumpSeamEdgeOffset(e.deltaY < 0 ? 1 : -1);
+                            }}
+                            onBlur={() => {
+                              applySeamEdgeOffsetDraft(seamEdgeOffsetDraft);
+                              setIsEditingSeamEdgeOffset(false);
+                            }}
+                          />
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            cm
+                          </span>
+                        </div>
+                        {seamEdgeOffsetError ? (
+                          <p className="mt-2 text-xs text-red-600 dark:text-red-500">
+                            {seamEdgeOffsetError}
+                          </p>
+                        ) : null}
+                        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                          {isPerEdgeSeam
+                            ? "Ajusta apenas a margem desta aresta."
+                            : "Ao editar aqui, a margem passa para o modo por aresta."}
+                        </p>
+                      </div>
+                    ) : null}
 
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">
