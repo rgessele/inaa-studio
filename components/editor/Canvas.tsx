@@ -118,6 +118,91 @@ function snapPointAlongDirFloor(
   return add(origin, mul(u, tFloor));
 }
 
+function quantizeEdgeHoverByChordLengthFloor(
+  figure: Figure,
+  hover: EdgeHover,
+  fromLocal: Vec2,
+  stepPx: number
+): EdgeHover {
+  if (!hover) return hover;
+  if (!Number.isFinite(stepPx) || stepPx <= 0) return hover;
+
+  const edge = figure.edges.find((e) => e.id === hover.edgeId);
+  if (!edge) return hover;
+
+  const rawLen = dist(fromLocal, hover.pointLocal);
+  if (!Number.isFinite(rawLen)) return hover;
+
+  const targetLen = Math.floor(rawLen / stepPx) * stepPx;
+  if (!Number.isFinite(targetLen) || targetLen <= 0) return hover;
+
+  const fromNode = getNodeById(figure.nodes, edge.from);
+  const toNode = getNodeById(figure.nodes, edge.to);
+  if (!fromNode || !toNode) return hover;
+
+  const p0: Vec2 = { x: fromNode.x, y: fromNode.y };
+  const p3: Vec2 = { x: toNode.x, y: toNode.y };
+
+  if (edge.kind === "line") {
+    const d = sub(p3, p0);
+    const f = sub(p0, fromLocal);
+    const A = d.x * d.x + d.y * d.y;
+    const B = 2 * (f.x * d.x + f.y * d.y);
+    const C = f.x * f.x + f.y * f.y - targetLen * targetLen;
+    const disc = B * B - 4 * A * C;
+    if (!Number.isFinite(disc) || disc < 0 || !Number.isFinite(A) || A < 1e-9) {
+      return hover;
+    }
+
+    const sqrt = Math.sqrt(disc);
+    const t1 = (-B - sqrt) / (2 * A);
+    const t2 = (-B + sqrt) / (2 * A);
+    const candidates = [t1, t2].filter((t) => t >= 0 && t <= 1);
+    if (candidates.length === 0) return hover;
+
+    let bestT = candidates[0];
+    let bestAbs = Math.abs(bestT - hover.t);
+    for (const t of candidates) {
+      const abs = Math.abs(t - hover.t);
+      if (abs < bestAbs) {
+        bestAbs = abs;
+        bestT = t;
+      }
+    }
+
+    return {
+      ...hover,
+      t: bestT,
+      pointLocal: lerp(p0, p3, bestT),
+    };
+  }
+
+  // Cubic: approximate by sampling (uniform in t) and choose the closest match.
+  const pts = edgeLocalPoints(figure, edge, 80);
+  if (pts.length < 2) return hover;
+
+  let bestIndex = 0;
+  let bestCost = Number.POSITIVE_INFINITY;
+
+  for (let i = 0; i < pts.length; i++) {
+    const t = i / (pts.length - 1);
+    const dLen = Math.abs(dist(fromLocal, pts[i]) - targetLen);
+    const tPenalty = Math.abs(t - hover.t) * stepPx * 0.5;
+    const cost = dLen + tPenalty;
+    if (cost < bestCost) {
+      bestCost = cost;
+      bestIndex = i;
+    }
+  }
+
+  const bestT = bestIndex / (pts.length - 1);
+  return {
+    ...hover,
+    t: bestT,
+    pointLocal: pts[bestIndex],
+  };
+}
+
 type BoundingBox = { x: number; y: number; width: number; height: number };
 
 type NodeSelection = {
@@ -848,11 +933,25 @@ function resolveDartApexLocal(
   precisionSnap: boolean
 ): Vec2 {
   if (!draft || draft.step !== "pickApex") return rawApexLocal;
-  if (!draft.shiftKey) return rawApexLocal;
 
   const a = getFigureNodePoint(figure, draft.aNodeId);
   const b = draft.bNodeId ? getFigureNodePoint(figure, draft.bNodeId) : null;
   if (!a || !b) return rawApexLocal;
+
+  const mid = lerp(a, b, 0.5);
+
+  // Cmd/Ctrl precision (without Shift): quantize the apex distance from the midpoint
+  // in 1mm steps, along the current drag direction.
+  if (precisionSnap && !draft.shiftKey) {
+    return snapPointAlongDirFloor(
+      rawApexLocal,
+      mid,
+      sub(rawApexLocal, mid),
+      PX_PER_MM
+    );
+  }
+
+  if (!draft.shiftKey) return rawApexLocal;
 
   // Shift constraint for darts:
   // Keep the apex on the perpendicular bisector of AB (perfectly symmetric dart),
@@ -860,8 +959,6 @@ function resolveDartApexLocal(
   const ab = sub(b, a);
   const abLen = len(ab);
   if (!Number.isFinite(abLen) || abLen < 1e-6) return rawApexLocal;
-
-  const mid = lerp(a, b, 0.5);
   const nUnit = norm(perp(ab));
   if (!Number.isFinite(nUnit.x) || !Number.isFinite(nUnit.y)) return rawApexLocal;
   if (len(nUnit) < 1e-6) return rawApexLocal;
@@ -3821,7 +3918,7 @@ export default function Canvas() {
       const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
       const placedWorld =
         !resolvedDown.snap.isSnapped && precisionSnap && last
-          ? snapWorldRelativeToRefFloor(worldForTool, last, PX_PER_MM)
+          ? snapPointAlongDirFloor(worldForTool, last, sub(worldForTool, last), PX_PER_MM)
           : !resolvedDown.snap.isSnapped && precisionSnap
             ? snapWorldToStepPxFloor(worldForTool, PX_PER_MM)
             : worldForTool;
@@ -4123,10 +4220,7 @@ export default function Canvas() {
     const resolvedMove = getSnappedWorldForTool(world, "move");
     const worldForToolRaw = resolvedMove.world;
     const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
-    const worldForTool =
-      tool === "dart" && !resolvedMove.snap.isSnapped && precisionSnap
-        ? snapWorldToStepPxFloor(worldForToolRaw, PX_PER_MM)
-        : worldForToolRaw;
+    const worldForTool = worldForToolRaw;
 
     if (tool !== "measure") {
       if (
@@ -4164,7 +4258,7 @@ export default function Canvas() {
     if ((tool === "node" || tool === "dart") && selectedFigure) {
       const local = worldToFigureLocal(
         selectedFigure,
-        tool === "dart" ? worldForTool : world
+        world
       );
 
       if (tool === "dart") {
@@ -4174,7 +4268,7 @@ export default function Canvas() {
           if (prev.step !== "pickApex") {
             return {
               ...prev,
-              currentWorld: worldForTool,
+              currentWorld: worldForToolRaw,
               shiftKey: false,
               shiftLockDirLocal: null,
             };
@@ -4187,7 +4281,7 @@ export default function Canvas() {
           if (!a || !b) {
             return {
               ...prev,
-              currentWorld: worldForTool,
+              currentWorld: worldForToolRaw,
               shiftKey,
               shiftLockDirLocal: null,
             };
@@ -4195,7 +4289,7 @@ export default function Canvas() {
 
           return {
             ...prev,
-            currentWorld: worldForTool,
+            currentWorld: worldForToolRaw,
             shiftKey,
             shiftLockDirLocal: null,
           };
@@ -4282,6 +4376,26 @@ export default function Canvas() {
         }
       }
 
+      if (
+        tool === "dart" &&
+        dartDraft?.step === "pickB" &&
+        precisionSnap &&
+        hit.best
+      ) {
+        const aLocal = getFigureNodePoint(selectedFigure, dartDraft.aNodeId);
+        if (aLocal) {
+          setHoveredEdge(
+            quantizeEdgeHoverByChordLengthFloor(
+              selectedFigure,
+              hit.best,
+              aLocal,
+              PX_PER_MM
+            )
+          );
+          return;
+        }
+      }
+
       setHoveredEdge(hit.best);
     }
 
@@ -4326,12 +4440,36 @@ export default function Canvas() {
 
     const mods: DraftMods = { shift: e.evt.shiftKey, alt: e.evt.altKey };
     let bWorld = worldForTool;
-    if (!resolvedMove.snap.isSnapped && precisionSnap) {
+    if (!resolvedMove.snap.isSnapped && precisionSnap && draft.tool === "rectangle") {
       bWorld = snapWorldRelativeToRefFloor(worldForTool, draft.startWorld, PX_PER_MM);
     }
     let effective = { a: draft.startWorld, b: bWorld };
     if (draft.tool === "rectangle" || draft.tool === "circle") {
       effective = computeRectLikeCorners(draft.startWorld, bWorld, mods);
+    }
+
+    // Circle tool: apply high precision to the radii (rx/ry) instead of snapping the cursor.
+    if (draft.tool === "circle" && !resolvedMove.snap.isSnapped && precisionSnap) {
+      const center: Vec2 = {
+        x: (effective.a.x + effective.b.x) / 2,
+        y: (effective.a.y + effective.b.y) / 2,
+      };
+      let rx = Math.abs(effective.b.x - effective.a.x) / 2;
+      let ry = Math.abs(effective.b.y - effective.a.y) / 2;
+
+      rx = Math.floor(rx / PX_PER_MM) * PX_PER_MM;
+      ry = Math.floor(ry / PX_PER_MM) * PX_PER_MM;
+
+      if (mods.shift) {
+        const r = Math.max(rx, ry);
+        rx = r;
+        ry = r;
+      }
+
+      effective = {
+        a: { x: center.x - rx, y: center.y - ry },
+        b: { x: center.x + rx, y: center.y + ry },
+      };
     }
 
     setDraft({
@@ -4364,7 +4502,14 @@ export default function Canvas() {
         const last = prev.pointsWorld[prev.pointsWorld.length - 1] ?? null;
         const nextWorld =
           !resolved.snap.isSnapped && precisionSnap && last
-            ? snapWorldRelativeToRefFloor(resolved.world, last, PX_PER_MM)
+            ? snapPointAlongDirFloor(
+                resolved.world,
+                last,
+                sub(resolved.world, last),
+                PX_PER_MM
+              )
+            : !resolved.snap.isSnapped && precisionSnap
+              ? snapWorldToStepPxFloor(resolved.world, PX_PER_MM)
             : resolved.world;
         return { ...prev, currentWorld: nextWorld };
       });
