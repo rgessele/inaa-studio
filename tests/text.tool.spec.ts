@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 import { gotoEditor } from "./helpers/e2e";
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -31,6 +31,11 @@ async function getStageBox(
 
 test("texto: inserir e editar inline (Cmd/Ctrl+Enter)", async ({ page }) => {
   await gotoEditor(page);
+
+  // Ensure focus is on the canvas so the single-key shortcut is handled.
+  const stage = page.getByTestId("editor-stage-container");
+  await expect(stage).toBeVisible();
+  await stage.click({ position: { x: 10, y: 10 } });
 
   await page.keyboard.press("t");
   await expect

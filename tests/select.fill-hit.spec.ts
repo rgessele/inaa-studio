@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 import { getEditorState, gotoEditor } from "./helpers/e2e";
 
 test.describe("select tool - fill hit", () => {

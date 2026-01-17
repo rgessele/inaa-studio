@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 import { getEditorState, gotoEditor } from "./helpers/e2e";
 
 test("editor: medidas overlay modes (never/always/hover)", async ({ page }) => {

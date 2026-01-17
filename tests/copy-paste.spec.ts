@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 import { gotoEditor } from "./helpers/e2e";
 
 function shortcut(isMac: boolean, key: string) {

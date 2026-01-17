@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 import { gotoEditor } from "./helpers/e2e";
 
 test("node tool: dragging existing node does not split edge", async ({

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers/test";
 import { dragOnCanvas, gotoEditor } from "./helpers/e2e";
 
 function dist(a: { x: number; y: number }, b: { x: number; y: number }) {

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 import { gotoEditor } from "./helpers/e2e";
 
 test.describe("visual: page guides tiles", () => {

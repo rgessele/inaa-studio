@@ -32,6 +32,12 @@ export async function initE2EState(page: Page) {
 export async function gotoEditor(page: Page) {
   await initE2EState(page);
   await page.goto("/editor", { waitUntil: "networkidle" });
+
+  // Under heavy parallelism the editor can take a moment to hydrate.
+  // Most tests depend on __INAA_DEBUG__ being available.
+  await page.waitForFunction(() => Boolean(window.__INAA_DEBUG__), {
+    timeout: 15_000,
+  });
 }
 
 declare global {

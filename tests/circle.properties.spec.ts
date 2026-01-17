@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 import { gotoEditor } from "./helpers/e2e";
 
 test("circle: editar raio/raios e circunferência no painel", async ({
@@ -10,7 +10,10 @@ test("circle: editar raio/raios e circunferência no painel", async ({
   await expect(stage).toBeVisible();
 
   // Draw an ellipse (non-perfect circle) with the Circle tool.
-  await page.keyboard.press("C");
+  await page.getByRole("button", { name: "Círculo" }).click();
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ?? null)
+    .toBe("circle");
 
   const box = await stage.boundingBox();
   expect(box).toBeTruthy();
@@ -26,10 +29,18 @@ test("circle: editar raio/raios e circunferência no painel", async ({
   await page.mouse.up();
 
   // Select it.
-  await page.keyboard.press("V");
-  await stage.click({ position: { x: 170, y: 145 } });
+  await page.getByRole("button", { name: "Selecionar" }).click();
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ?? null)
+    .toBe("select");
 
-  await expect(page.getByText("Elipse", { exact: true })).toBeVisible();
+  const canvas = stage.locator("canvas").last();
+  await expect(canvas).toBeVisible();
+  await canvas.click({ position: { x: 170, y: 145 } });
+
+  await expect(page.getByText("Elipse", { exact: true })).toBeVisible({
+    timeout: 10_000,
+  });
   await expect(page.getByTestId("circle-rx")).toBeVisible();
   await expect(page.getByTestId("circle-ry")).toBeVisible();
   await expect(page.getByTestId("circle-circumference")).toBeVisible();

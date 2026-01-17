@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { gotoEditor } from "./helpers/e2e";

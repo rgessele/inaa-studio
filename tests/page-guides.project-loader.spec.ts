@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 import { getEditorState, initE2EState } from "./helpers/e2e";
 
 test("page guides: project loader does not revert size/orientation", async ({

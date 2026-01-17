@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./helpers/test";
 import { getEditorState, gotoEditor } from "./helpers/e2e";
 
 test.describe("prefs: persistence", () => {
@@ -17,8 +17,8 @@ test.describe("prefs: persistence", () => {
     );
     expect(raw).toBe("0.8");
 
-    // Firefox can drop custom bypass headers on reload; re-navigate instead.
-    await page.goto("/editor", { waitUntil: "networkidle" });
+    // Re-navigate and wait for editor hydration/debug hooks.
+    await gotoEditor(page);
 
     await expect
       .poll(async () => (await getEditorState(page)).gridContrast)
