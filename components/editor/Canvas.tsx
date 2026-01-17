@@ -27,7 +27,7 @@ import {
 import Konva from "konva";
 import { useEditor } from "./EditorContext";
 import type { Figure, FigureEdge, FigureNode, GuideLine } from "./types";
-import { PX_PER_CM } from "./constants";
+import { PX_PER_CM, PX_PER_MM } from "./constants";
 import { getPaperDimensionsCm } from "./exportSettings";
 import {
   add,
@@ -77,6 +77,46 @@ const MAX_ZOOM_SCALE = 10;
 const ZOOM_FACTOR = 1.08;
 
 type Vec2 = { x: number; y: number };
+
+function snapWorldToStepPxFloor(p: Vec2, stepPx: number): Vec2 {
+  if (!Number.isFinite(stepPx) || stepPx <= 0) return p;
+  if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return p;
+  return {
+    x: Math.floor(p.x / stepPx) * stepPx,
+    y: Math.floor(p.y / stepPx) * stepPx,
+  };
+}
+
+function snapWorldRelativeToRefFloor(p: Vec2, ref: Vec2, stepPx: number): Vec2 {
+  if (!Number.isFinite(stepPx) || stepPx <= 0) return p;
+  if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return p;
+  if (!Number.isFinite(ref.x) || !Number.isFinite(ref.y)) return p;
+  const dx = p.x - ref.x;
+  const dy = p.y - ref.y;
+  return {
+    x: ref.x + Math.floor(dx / stepPx) * stepPx,
+    y: ref.y + Math.floor(dy / stepPx) * stepPx,
+  };
+}
+
+function snapPointAlongDirFloor(
+  p: Vec2,
+  origin: Vec2,
+  dirUnit: Vec2,
+  stepPx: number
+): Vec2 {
+  if (!Number.isFinite(stepPx) || stepPx <= 0) return p;
+  if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return p;
+  if (!Number.isFinite(origin.x) || !Number.isFinite(origin.y)) return p;
+  if (!Number.isFinite(dirUnit.x) || !Number.isFinite(dirUnit.y)) return p;
+  const dLen = len(dirUnit);
+  if (!Number.isFinite(dLen) || dLen < 1e-6) return p;
+  const u = { x: dirUnit.x / dLen, y: dirUnit.y / dLen };
+  const v = sub(p, origin);
+  const t = v.x * u.x + v.y * u.y;
+  const tFloor = Math.floor(t / stepPx) * stepPx;
+  return add(origin, mul(u, tFloor));
+}
 
 type BoundingBox = { x: number; y: number; width: number; height: number };
 
@@ -804,7 +844,8 @@ function getFigureNodePoint(figure: Figure, nodeId: string): Vec2 | null {
 function resolveDartApexLocal(
   figure: Figure,
   draft: DartDraft,
-  rawApexLocal: Vec2
+  rawApexLocal: Vec2,
+  precisionSnap: boolean
 ): Vec2 {
   if (!draft || draft.step !== "pickApex") return rawApexLocal;
   if (!draft.shiftKey) return rawApexLocal;
@@ -828,7 +869,9 @@ function resolveDartApexLocal(
   const ap = sub(rawApexLocal, a);
   const crossZ = ab.x * ap.y - ab.y * ap.x;
   const signedHeight = crossZ / abLen;
-  const height = Math.abs(signedHeight);
+  const heightRaw = Math.abs(signedHeight);
+  const height =
+    precisionSnap ? Math.floor(heightRaw / PX_PER_MM) * PX_PER_MM : heightRaw;
   const orientedN = signedHeight >= 0 ? nUnit : mul(nUnit, -1);
 
   return add(mid, mul(orientedN, height));
@@ -2477,13 +2520,12 @@ export default function Canvas() {
         tool === "rectangle" ||
         tool === "circle" ||
         tool === "curve" ||
-        tool === "text";
+        tool === "text" ||
+        tool === "dart";
       const isMeasure = tool === "measure";
 
       const shouldSnap = (magnetEnabled && isDrawingTool) || isMeasure;
-      if (!shouldSnap) {
-        return { world: worldRaw, snap: { isSnapped: false } };
-      }
+      if (!shouldSnap) return { world: worldRaw, snap: { isSnapped: false } };
 
       const thresholdWorld = Math.max(12, measureSnapStrengthPx) / scale;
 
@@ -3369,11 +3411,16 @@ export default function Canvas() {
       }
 
       const resolvedDown = getSnappedWorldForTool(world, "down");
+      const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
+      const textWorld =
+        !resolvedDown.snap.isSnapped && precisionSnap
+          ? snapWorldToStepPxFloor(resolvedDown.world, PX_PER_MM)
+          : resolvedDown.world;
       const newFig: Figure = {
         id: id("fig"),
         tool: "text",
-        x: resolvedDown.world.x,
-        y: resolvedDown.world.y,
+        x: textWorld.x,
+        y: textWorld.y,
         rotation: 0,
         nodes: [],
         edges: [],
@@ -3604,7 +3651,7 @@ export default function Canvas() {
 
     if (tool === "dart") {
       if (!selectedFigure) return;
-      const local = worldToFigureLocal(selectedFigure, world);
+      const local = worldToFigureLocal(selectedFigure, worldForTool);
 
       if (!dartDraft) {
         if (!hoveredEdge || hoveredEdge.figureId !== selectedFigure.id) return;
@@ -3627,7 +3674,7 @@ export default function Canvas() {
           bNodeId: null,
           shiftKey: false,
           shiftLockDirLocal: null,
-          currentWorld: world,
+          currentWorld: worldForTool,
         });
         return;
       }
@@ -3656,7 +3703,7 @@ export default function Canvas() {
           bNodeId: splitB.newNodeId,
           shiftKey: false,
           shiftLockDirLocal: null,
-          currentWorld: world,
+          currentWorld: worldForTool,
         });
         return;
       }
@@ -3669,7 +3716,13 @@ export default function Canvas() {
       if (!aLocal || !bLocal) return;
 
       const rawApexLocal = local;
-      const apexLocal = resolveDartApexLocal(selectedFigure, dartDraft, rawApexLocal);
+      const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
+      const apexLocal = resolveDartApexLocal(
+        selectedFigure,
+        dartDraft,
+        rawApexLocal,
+        precisionSnap
+      );
 
       const cNodeId = id("n");
       const dartId = id("dart");
@@ -3765,6 +3818,14 @@ export default function Canvas() {
       const first = pts[0];
       const last = pts[pts.length - 1];
 
+      const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
+      const placedWorld =
+        !resolvedDown.snap.isSnapped && precisionSnap && last
+          ? snapWorldRelativeToRefFloor(worldForTool, last, PX_PER_MM)
+          : !resolvedDown.snap.isSnapped && precisionSnap
+            ? snapWorldToStepPxFloor(worldForTool, PX_PER_MM)
+            : worldForTool;
+
       const canClose = pts.length >= 3;
       const isCloseClick =
         canClose && dist(worldForTool, first) <= closeTolWorld;
@@ -3779,10 +3840,10 @@ export default function Canvas() {
         return;
       }
 
-      if (last && dist(worldForTool, last) < 0.5) {
+      if (last && dist(placedWorld, last) < 0.5) {
         // Ignore near-duplicate clicks.
         setCurveDraft((prev) =>
-          prev ? { ...prev, currentWorld: worldForTool } : prev
+          prev ? { ...prev, currentWorld: placedWorld } : prev
         );
         return;
       }
@@ -3790,10 +3851,10 @@ export default function Canvas() {
       setCurveDraft((prev) =>
         prev
           ? {
-              pointsWorld: [...prev.pointsWorld, worldForTool],
-              currentWorld: worldForTool,
+              pointsWorld: [...prev.pointsWorld, placedWorld],
+              currentWorld: placedWorld,
             }
-          : { pointsWorld: [worldForTool], currentWorld: worldForTool }
+          : { pointsWorld: [placedWorld], currentWorld: placedWorld }
       );
       return;
     }
@@ -3831,10 +3892,20 @@ export default function Canvas() {
       }
 
       const last = pts[pts.length - 1];
-      const placedWorld =
+      let placedWorld =
         !resolvedDown.snap.isSnapped && e.evt.shiftKey && last
           ? applyLineAngleLock(last, worldForTool)
           : worldForTool;
+
+      const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
+      if (!resolvedDown.snap.isSnapped && precisionSnap && last) {
+        if (e.evt.shiftKey) {
+          const dir = sub(placedWorld, last);
+          placedWorld = snapPointAlongDirFloor(placedWorld, last, dir, PX_PER_MM);
+        } else {
+          placedWorld = snapWorldRelativeToRefFloor(placedWorld, last, PX_PER_MM);
+        }
+      }
 
       if (!resolvedDown.snap.isSnapped && e.evt.altKey && pts.length === 1) {
         // "Desenhar a partir do centro" (primeiro segmento): o 1º clique é o centro,
@@ -4050,7 +4121,12 @@ export default function Canvas() {
     }
 
     const resolvedMove = getSnappedWorldForTool(world, "move");
-    const worldForTool = resolvedMove.world;
+    const worldForToolRaw = resolvedMove.world;
+    const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
+    const worldForTool =
+      tool === "dart" && !resolvedMove.snap.isSnapped && precisionSnap
+        ? snapWorldToStepPxFloor(worldForToolRaw, PX_PER_MM)
+        : worldForToolRaw;
 
     if (tool !== "measure") {
       if (
@@ -4086,7 +4162,10 @@ export default function Canvas() {
     }
 
     if ((tool === "node" || tool === "dart") && selectedFigure) {
-      const local = worldToFigureLocal(selectedFigure, world);
+      const local = worldToFigureLocal(
+        selectedFigure,
+        tool === "dart" ? worldForTool : world
+      );
 
       if (tool === "dart") {
         const shiftKey = !!e.evt.shiftKey;
@@ -4095,7 +4174,7 @@ export default function Canvas() {
           if (prev.step !== "pickApex") {
             return {
               ...prev,
-              currentWorld: world,
+              currentWorld: worldForTool,
               shiftKey: false,
               shiftLockDirLocal: null,
             };
@@ -4106,12 +4185,17 @@ export default function Canvas() {
             ? getFigureNodePoint(selectedFigure, prev.bNodeId)
             : null;
           if (!a || !b) {
-            return { ...prev, currentWorld: world, shiftKey, shiftLockDirLocal: null };
+            return {
+              ...prev,
+              currentWorld: worldForTool,
+              shiftKey,
+              shiftLockDirLocal: null,
+            };
           }
 
           return {
             ...prev,
-            currentWorld: world,
+            currentWorld: worldForTool,
             shiftKey,
             shiftLockDirLocal: null,
           };
@@ -4218,10 +4302,19 @@ export default function Canvas() {
     if (tool === "line" && lineDraftRef.current) {
       const current = lineDraftRef.current;
       const last = current.pointsWorld[current.pointsWorld.length - 1];
-      const nextWorld =
+      let nextWorld =
         !resolvedMove.snap.isSnapped && e.evt.shiftKey && last
           ? applyLineAngleLock(last, worldForTool)
           : worldForTool;
+
+      if (!resolvedMove.snap.isSnapped && precisionSnap && last) {
+        if (e.evt.shiftKey) {
+          const dir = sub(nextWorld, last);
+          nextWorld = snapPointAlongDirFloor(nextWorld, last, dir, PX_PER_MM);
+        } else {
+          nextWorld = snapWorldRelativeToRefFloor(nextWorld, last, PX_PER_MM);
+        }
+      }
 
       const nextDraft = { ...current, currentWorld: nextWorld };
       lineDraftRef.current = nextDraft;
@@ -4232,14 +4325,18 @@ export default function Canvas() {
     if (!draft) return;
 
     const mods: DraftMods = { shift: e.evt.shiftKey, alt: e.evt.altKey };
-    let effective = { a: draft.startWorld, b: worldForTool };
+    let bWorld = worldForTool;
+    if (!resolvedMove.snap.isSnapped && precisionSnap) {
+      bWorld = snapWorldRelativeToRefFloor(worldForTool, draft.startWorld, PX_PER_MM);
+    }
+    let effective = { a: draft.startWorld, b: bWorld };
     if (draft.tool === "rectangle" || draft.tool === "circle") {
-      effective = computeRectLikeCorners(draft.startWorld, worldForTool, mods);
+      effective = computeRectLikeCorners(draft.startWorld, bWorld, mods);
     }
 
     setDraft({
       ...draft,
-      currentWorld: worldForTool,
+      currentWorld: bWorld,
       effectiveAWorld: effective.a,
       effectiveBWorld: effective.b,
       mods,
@@ -4261,11 +4358,26 @@ export default function Canvas() {
       };
 
       const resolved = getSnappedWorldForTool(world, "move");
-      setCurveDraft((prev) =>
-        prev ? { ...prev, currentWorld: resolved.world } : prev
-      );
+      const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
+      setCurveDraft((prev) => {
+        if (!prev) return prev;
+        const last = prev.pointsWorld[prev.pointsWorld.length - 1] ?? null;
+        const nextWorld =
+          !resolved.snap.isSnapped && precisionSnap && last
+            ? snapWorldRelativeToRefFloor(resolved.world, last, PX_PER_MM)
+            : resolved.world;
+        return { ...prev, currentWorld: nextWorld };
+      });
     },
-    [curveDraft, getSnappedWorldForTool, position.x, position.y, scale]
+    [
+      curveDraft,
+      getSnappedWorldForTool,
+      modifierKeys.ctrl,
+      modifierKeys.meta,
+      position.x,
+      position.y,
+      scale,
+    ]
   );
 
   const handlePointerUp = () => {
@@ -4394,12 +4506,13 @@ export default function Canvas() {
 
     const tx = b.x + 8 / scale;
     const ty = b.y + 8 / scale;
+    const measureStroke = "#FDC301";
 
     return (
       <>
         <Line
           points={[a.x, a.y, b.x, b.y]}
-          stroke={previewStroke}
+          stroke={measureStroke}
           strokeWidth={1 / scale}
           listening={false}
         />
@@ -4407,14 +4520,14 @@ export default function Canvas() {
           x={a.x}
           y={a.y}
           radius={3 / scale}
-          fill={previewStroke}
+          fill={measureStroke}
           listening={false}
         />
         <Circle
           x={b.x}
           y={b.y}
           radius={3 / scale}
-          fill={measureDraft.isSnapped ? "#2563eb" : previewStroke}
+          fill={measureDraft.isSnapped ? "#2563eb" : measureStroke}
           listening={false}
         />
         <Text
@@ -4422,12 +4535,12 @@ export default function Canvas() {
           y={ty}
           text={label}
           fontSize={12 / scale}
-          fill={previewStroke}
+          fill={measureStroke}
           listening={false}
         />
       </>
     );
-  }, [measureDraft, previewStroke, scale, tool]);
+  }, [measureDraft, scale, tool]);
 
   const magnetOverlay = useMemo(() => {
     if (!magnetEnabled) return null;
@@ -5543,9 +5656,15 @@ export default function Canvas() {
           : null;
 
     const rawApexLocal = worldToFigureLocal(selectedFigure, dartDraft.currentWorld);
+    const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
     const apexLocal =
       dartDraft.step === "pickApex"
-        ? resolveDartApexLocal(selectedFigure, dartDraft, rawApexLocal)
+        ? resolveDartApexLocal(
+            selectedFigure,
+            dartDraft,
+            rawApexLocal,
+            precisionSnap
+          )
         : rawApexLocal;
 
     const stroke = previewStroke;
@@ -5678,7 +5797,16 @@ export default function Canvas() {
         ) : null}
       </Group>
     );
-  }, [dartDraft, hoveredEdge, previewStroke, scale, selectedFigure, tool]);
+  }, [
+    dartDraft,
+    hoveredEdge,
+    modifierKeys.ctrl,
+    modifierKeys.meta,
+    previewStroke,
+    scale,
+    selectedFigure,
+    tool,
+  ]);
 
   return (
     <div className="w-full h-full relative">

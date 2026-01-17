@@ -1,6 +1,6 @@
 import type { Tool } from "./types";
 
-export type ModifierKey = "shift" | "alt" | "meta" | "ctrl";
+export type ModifierKey = "shift" | "alt" | "meta" | "ctrl" | "cmdOrCtrl";
 
 export type PlatformKind = "mac" | "win";
 
@@ -23,7 +23,12 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
     {
       key: "alt",
       label: { mac: "⌥", win: "Alt" },
-      descriptionPtBr: "Selecionar aresta / escalar pelo centro",
+      descriptionPtBr: "Escalar pelo centro",
+    },
+    {
+      key: "cmdOrCtrl",
+      label: { mac: "⌘", win: "Ctrl" },
+      descriptionPtBr: "Modo aresta (selecionar arestas)",
     },
   ],
   node: [
@@ -35,7 +40,13 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
   ],
   pan: [],
   measure: [],
-  offset: [],
+  offset: [
+    {
+      key: "cmdOrCtrl",
+      label: { mac: "⌘", win: "Ctrl" },
+      descriptionPtBr: "Modo remover (clique para apagar offset)",
+    },
+  ],
   mirror: [],
   unfold: [],
   rectangle: [
@@ -49,6 +60,11 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
       label: { mac: "⌥", win: "Alt" },
       descriptionPtBr: "Desenhar a partir do centro",
     },
+    {
+      key: "cmdOrCtrl",
+      label: { mac: "⌘", win: "Ctrl" },
+      descriptionPtBr: "Alta precisão (1mm)",
+    },
   ],
   circle: [
     {
@@ -60,6 +76,11 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
       key: "alt",
       label: { mac: "⌥", win: "Alt" },
       descriptionPtBr: "Desenhar a partir do centro",
+    },
+    {
+      key: "cmdOrCtrl",
+      label: { mac: "⌘", win: "Ctrl" },
+      descriptionPtBr: "Alta precisão (1mm)",
     },
   ],
   line: [
@@ -73,10 +94,38 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
       label: { mac: "⌥", win: "Alt" },
       descriptionPtBr: "Desenhar a partir do centro",
     },
+    {
+      key: "cmdOrCtrl",
+      label: { mac: "⌘", win: "Ctrl" },
+      descriptionPtBr: "Alta precisão (1mm)",
+    },
   ],
-  curve: [],
-  text: [],
-  dart: [],
+  curve: [
+    {
+      key: "cmdOrCtrl",
+      label: { mac: "⌘", win: "Ctrl" },
+      descriptionPtBr: "Alta precisão (1mm)",
+    },
+  ],
+  text: [
+    {
+      key: "cmdOrCtrl",
+      label: { mac: "⌘", win: "Ctrl" },
+      descriptionPtBr: "Alta precisão (1mm)",
+    },
+  ],
+  dart: [
+    {
+      key: "shift",
+      label: { mac: "⇧", win: "Shift" },
+      descriptionPtBr: "Pence simétrica (ponto 3 no meio de A–B)",
+    },
+    {
+      key: "cmdOrCtrl",
+      label: { mac: "⌘", win: "Ctrl" },
+      descriptionPtBr: "Alta precisão (1mm)",
+    },
+  ],
 };
 
 export function detectPlatformKind(): PlatformKind {
@@ -91,5 +140,6 @@ export function isModifierActive(
   if (key === "shift") return mods.shift;
   if (key === "alt") return mods.alt;
   if (key === "meta") return mods.meta;
+  if (key === "cmdOrCtrl") return mods.meta || mods.ctrl;
   return mods.ctrl;
 }
