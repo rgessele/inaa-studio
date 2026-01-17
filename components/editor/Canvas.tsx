@@ -3747,25 +3747,57 @@ export default function Canvas() {
     }
 
     if (tool === "dart") {
-      if (!selectedFigure) return;
-      const local = worldToFigureLocal(selectedFigure, worldForTool);
-
       if (!dartDraft) {
-        if (!hoveredEdge || hoveredEdge.figureId !== selectedFigure.id) return;
+        const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
+
+        // Allow starting a dart on an unselected figure: click selects + marks point A.
+        let hitEdge = hoveredEdge;
+        if (!hitEdge) {
+          const thresholdWorld = 10 / scale;
+          const figId = findHoveredFigureId(figures, world, thresholdWorld);
+          const fig = figId ? figures.find((f) => f.id === figId) ?? null : null;
+          if (!fig || fig.kind === "seam") return;
+
+          const local = worldToFigureLocal(fig, world);
+          const hit = findNearestEdge(fig, local);
+          if (!hit.best || hit.bestDist > thresholdWorld) return;
+          hitEdge = hit.best;
+
+          if (precisionSnap) {
+            const edge = fig.edges.find((ed) => ed.id === hitEdge!.edgeId) ?? null;
+            const fromNode = edge ? getNodeById(fig.nodes, edge.from) : undefined;
+            if (fromNode) {
+              hitEdge = quantizeEdgeHoverByChordLengthFloor(
+                fig,
+                hitEdge,
+                { x: fromNode.x, y: fromNode.y },
+                PX_PER_MM
+              );
+            }
+          }
+        }
+
+        const targetFigure =
+          figures.find((f) => f.id === hitEdge.figureId) ?? null;
+        if (!targetFigure) return;
+        if (targetFigure.kind === "seam") return;
 
         const splitA = splitFigureEdge(
-          selectedFigure,
-          hoveredEdge.edgeId,
-          hoveredEdge.t
+          targetFigure,
+          hitEdge.edgeId,
+          hitEdge.t
         );
         if (!splitA.newNodeId) return;
 
         setFigures((prev) =>
-          prev.map((f) => (f.id === selectedFigure.id ? splitA.figure : f))
+          prev.map((f) => (f.id === targetFigure.id ? splitA.figure : f))
         );
 
+        setSelectedFigureIds([targetFigure.id]);
+        setSelectedFigureId(targetFigure.id);
+
         setDartDraft({
-          figureId: selectedFigure.id,
+          figureId: targetFigure.id,
           step: "pickB",
           aNodeId: splitA.newNodeId,
           bNodeId: null,
@@ -3777,6 +3809,7 @@ export default function Canvas() {
       }
 
       if (dartDraft.step === "pickB") {
+        if (!selectedFigure) return;
         if (!hoveredEdge || hoveredEdge.figureId !== selectedFigure.id) return;
 
         const aLocal = getFigureNodePoint(selectedFigure, dartDraft.aNodeId);
@@ -3806,12 +3839,14 @@ export default function Canvas() {
       }
 
       // pickApex
+      if (!selectedFigure) return;
       const aLocal = getFigureNodePoint(selectedFigure, dartDraft.aNodeId);
       const bLocal = dartDraft.bNodeId
         ? getFigureNodePoint(selectedFigure, dartDraft.bNodeId)
         : null;
       if (!aLocal || !bLocal) return;
 
+      const local = worldToFigureLocal(selectedFigure, worldForTool);
       const rawApexLocal = local;
       const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
       const apexLocal = resolveDartApexLocal(
@@ -4255,46 +4290,99 @@ export default function Canvas() {
       setHoveredFigureId(null);
     }
 
-    if ((tool === "node" || tool === "dart") && selectedFigure) {
-      const local = worldToFigureLocal(
-        selectedFigure,
-        world
-      );
+    if (tool === "dart") {
+      const thresholdWorld = 10 / scale;
+      const targetFigure = dartDraft
+        ? figures.find((f) => f.id === dartDraft.figureId) ?? null
+        : (() => {
+            const figId = findHoveredFigureId(figures, world, thresholdWorld);
+            const fig = figId ? figures.find((f) => f.id === figId) ?? null : null;
+            if (!fig || fig.kind === "seam") return null;
+            return fig;
+          })();
 
-      if (tool === "dart") {
-        const shiftKey = !!e.evt.shiftKey;
-        setDartDraft((prev) => {
-          if (!prev) return prev;
-          if (prev.step !== "pickApex") {
-            return {
-              ...prev,
-              currentWorld: worldForToolRaw,
-              shiftKey: false,
-              shiftLockDirLocal: null,
-            };
+      if (!targetFigure) {
+        if (hoveredEdge) setHoveredEdge(null);
+      } else {
+        const local = worldToFigureLocal(targetFigure, world);
+        const hit = findNearestEdge(targetFigure, local);
+
+        if (!hit.best || hit.bestDist > thresholdWorld) {
+          if (hoveredEdge) setHoveredEdge(null);
+        } else {
+          let best = hit.best;
+
+          // Cmd/Ctrl high precision for point A (pre-draft): quantize the candidate point
+          // so the preview matches the actual split when clicking.
+          if (!dartDraft && precisionSnap) {
+            const edge =
+              targetFigure.edges.find((ed) => ed.id === best.edgeId) ?? null;
+            const fromNode = edge
+              ? getNodeById(targetFigure.nodes, edge.from)
+              : undefined;
+            if (fromNode) {
+              best = quantizeEdgeHoverByChordLengthFloor(
+                targetFigure,
+                best,
+                { x: fromNode.x, y: fromNode.y },
+                PX_PER_MM
+              );
+            }
           }
 
-          const a = getFigureNodePoint(selectedFigure, prev.aNodeId);
-          const b = prev.bNodeId
-            ? getFigureNodePoint(selectedFigure, prev.bNodeId)
-            : null;
-          if (!a || !b) {
-            return {
-              ...prev,
-              currentWorld: worldForToolRaw,
-              shiftKey,
-              shiftLockDirLocal: null,
-            };
+          // Cmd/Ctrl high precision for point B (pickB) is handled similarly.
+          if (
+            dartDraft?.step === "pickB" &&
+            precisionSnap &&
+            best.figureId === dartDraft.figureId
+          ) {
+            const aLocal = selectedFigure
+              ? getFigureNodePoint(selectedFigure, dartDraft.aNodeId)
+              : null;
+            if (aLocal) {
+              best = quantizeEdgeHoverByChordLengthFloor(
+                targetFigure,
+                best,
+                aLocal,
+                PX_PER_MM
+              );
+            }
           }
 
-          return {
-            ...prev,
-            currentWorld: worldForToolRaw,
-            shiftKey,
-            shiftLockDirLocal: null,
-          };
-        });
+          setHoveredEdge(best);
+        }
       }
+
+      // Keep the dart draft in sync while placing the apex.
+      if (dartDraft && targetFigure && dartDraft.step === "pickApex") {
+        const shiftKey = !!e.evt.shiftKey;
+        setDartDraft((prev) =>
+          prev
+            ? {
+                ...prev,
+                currentWorld: worldForToolRaw,
+                shiftKey,
+                shiftLockDirLocal: null,
+              }
+            : prev
+        );
+      } else if (dartDraft) {
+        // While picking B, avoid carrying shift state.
+        setDartDraft((prev) =>
+          prev && prev.step !== "pickApex"
+            ? {
+                ...prev,
+                currentWorld: worldForToolRaw,
+                shiftKey: false,
+                shiftLockDirLocal: null,
+              }
+            : prev
+        );
+      }
+    }
+
+    if (tool === "node" && selectedFigure) {
+      const local = worldToFigureLocal(selectedFigure, world);
 
       // In node tool: if we're near an existing node, prioritize it over edge splitting.
       if (tool === "node") {
@@ -5784,6 +5872,100 @@ export default function Canvas() {
     );
   }, [hoveredEdge, scale, selectedFigure, tool]);
 
+  const dartPickAOverlay = useMemo(() => {
+    if (tool !== "dart") return null;
+    if (dartDraft) return null;
+    if (!hoveredEdge) return null;
+
+    const fig = figures.find((f) => f.id === hoveredEdge.figureId) ?? null;
+    if (!fig || fig.kind === "seam") return null;
+
+    const edge = fig.edges.find((e) => e.id === hoveredEdge.edgeId) ?? null;
+    if (!edge) return null;
+
+    const fromNode = getNodeById(fig.nodes, edge.from);
+    const toNode = getNodeById(fig.nodes, edge.to);
+    if (!fromNode || !toNode) return null;
+
+    const aLocal = hoveredEdge.pointLocal;
+    const pFrom: Vec2 = { x: fromNode.x, y: fromNode.y };
+    const pTo: Vec2 = { x: toNode.x, y: toNode.y };
+
+    const dFromPx = dist(aLocal, pFrom);
+    const dToPx = dist(aLocal, pTo);
+    if (!Number.isFinite(dFromPx) || !Number.isFinite(dToPx)) return null;
+
+    const stroke = previewStroke;
+    const dash = [6 / scale, 6 / scale];
+    const fontSize = 11 / scale;
+    const textWidth = 140 / scale;
+
+    const renderHalfLabel = (key: string, p1: Vec2, p2: Vec2, dPx: number) => {
+      const mid = lerp(p1, p2, 0.5);
+      const tangent = sub(p2, p1);
+      const normal = norm(perp(tangent));
+      const offset = 12 / scale;
+      const p = add(mid, mul(normal, offset));
+      const rawAngleDeg =
+        (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
+      const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
+      const label = formatCm(pxToCm(dPx), 2);
+
+      return (
+        <Text
+          key={key}
+          x={p.x}
+          y={p.y}
+          offsetX={textWidth / 2}
+          offsetY={fontSize / 2}
+          rotation={angleDeg}
+          width={textWidth}
+          align="center"
+          text={label}
+          fontSize={fontSize}
+          fill={stroke}
+          opacity={0.95}
+          fontStyle="bold"
+          listening={false}
+          name="inaa-dart-preview-a"
+        />
+      );
+    };
+
+    return (
+      <Group
+        x={fig.x}
+        y={fig.y}
+        rotation={fig.rotation || 0}
+        listening={false}
+      >
+        <Circle x={pFrom.x} y={pFrom.y} radius={3.5 / scale} fill={stroke} />
+        <Circle x={pTo.x} y={pTo.y} radius={3.5 / scale} fill={stroke} />
+        <Circle x={aLocal.x} y={aLocal.y} radius={4 / scale} fill={stroke} />
+
+        <Line
+          points={[pFrom.x, pFrom.y, aLocal.x, aLocal.y]}
+          stroke={stroke}
+          strokeWidth={1 / scale}
+          dash={dash}
+          opacity={0.9}
+          listening={false}
+        />
+        <Line
+          points={[aLocal.x, aLocal.y, pTo.x, pTo.y]}
+          stroke={stroke}
+          strokeWidth={1 / scale}
+          dash={dash}
+          opacity={0.9}
+          listening={false}
+        />
+
+        {renderHalfLabel(`dart:a:from:${fig.id}:${edge.id}`, pFrom, aLocal, dFromPx)}
+        {renderHalfLabel(`dart:a:to:${fig.id}:${edge.id}`, aLocal, pTo, dToPx)}
+      </Group>
+    );
+  }, [dartDraft, figures, hoveredEdge, previewStroke, scale, tool]);
+
   const dartOverlay = useMemo(() => {
     if (tool !== "dart" || !selectedFigure || !dartDraft) return null;
     if (dartDraft.figureId !== selectedFigure.id) return null;
@@ -7066,6 +7248,8 @@ export default function Canvas() {
             {edgeHoverOverlay}
 
             {nodeSplitMeasuresPreviewOverlay}
+
+            {dartPickAOverlay}
 
             {dartOverlay}
 
