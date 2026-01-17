@@ -129,11 +129,22 @@ function tryPolylineByTraversal(
 
 export function figureCentroidLocal(figure: Figure): Vec2 {
   if (!figure.nodes.length) return { x: 0, y: 0 };
-  const sum = figure.nodes.reduce(
+
+  // Prefer nodes referenced by the contour (edges). This avoids centroid drift
+  // when figures carry auxiliary nodes (e.g., dart apex nodes).
+  const usedIds = new Set<string>();
+  for (const e of figure.edges) {
+    usedIds.add(e.from);
+    usedIds.add(e.to);
+  }
+  const usedNodes = figure.nodes.filter((n) => usedIds.has(n.id));
+  const nodes = usedNodes.length ? usedNodes : figure.nodes;
+
+  const sum = nodes.reduce(
     (acc, n) => ({ x: acc.x + n.x, y: acc.y + n.y }),
     { x: 0, y: 0 }
   );
-  return { x: sum.x / figure.nodes.length, y: sum.y / figure.nodes.length };
+  return { x: sum.x / nodes.length, y: sum.y / nodes.length };
 }
 
 export function edgeLocalPoints(
@@ -276,5 +287,26 @@ export function figureWorldBoundingBox(
     maxX = Math.max(maxX, pts[i]);
     maxY = Math.max(maxY, pts[i + 1]);
   }
+
+  // Include auxiliary nodes that affect visuals (e.g., dart apex/handles)
+  // so exports don't crop them.
+  const darts = figure.darts ?? [];
+  if (darts.length) {
+    const ids = new Set<string>();
+    for (const d of darts) {
+      ids.add(d.aNodeId);
+      ids.add(d.bNodeId);
+      ids.add(d.cNodeId);
+    }
+    for (const n of figure.nodes) {
+      if (!ids.has(n.id)) continue;
+      const p = figureLocalToWorld(figure, { x: n.x, y: n.y });
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+  }
+
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }

@@ -65,6 +65,7 @@ export function EditorToolbar() {
   const [includePatternTexts, setIncludePatternTexts] = useState(true);
   const [includeSeamAllowance, setIncludeSeamAllowance] = useState(true);
   const [includePointLabels, setIncludePointLabels] = useState(false);
+  const [includeMeasures, setIncludeMeasures] = useState(true);
   const hasAutoExportedRef = useRef(false);
   const embedded =
     searchParams.get("embedded") === "1" || searchParams.get("embed") === "1";
@@ -139,6 +140,7 @@ export function EditorToolbar() {
         resolvedSettings,
         {
           includePointLabels,
+          includeMeasures,
           pointLabelsMode,
         }
       );
@@ -154,6 +156,7 @@ export function EditorToolbar() {
     exportSettings,
     getStage,
     includePointLabels,
+    includeMeasures,
     includeSeamAllowance,
     pointLabelsMode,
     searchParams,
@@ -469,6 +472,7 @@ export function EditorToolbar() {
       resolvedSettings,
       {
         includePointLabels,
+        includeMeasures,
         pointLabelsMode,
       }
     );
@@ -488,6 +492,7 @@ export function EditorToolbar() {
 
     generateSVG(exportShapes, resolvedSettings, {
       includePointLabels,
+      includeMeasures,
       pointLabelsMode,
     });
   };
@@ -1124,6 +1129,11 @@ export function EditorToolbar() {
                     label="Rótulos de pontos"
                     checked={includePointLabels}
                     onCheckedChange={setIncludePointLabels}
+                  />
+                  <SwitchRow
+                    label="Medidas (valores)"
+                    checked={includeMeasures}
+                    onCheckedChange={setIncludeMeasures}
                   />
                   <SwitchRow
                     label="Páginas em branco"

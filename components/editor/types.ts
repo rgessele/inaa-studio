@@ -144,6 +144,13 @@ export interface FigureEdge {
   kind: EdgeKind;
 }
 
+export interface FigureDart {
+  id: string;
+  aNodeId: string;
+  bNodeId: string;
+  cNodeId: string;
+}
+
 export interface Figure {
   id: string;
 
@@ -190,6 +197,11 @@ export interface Figure {
   nodes: FigureNode[];
   edges: FigureEdge[];
   closed: boolean;
+
+  // =====================
+  // Dart / Pence tool (non-destructive)
+  // =====================
+  darts?: FigureDart[];
 
   // =====================
   // Text tool (tool === "text")

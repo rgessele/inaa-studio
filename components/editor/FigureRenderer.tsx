@@ -7,6 +7,7 @@ import { figureCentroidLocal } from "./figurePath";
 import { MemoizedNodeOverlay } from "./NodeOverlay";
 import { MemoizedMeasureOverlay } from "./MeasureOverlay";
 import { MemoizedSeamLabel } from "./SeamLabel";
+import { MemoizedDartOverlay } from "./DartOverlay";
 import { SelectedEdge } from "./EditorContext";
 import type { PointLabelsMode } from "./types";
 
@@ -389,6 +390,15 @@ const FigureRenderer = ({
           listening={listening} // Optimization: Disable events if not needed
         />
       )}
+
+      <MemoizedDartOverlay
+        figure={figure}
+        scale={scale}
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        isDark={isDark}
+      />
+
       {hoveredSelectEdge && hoveredSelectEdge.figureId === figure.id
         ? (() => {
             const edge = figure.edges.find(
@@ -447,17 +457,7 @@ const FigureRenderer = ({
             if (!text) return null;
 
             // Place label "outside" the figure: offset away from centroid.
-            const centroid = (() => {
-              if (!figure.nodes.length) return { x: 0, y: 0 };
-              const sum = figure.nodes.reduce(
-                (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
-                { x: 0, y: 0 }
-              );
-              return {
-                x: sum.x / figure.nodes.length,
-                y: sum.y / figure.nodes.length,
-              };
-            })();
+            const centroid = figureCentroidLocal(figure);
 
             const dx = n.x - centroid.x;
             const dy = n.y - centroid.y;

@@ -96,9 +96,11 @@ type EdgeHover = {
 
 type DartDraft = {
   figureId: string;
-  step: "pickA" | "pickB" | "pickApex";
-  a: EdgeHover;
-  b: EdgeHover;
+  step: "pickB" | "pickApex";
+  aNodeId: string;
+  bNodeId: string | null;
+  shiftKey: boolean;
+  shiftLockDirLocal: Vec2 | null;
   currentWorld: Vec2;
 } | null;
 
@@ -793,101 +795,43 @@ function splitFigureEdge(
   };
 }
 
-function walkLoopEdges(
-  figure: Figure,
-  fromNodeId: string,
-  toNodeId: string
-): { edgeIds: string[]; ok: boolean } {
-  const outMap = new Map<string, FigureEdge[]>();
-  for (const e of figure.edges) {
-    const list = outMap.get(e.from) ?? [];
-    list.push(e);
-    outMap.set(e.from, list);
-  }
-
-  const edgeIds: string[] = [];
-  let current = fromNodeId;
-  const visited = new Set<string>();
-
-  for (let safety = 0; safety < figure.edges.length + 2; safety++) {
-    if (current === toNodeId) return { edgeIds, ok: true };
-    if (visited.has(current)) break;
-    visited.add(current);
-
-    const outs = outMap.get(current) ?? [];
-    if (outs.length === 0) break;
-    const edge = outs[0];
-    edgeIds.push(edge.id);
-    current = edge.to;
-  }
-
-  return { edgeIds, ok: false };
+function getFigureNodePoint(figure: Figure, nodeId: string): Vec2 | null {
+  const n = figure.nodes.find((node) => node.id === nodeId);
+  if (!n) return null;
+  return { x: n.x, y: n.y };
 }
 
-function insertDartIntoFigure(
+function resolveDartApexLocal(
   figure: Figure,
-  aLocal: Vec2,
-  bLocal: Vec2,
-  apexLocal: Vec2
-): Figure | null {
-  if (!figure.closed) return null;
+  draft: DartDraft,
+  rawApexLocal: Vec2
+): Vec2 {
+  if (!draft || draft.step !== "pickApex") return rawApexLocal;
+  if (!draft.shiftKey) return rawApexLocal;
 
-  // Split at A
-  const hitA = findNearestEdge(figure, aLocal);
-  if (!hitA.best) return null;
-  const splitA = splitFigureEdge(figure, hitA.best.edgeId, hitA.best.t);
-  if (!splitA.newNodeId) return null;
-  let nextFigure = splitA.figure;
-  const aNodeId = splitA.newNodeId;
+  const a = getFigureNodePoint(figure, draft.aNodeId);
+  const b = draft.bNodeId ? getFigureNodePoint(figure, draft.bNodeId) : null;
+  if (!a || !b) return rawApexLocal;
 
-  // Split at B (re-find after A split)
-  const hitB = findNearestEdge(nextFigure, bLocal);
-  if (!hitB.best) return null;
-  const splitB = splitFigureEdge(nextFigure, hitB.best.edgeId, hitB.best.t);
-  if (!splitB.newNodeId) return null;
-  nextFigure = splitB.figure;
-  const bNodeId = splitB.newNodeId;
+  // Shift constraint for darts:
+  // Keep the apex on the perpendicular bisector of AB (perfectly symmetric dart),
+  // on the same side of the base as the mouse.
+  const ab = sub(b, a);
+  const abLen = len(ab);
+  if (!Number.isFinite(abLen) || abLen < 1e-6) return rawApexLocal;
 
-  // Decide which direction along loop to replace (pick the shorter chain)
-  const pathAB = walkLoopEdges(nextFigure, aNodeId, bNodeId);
-  const pathBA = walkLoopEdges(nextFigure, bNodeId, aNodeId);
-  if (!pathAB.ok && !pathBA.ok) return null;
+  const mid = lerp(a, b, 0.5);
+  const nUnit = norm(perp(ab));
+  if (!Number.isFinite(nUnit.x) || !Number.isFinite(nUnit.y)) return rawApexLocal;
+  if (len(nUnit) < 1e-6) return rawApexLocal;
 
-  const replaceFrom =
-    !pathBA.ok || (pathAB.ok && pathAB.edgeIds.length <= pathBA.edgeIds.length)
-      ? { from: aNodeId, to: bNodeId, edgeIds: pathAB.edgeIds }
-      : { from: bNodeId, to: aNodeId, edgeIds: pathBA.edgeIds };
+  const ap = sub(rawApexLocal, a);
+  const crossZ = ab.x * ap.y - ab.y * ap.x;
+  const signedHeight = crossZ / abLen;
+  const height = Math.abs(signedHeight);
+  const orientedN = signedHeight >= 0 ? nUnit : mul(nUnit, -1);
 
-  const apexNodeId = id("n");
-  const apexNode: FigureNode = {
-    id: apexNodeId,
-    x: apexLocal.x,
-    y: apexLocal.y,
-    mode: "corner",
-  };
-
-  const remainingEdges = nextFigure.edges.filter(
-    (e) => !replaceFrom.edgeIds.includes(e.id)
-  );
-
-  const e1: FigureEdge = {
-    id: id("e"),
-    from: replaceFrom.from,
-    to: apexNodeId,
-    kind: "line",
-  };
-  const e2: FigureEdge = {
-    id: id("e"),
-    from: apexNodeId,
-    to: replaceFrom.to,
-    kind: "line",
-  };
-
-  return {
-    ...nextFigure,
-    nodes: [...nextFigure.nodes, apexNode],
-    edges: [...remainingEdges, e1, e2],
-  };
+  return add(mid, mul(orientedN, height));
 }
 
 function mirrorValue(value: number, axisPos: number): number {
@@ -3664,11 +3608,25 @@ export default function Canvas() {
 
       if (!dartDraft) {
         if (!hoveredEdge || hoveredEdge.figureId !== selectedFigure.id) return;
+
+        const splitA = splitFigureEdge(
+          selectedFigure,
+          hoveredEdge.edgeId,
+          hoveredEdge.t
+        );
+        if (!splitA.newNodeId) return;
+
+        setFigures((prev) =>
+          prev.map((f) => (f.id === selectedFigure.id ? splitA.figure : f))
+        );
+
         setDartDraft({
           figureId: selectedFigure.id,
           step: "pickB",
-          a: hoveredEdge,
-          b: null,
+          aNodeId: splitA.newNodeId,
+          bNodeId: null,
+          shiftKey: false,
+          shiftLockDirLocal: null,
           currentWorld: world,
         });
         return;
@@ -3676,26 +3634,70 @@ export default function Canvas() {
 
       if (dartDraft.step === "pickB") {
         if (!hoveredEdge || hoveredEdge.figureId !== selectedFigure.id) return;
-        if (dist(dartDraft.a!.pointLocal, hoveredEdge.pointLocal) < 6) return;
+
+        const aLocal = getFigureNodePoint(selectedFigure, dartDraft.aNodeId);
+        if (!aLocal) return;
+        if (dist(aLocal, hoveredEdge.pointLocal) < 6) return;
+
+        const splitB = splitFigureEdge(
+          selectedFigure,
+          hoveredEdge.edgeId,
+          hoveredEdge.t
+        );
+        if (!splitB.newNodeId) return;
+
+        setFigures((prev) =>
+          prev.map((f) => (f.id === selectedFigure.id ? splitB.figure : f))
+        );
+
         setDartDraft({
           ...dartDraft,
           step: "pickApex",
-          b: hoveredEdge,
+          bNodeId: splitB.newNodeId,
+          shiftKey: false,
+          shiftLockDirLocal: null,
           currentWorld: world,
         });
         return;
       }
 
       // pickApex
-      const aLocal = dartDraft.a!.pointLocal;
-      const bLocal = dartDraft.b!.pointLocal;
-      const apexLocal = local;
+      const aLocal = getFigureNodePoint(selectedFigure, dartDraft.aNodeId);
+      const bLocal = dartDraft.bNodeId
+        ? getFigureNodePoint(selectedFigure, dartDraft.bNodeId)
+        : null;
+      if (!aLocal || !bLocal) return;
+
+      const rawApexLocal = local;
+      const apexLocal = resolveDartApexLocal(selectedFigure, dartDraft, rawApexLocal);
+
+      const cNodeId = id("n");
+      const dartId = id("dart");
 
       setFigures((prev) =>
         prev.map((f) => {
           if (f.id !== selectedFigure.id) return f;
-          const next = insertDartIntoFigure(f, aLocal, bLocal, apexLocal);
-          return next ?? f;
+          return {
+            ...f,
+            nodes: [
+              ...f.nodes,
+              {
+                id: cNodeId,
+                x: apexLocal.x,
+                y: apexLocal.y,
+                mode: "corner",
+              },
+            ],
+            darts: [
+              ...(f.darts ?? []),
+              {
+                id: dartId,
+                aNodeId: dartDraft.aNodeId,
+                bNodeId: dartDraft.bNodeId!,
+                cNodeId,
+              },
+            ],
+          };
         })
       );
       setDartDraft(null);
@@ -4087,9 +4089,33 @@ export default function Canvas() {
       const local = worldToFigureLocal(selectedFigure, world);
 
       if (tool === "dart") {
-        setDartDraft((prev) =>
-          prev ? { ...prev, currentWorld: world } : prev
-        );
+        const shiftKey = !!e.evt.shiftKey;
+        setDartDraft((prev) => {
+          if (!prev) return prev;
+          if (prev.step !== "pickApex") {
+            return {
+              ...prev,
+              currentWorld: world,
+              shiftKey: false,
+              shiftLockDirLocal: null,
+            };
+          }
+
+          const a = getFigureNodePoint(selectedFigure, prev.aNodeId);
+          const b = prev.bNodeId
+            ? getFigureNodePoint(selectedFigure, prev.bNodeId)
+            : null;
+          if (!a || !b) {
+            return { ...prev, currentWorld: world, shiftKey, shiftLockDirLocal: null };
+          }
+
+          return {
+            ...prev,
+            currentWorld: world,
+            shiftKey,
+            shiftLockDirLocal: null,
+          };
+        });
       }
 
       // In node tool: if we're near an existing node, prioritize it over edge splitting.
@@ -5504,12 +5530,23 @@ export default function Canvas() {
     if (tool !== "dart" || !selectedFigure || !dartDraft) return null;
     if (dartDraft.figureId !== selectedFigure.id) return null;
 
-    const a = dartDraft.a?.pointLocal;
-    const b = dartDraft.b?.pointLocal;
-    const apexLocal = worldToFigureLocal(
-      selectedFigure,
-      dartDraft.currentWorld
-    );
+    const a = getFigureNodePoint(selectedFigure, dartDraft.aNodeId);
+    if (!a) return null;
+
+    const b =
+      dartDraft.step === "pickB"
+        ? hoveredEdge && hoveredEdge.figureId === selectedFigure.id
+          ? hoveredEdge.pointLocal
+          : null
+        : dartDraft.bNodeId
+          ? getFigureNodePoint(selectedFigure, dartDraft.bNodeId)
+          : null;
+
+    const rawApexLocal = worldToFigureLocal(selectedFigure, dartDraft.currentWorld);
+    const apexLocal =
+      dartDraft.step === "pickApex"
+        ? resolveDartApexLocal(selectedFigure, dartDraft, rawApexLocal)
+        : rawApexLocal;
 
     const stroke = previewStroke;
     const dash = [6 / scale, 6 / scale];
@@ -5529,6 +5566,50 @@ export default function Canvas() {
           <Circle x={b.x} y={b.y} radius={4 / scale} fill={previewStroke} />
         ) : null}
 
+        {a && b && dartDraft.step === "pickB" ? (
+          (() => {
+            const lengthPx = dist(a, b);
+            const mid = lerp(a, b, 0.5);
+            const tangent = sub(b, a);
+            const normal = norm(perp(tangent));
+            const offset = 12 / scale;
+            const p = add(mid, mul(normal, offset));
+            const rawAngleDeg =
+              (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
+            const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
+            const fontSize = 11 / scale;
+            const textWidth = 120 / scale;
+            const label = formatCm(pxToCm(lengthPx), 2);
+
+            return (
+              <>
+                <Line
+                  points={[a.x, a.y, b.x, b.y]}
+                  stroke={stroke}
+                  strokeWidth={1 / scale}
+                  dash={dash}
+                />
+                <Text
+                  x={p.x}
+                  y={p.y}
+                  offsetX={textWidth / 2}
+                  offsetY={fontSize / 2}
+                  rotation={angleDeg}
+                  width={textWidth}
+                  align="center"
+                  text={label}
+                  fontSize={fontSize}
+                  fill={previewStroke}
+                  opacity={0.95}
+                  fontStyle="bold"
+                  listening={false}
+                  name="inaa-dart-preview-ab"
+                />
+              </>
+            );
+          })()
+        ) : null}
+
         {a && b && dartDraft.step === "pickApex" ? (
           <>
             <Line
@@ -5543,6 +5624,50 @@ export default function Canvas() {
               strokeWidth={1 / scale}
               dash={dash}
             />
+
+            {(() => {
+              const mid = lerp(a, b, 0.5);
+              const heightPx = dist(mid, apexLocal);
+              const tangent = sub(apexLocal, mid);
+              const normal = norm(perp(tangent));
+              const offset = 12 / scale;
+              const p = add(lerp(mid, apexLocal, 0.5), mul(normal, offset));
+              const rawAngleDeg =
+                (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
+              const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
+              const fontSize = 11 / scale;
+              const textWidth = 120 / scale;
+              const label = formatCm(pxToCm(heightPx), 2);
+
+              return (
+                <>
+                  <Line
+                    points={[mid.x, mid.y, apexLocal.x, apexLocal.y]}
+                    stroke={stroke}
+                    strokeWidth={1 / scale}
+                    dash={dash}
+                    opacity={0.9}
+                  />
+                  <Text
+                    x={p.x}
+                    y={p.y}
+                    offsetX={textWidth / 2}
+                    offsetY={fontSize / 2}
+                    rotation={angleDeg}
+                    width={textWidth}
+                    align="center"
+                    text={label}
+                    fontSize={fontSize}
+                    fill={previewStroke}
+                    opacity={0.95}
+                    fontStyle="bold"
+                    listening={false}
+                    name="inaa-dart-preview-height"
+                  />
+                </>
+              );
+            })()}
+
             <Circle
               x={apexLocal.x}
               y={apexLocal.y}
@@ -5553,7 +5678,7 @@ export default function Canvas() {
         ) : null}
       </Group>
     );
-  }, [dartDraft, previewStroke, scale, selectedFigure, tool]);
+  }, [dartDraft, hoveredEdge, previewStroke, scale, selectedFigure, tool]);
 
   return (
     <div className="w-full h-full relative">
