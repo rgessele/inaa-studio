@@ -181,6 +181,22 @@ export interface Figure {
   // Used to auto-recompute seam allowance when the parent changes.
   sourceSignature?: string;
 
+  // =====================
+  // Mirror link (Espelhar / Desespelhar)
+  // =====================
+  // When set, this figure is part of a 1:1 mirrored pair.
+  mirrorLink?: {
+    pairId: string;
+    otherId: string;
+    role: "original" | "mirror";
+    // When true, the mirror copy is auto-updated from the original.
+    // When false, both sides become independent/editable.
+    sync?: boolean;
+    axisPointWorld: { x: number; y: number };
+    // Unit direction vector of the mirror axis line in world coords.
+    axisDirWorld: { x: number; y: number };
+  };
+
   // Transform
   x: number;
   y: number;

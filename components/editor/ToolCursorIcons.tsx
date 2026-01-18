@@ -134,6 +134,7 @@ function getToolIconInternal(
     case "mirror":
       return (
         <Svg className={className} strokeWidth={strokeWidth}>
+          {/* Espelhar: original sólido + cópia tracejada */}
           <path d="M12 4v16" />
           <rect x="5" y="7" width="3.6" height="10" rx="1" />
           <rect
@@ -144,22 +145,33 @@ function getToolIconInternal(
             rx="1"
             strokeDasharray="2 2"
           />
-          <path d="M9.2 9.2C10.6 7.8 13.4 7.8 14.8 9.2" />
-          <path d="M14.8 9.2L13.6 9" />
-          <path d="M14.8 9.2L14.6 8" />
-          <path d="M14.8 14.8C13.4 16.2 10.6 16.2 9.2 14.8" />
-          <path d="M9.2 14.8L10.4 15" />
-          <path d="M9.2 14.8L9.4 16" />
+          {/* seta de criação (esquerda -> direita) */}
+          <path d="M9.4 12H14.6" />
+          <path d="M13.4 10.8L14.6 12L13.4 13.2" />
+          {/* sinal de mais dentro do lado tracejado */}
+          <path d="M16.9 11V13" />
+          <path d="M15.9 12H17.9" />
         </Svg>
       );
     case "unfold":
       return (
         <Svg className={className} strokeWidth={strokeWidth}>
+          {/* Desespelhar: mostra um par espelhado com o lado "removível" tracejado */}
           <path d="M12 4v16" />
-          <rect x="5" y="7" width="4" height="10" rx="1" />
-          <rect x="15" y="7" width="4" height="10" rx="1" />
-          <path d="M9.5 12H14.5" />
-          <path d="M13 10.5L14.5 12L13 13.5" />
+          <rect x="5" y="7" width="3.6" height="10" rx="1" />
+          <rect
+            x="15.4"
+            y="7"
+            width="3.6"
+            height="10"
+            rx="1"
+            strokeDasharray="2 2"
+          />
+          {/* seta de remoção (direita -> esquerda) */}
+          <path d="M14.6 12H10.4" />
+          <path d="M11.6 10.8L10.4 12L11.6 13.2" />
+          {/* sinal de menos dentro do lado tracejado */}
+          <path d="M16.2 12H18.2" />
         </Svg>
       );
     case "node":

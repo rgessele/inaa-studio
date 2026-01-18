@@ -32,6 +32,7 @@ interface FigureRendererProps {
   forwardRef?: (node: Konva.Group | null) => void;
   name?: string;
   showNodes?: boolean;
+  nodeStrokeOverride?: string;
   showMeasures?: boolean;
   pointLabelsMode?: PointLabelsMode;
   pointLabelsByNodeId?: Record<string, string> | null;
@@ -91,6 +92,7 @@ const FigureRenderer = ({
   forwardRef,
   name,
   showNodes,
+  nodeStrokeOverride,
   showMeasures,
   pointLabelsMode = "off",
   pointLabelsByNodeId = null,
@@ -431,6 +433,7 @@ const FigureRenderer = ({
           figure={figure}
           scale={scale}
           stroke={stroke}
+          nodeStroke={nodeStrokeOverride}
           opacity={opacity}
           visible={true}
           x={0}

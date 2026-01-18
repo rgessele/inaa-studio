@@ -24,8 +24,69 @@ import { useHistory } from "./useHistory";
 import { createDefaultExportSettings } from "./exportSettings";
 import { withComputedFigureMeasures } from "./figureMeasures";
 import { figureWorldBoundingBox } from "./figurePath";
+import { figureLocalToWorld } from "./figurePath";
+
+import { add, len, mul, sub } from "./figureGeometry";
 
 import type { Figure } from "./types";
+import type { Vec2 } from "./figureGeometry";
+
+function mirrorVec2AcrossLine(p: Vec2, axisPoint: Vec2, axisDirUnit: Vec2): Vec2 {
+  const u = axisDirUnit;
+  const v = sub(p, axisPoint);
+  const projLen = v.x * u.x + v.y * u.y;
+  const proj = mul(u, projLen);
+  const perpV = sub(v, proj);
+  return add(axisPoint, sub(proj, perpV));
+}
+
+function mirrorFigureAcrossLinePreserveId(
+  original: Figure,
+  mirrorId: string,
+  axisPointWorld: Vec2,
+  axisDirWorld: Vec2
+): Figure {
+  const axisDirUnit = (() => {
+    const l = len(axisDirWorld);
+    if (!Number.isFinite(l) || l < 1e-6) return { x: 1, y: 0 };
+    return mul(axisDirWorld, 1 / l);
+  })();
+
+  const mirroredNodes = original.nodes.map((n) => {
+    const pWorld = figureLocalToWorld(original, { x: n.x, y: n.y });
+    const p = mirrorVec2AcrossLine(pWorld, axisPointWorld, axisDirUnit);
+    const inH = n.inHandle
+      ? mirrorVec2AcrossLine(
+          figureLocalToWorld(original, n.inHandle),
+          axisPointWorld,
+          axisDirUnit
+        )
+      : undefined;
+    const outH = n.outHandle
+      ? mirrorVec2AcrossLine(
+          figureLocalToWorld(original, n.outHandle),
+          axisPointWorld,
+          axisDirUnit
+        )
+      : undefined;
+    return {
+      ...n,
+      x: p.x,
+      y: p.y,
+      inHandle: inH,
+      outHandle: outH,
+    };
+  });
+
+  return {
+    ...original,
+    id: mirrorId,
+    x: 0,
+    y: 0,
+    rotation: 0,
+    nodes: mirroredNodes,
+  };
+}
 
 export type EdgeAnchor = "start" | "end" | "mid";
 
@@ -513,16 +574,97 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
   const setFigures = useCallback(
     (next: Figure[] | ((prev: Figure[]) => Figure[]), saveHistory = true) => {
-      const computeAll = (figs: Figure[]) =>
-        figs.map(withComputedFigureMeasures);
+      const applyMirrorSync = (prevFigs: Figure[], nextFigs: Figure[]) => {
+        if (!nextFigs.length) return nextFigs;
+
+        const prevById = new Map(prevFigs.map((f) => [f.id, f] as const));
+        const nextById = new Map(nextFigs.map((f) => [f.id, f] as const));
+        const replacements = new Map<string, Figure>();
+
+        for (const original of nextFigs) {
+          const link = original.mirrorLink;
+          if (!link || link.role !== "original" || link.sync !== true) continue;
+
+          const mirror = nextById.get(link.otherId) ?? null;
+          if (!mirror) continue;
+
+          const mirrorLink = mirror.mirrorLink;
+          if (
+            !mirrorLink ||
+            mirrorLink.role !== "mirror" ||
+            mirrorLink.sync !== true ||
+            mirrorLink.otherId !== original.id ||
+            mirrorLink.pairId !== link.pairId
+          ) {
+            continue;
+          }
+
+          const prevOriginal = prevById.get(original.id) ?? null;
+          const prevMirror = prevById.get(mirror.id) ?? null;
+          const prevLink = prevOriginal?.mirrorLink;
+
+          const originalChanged = prevOriginal !== original;
+          const mirrorChanged = prevMirror !== mirror;
+          const syncJustEnabled = (prevLink?.sync ?? false) !== true;
+
+          // Also re-sync if axis data changed while staying linked.
+          const axisChanged = (() => {
+            if (!prevLink) return false;
+            if (prevLink.axisPointWorld.x !== link.axisPointWorld.x) return true;
+            if (prevLink.axisPointWorld.y !== link.axisPointWorld.y) return true;
+            if (prevLink.axisDirWorld.x !== link.axisDirWorld.x) return true;
+            if (prevLink.axisDirWorld.y !== link.axisDirWorld.y) return true;
+            return false;
+          })();
+
+          // Recompute whenever the original changes, the mirror is mutated, or sync was just enabled.
+          if (!originalChanged && !mirrorChanged && !syncJustEnabled && !axisChanged) {
+            continue;
+          }
+
+          const computed = mirrorFigureAcrossLinePreserveId(
+            original,
+            mirror.id,
+            link.axisPointWorld,
+            link.axisDirWorld
+          );
+
+          const nextMirror: Figure = {
+            ...computed,
+            mirrorLink: {
+              ...mirrorLink,
+              sync: true,
+              axisPointWorld: link.axisPointWorld,
+              axisDirWorld: link.axisDirWorld,
+            },
+          };
+
+          replacements.set(mirror.id, nextMirror);
+        }
+
+        if (!replacements.size) return nextFigs;
+        return nextFigs.map((f) => replacements.get(f.id) ?? f);
+      };
+
+      const computeAll = (figs: Figure[]) => figs.map(withComputedFigureMeasures);
 
       if (typeof next === "function") {
         setFiguresState(
-          (prev) => computeAll((next(prev || []) as Figure[]) || []),
+          (prev) => {
+            const prevSafe = (prev || []) as Figure[];
+            const raw = ((next(prevSafe) as Figure[]) || []) as Figure[];
+            const synced = applyMirrorSync(prevSafe, raw);
+            return computeAll(synced);
+          },
           saveHistory
         );
       } else {
-        setFiguresState(computeAll(next), saveHistory);
+        setFiguresState((prev) => {
+          const prevSafe = (prev || []) as Figure[];
+          const raw = next || [];
+          const synced = applyMirrorSync(prevSafe, raw);
+          return computeAll(synced);
+        }, saveHistory);
       }
     },
     [setFiguresState]

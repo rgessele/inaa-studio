@@ -6,6 +6,7 @@ interface NodeOverlayProps {
   figure: Figure;
   scale: number;
   stroke: string;
+  nodeStroke?: string;
   opacity: number;
   visible: boolean;
   x: number;
@@ -17,6 +18,7 @@ const NodeOverlayRenderer = ({
   figure,
   scale,
   stroke,
+  nodeStroke,
   opacity,
   visible,
   x,
@@ -39,7 +41,7 @@ const NodeOverlayRenderer = ({
           name="inaa-node-point"
           radius={r}
           fill={fill}
-          stroke={stroke}
+          stroke={nodeStroke ?? stroke}
           strokeWidth={strokeWidth}
           opacity={opacity}
           listening={false}
@@ -60,6 +62,7 @@ const arePropsEqual = (prev: NodeOverlayProps, next: NodeOverlayProps) => {
     prev.rotation === next.rotation &&
     prev.scale === next.scale &&
     prev.stroke === next.stroke &&
+    prev.nodeStroke === next.nodeStroke &&
     prev.opacity === next.opacity &&
     prev.figure === next.figure // Reference check is enough if figures are immutable
   );

@@ -955,8 +955,8 @@ export function EditorToolbar() {
               title="Espelhar"
               shortcuts={[{ key: "F" }]}
               details={[
-                "Clique em uma forma para criar cópia espelhada.",
-                "Configure o eixo (vertical/horizontal) nas propriedades.",
+                "Passe o mouse em uma aresta para definir o eixo.",
+                "Clique para criar uma cópia espelhada ligada ao original.",
               ]}
               customIcon={getToolIcon("mirror", "toolbar")}
             />
@@ -964,13 +964,13 @@ export function EditorToolbar() {
             <ToolButton
               active={tool === "unfold"}
               onClick={() => handleToolChange("unfold")}
-              icon="unfold_more"
+              icon="undo"
               isMac={isMac}
-              title="Desdobrar"
+              title="Desespelhar"
               shortcuts={[{ key: "G" }]}
               details={[
-                "Clique em uma forma pela metade para desdobrar.",
-                "Duplica, espelha e une as metades numa peça única.",
+                "Clique em uma forma espelhada para remover a cópia.",
+                "Funciona no original ou na cópia.",
               ]}
               customIcon={getToolIcon("unfold", "toolbar")}
             />

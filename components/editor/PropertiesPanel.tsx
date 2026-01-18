@@ -48,10 +48,6 @@ export function PropertiesPanel() {
     setEdgeAnchorPreference,
     offsetValueCm,
     setOffsetValueCm,
-    mirrorAxis,
-    setMirrorAxis,
-    unfoldAxis,
-    setUnfoldAxis,
   } = useEditor();
 
   const isDark = useSyncExternalStore(
@@ -335,6 +331,34 @@ export function PropertiesPanel() {
     applyCircleCircDraft(nextStr);
   };
   const selectedFigure = figures.find((f) => f.id === selectedFigureId);
+
+  const selectedMirrorLink = selectedFigure?.mirrorLink ?? null;
+  const selectedMirrorSyncEnabled = selectedMirrorLink?.sync === true;
+
+  const setMirrorSyncEnabled = useCallback(
+    (enabled: boolean) => {
+      if (!selectedFigure?.mirrorLink) return;
+      const link = selectedFigure.mirrorLink;
+      const pairId = link.pairId;
+      const otherId = link.otherId;
+
+      setFigures((prev) =>
+        prev.map((f) => {
+          if (f.id !== selectedFigure.id && f.id !== otherId) return f;
+          if (!f.mirrorLink) return f;
+          if (f.mirrorLink.pairId !== pairId) return f;
+          return {
+            ...f,
+            mirrorLink: {
+              ...f.mirrorLink,
+              sync: enabled,
+            },
+          };
+        })
+      );
+    },
+    [selectedFigure, setFigures]
+  );
 
   const [figureNameDraft, setFigureNameDraft] = useState<string>("");
   const [isEditingFigureName, setIsEditingFigureName] = useState(false);
@@ -2793,6 +2817,38 @@ export function PropertiesPanel() {
 
               {selectedFigureIds.length === 1 && (
                 <div>
+                  {selectedFigure?.mirrorLink ? (
+                    <div className="mb-4">
+                      <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-2 block">
+                        Espelho
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={selectedMirrorSyncEnabled}
+                          onChange={(e) => {
+                            const next = e.target.checked;
+                            setMirrorSyncEnabled(next);
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span>Sincronizar espelho</span>
+                      </label>
+                      <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                        {selectedMirrorSyncEnabled
+                          ? "O espelho fica bloqueado e acompanha a forma original."
+                          : "Com a sincronização desligada, o espelho vira independente e pode ser editado."}
+                      </p>
+                      {!selectedMirrorSyncEnabled ? (
+                        <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                          Ao ligar novamente, o espelho será recalculado e suas edições serão substituídas.
+                        </p>
+                      ) : null}
+
+                      <div className="mt-3 h-px bg-gray-200 dark:bg-gray-700" />
+                    </div>
+                  ) : null}
+
                   <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
                     Nome da figura
                   </label>
@@ -3322,7 +3378,7 @@ export function PropertiesPanel() {
                 {tool === "mirror"
                   ? "Espelhar"
                   : tool === "unfold"
-                    ? "Desdobrar"
+                    ? "Desespelhar"
                     : tool === "curve"
                       ? "Curvas"
                       : "Margem de costura"}
@@ -3342,68 +3398,17 @@ export function PropertiesPanel() {
                   <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
                     Eixo de Espelhamento
                   </label>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm text-gray-900 dark:text-white cursor-pointer">
-                      <input
-                        type="radio"
-                        name="mirror-axis"
-                        value="vertical"
-                        checked={mirrorAxis === "vertical"}
-                        onChange={() => setMirrorAxis("vertical")}
-                        className="w-4 h-4"
-                      />
-                      <span>Vertical</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-gray-900 dark:text-white cursor-pointer">
-                      <input
-                        type="radio"
-                        name="mirror-axis"
-                        value="horizontal"
-                        checked={mirrorAxis === "horizontal"}
-                        onChange={() => setMirrorAxis("horizontal")}
-                        className="w-4 h-4"
-                      />
-                      <span>Horizontal</span>
-                    </label>
-                  </div>
                   <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-                    Clique em uma forma para criar uma cópia espelhada no eixo
-                    selecionado.
+                    Passe o mouse em uma aresta para definir o eixo exatamente
+                    sobre ela, e clique para criar uma cópia espelhada.
                   </p>
                 </div>
               )}
               {tool === "unfold" && (
                 <div>
-                  <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
-                    Eixo de Desdobramento
-                  </label>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm text-gray-900 dark:text-white cursor-pointer">
-                      <input
-                        type="radio"
-                        name="unfold-axis"
-                        value="vertical"
-                        checked={unfoldAxis === "vertical"}
-                        onChange={() => setUnfoldAxis("vertical")}
-                        className="w-4 h-4"
-                      />
-                      <span>Vertical</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-gray-900 dark:text-white cursor-pointer">
-                      <input
-                        type="radio"
-                        name="unfold-axis"
-                        value="horizontal"
-                        checked={unfoldAxis === "horizontal"}
-                        onChange={() => setUnfoldAxis("horizontal")}
-                        className="w-4 h-4"
-                      />
-                      <span>Horizontal</span>
-                    </label>
-                  </div>
                   <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-                    Clique em uma forma desenhada pela metade. O sistema irá
-                    duplicar, espelhar e unir as metades numa peça única.
+                    Clique em uma forma espelhada para remover a cópia e desfazer
+                    o vínculo (funciona no original ou na cópia).
                   </p>
                 </div>
               )}

@@ -10,7 +10,7 @@
       "notes": "Smoke da tela de login."
     },
     {
-      "id": "editor.boot",
+      "title": "Ferramenta Desespelhar",
       "title": "Editor abre e renderiza",
       "risk": "high",
       "e2e": ["tests/editor.smoke.spec.ts"],
@@ -100,10 +100,10 @@
     },
     {
       "id": "tool.unfold",
-      "title": "Ferramenta Desdobrar",
+      "title": "Ferramenta Desespelhar",
       "risk": "medium",
-      "unit": ["components/editor/unfold.test.ts"],
-      "notes": "Cobertura unitária de geometria."
+      "unit": [],
+      "notes": "Remove cópia espelhada e desfaz o vínculo (pair)."
     },
     {
       "id": "tool.dart",

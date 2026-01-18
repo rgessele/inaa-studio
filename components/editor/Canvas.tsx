@@ -5,6 +5,7 @@ import {
   formatPtBrDecimalFixed,
   parsePtBrDecimal,
 } from "@/utils/numericInput";
+import { toast } from "@/utils/toast";
 import { getToolIcon, isToolCursorOverlayEnabled } from "./ToolCursorIcons";
 import React, {
   useCallback,
@@ -66,6 +67,7 @@ import { Minimap } from "./Minimap";
 import { MemoizedFigure } from "./FigureRenderer";
 import { computeNodeLabels } from "./pointLabels";
 import { MemoizedMeasureOverlay } from "./MeasureOverlay";
+import { MemoizedNodeOverlay } from "./NodeOverlay";
 import {
   makeSeamFigure,
   recomputeSeamFigure,
@@ -140,45 +142,7 @@ function quantizeEdgeHoverByChordLengthFloor(
   const toNode = getNodeById(figure.nodes, edge.to);
   if (!fromNode || !toNode) return hover;
 
-  const p0: Vec2 = { x: fromNode.x, y: fromNode.y };
-  const p3: Vec2 = { x: toNode.x, y: toNode.y };
-
-  if (edge.kind === "line") {
-    const d = sub(p3, p0);
-    const f = sub(p0, fromLocal);
-    const A = d.x * d.x + d.y * d.y;
-    const B = 2 * (f.x * d.x + f.y * d.y);
-    const C = f.x * f.x + f.y * f.y - targetLen * targetLen;
-    const disc = B * B - 4 * A * C;
-    if (!Number.isFinite(disc) || disc < 0 || !Number.isFinite(A) || A < 1e-9) {
-      return hover;
-    }
-
-    const sqrt = Math.sqrt(disc);
-    const t1 = (-B - sqrt) / (2 * A);
-    const t2 = (-B + sqrt) / (2 * A);
-    const candidates = [t1, t2].filter((t) => t >= 0 && t <= 1);
-    if (candidates.length === 0) return hover;
-
-    let bestT = candidates[0];
-    let bestAbs = Math.abs(bestT - hover.t);
-    for (const t of candidates) {
-      const abs = Math.abs(t - hover.t);
-      if (abs < bestAbs) {
-        bestAbs = abs;
-        bestT = t;
-      }
-    }
-
-    return {
-      ...hover,
-      t: bestT,
-      pointLocal: lerp(p0, p3, bestT),
-    };
-  }
-
-  // Cubic: approximate by sampling (uniform in t) and choose the closest match.
-  const pts = edgeLocalPoints(figure, edge, 80);
+  const pts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 1 : 60);
   if (pts.length < 2) return hover;
 
   let bestIndex = 0;
@@ -258,8 +222,8 @@ type EdgeContextMenuState = {
   x: number;
   y: number;
   figureId: string;
-  edgeId: string;
-  edgeKind: "line" | "cubic";
+  edgeId: string | null;
+  edgeKind: "line" | "cubic" | null;
 } | null;
 
 function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
@@ -974,33 +938,57 @@ function resolveDartApexLocal(
   return add(mid, mul(orientedN, height));
 }
 
-function mirrorValue(value: number, axisPos: number): number {
-  const d = value - axisPos;
-  return axisPos - d;
+function mirrorVec2AcrossLine(p: Vec2, axisPoint: Vec2, axisDirUnit: Vec2): Vec2 {
+  const u = axisDirUnit;
+  const v = sub(p, axisPoint);
+  const projLen = v.x * u.x + v.y * u.y;
+  const proj = mul(u, projLen);
+  const perpV = sub(v, proj);
+  return add(axisPoint, sub(proj, perpV));
 }
 
-function mirrorVec2(
-  p: Vec2,
-  axis: "vertical" | "horizontal",
-  axisPos: number
-): Vec2 {
-  if (axis === "vertical") return { x: mirrorValue(p.x, axisPos), y: p.y };
-  return { x: p.x, y: mirrorValue(p.y, axisPos) };
+function getEdgeTangentWorld(figure: Figure, edge: FigureEdge, t: number): Vec2 {
+  const pts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 1 : 60);
+  if (pts.length < 2) return { x: 1, y: 0 };
+
+  const idx = Math.round(clamp(t, 0, 1) * (pts.length - 1));
+  const i0 = Math.max(0, idx - 1);
+  const i1 = Math.min(pts.length - 1, idx + 1);
+  const p0w = figureLocalToWorld(figure, pts[i0]);
+  const p1w = figureLocalToWorld(figure, pts[i1]);
+  const v = sub(p1w, p0w);
+  const l = len(v);
+  if (!Number.isFinite(l) || l < 1e-6) return { x: 1, y: 0 };
+  return mul(v, 1 / l);
 }
 
-function mirrorFigure(
+function mirrorFigureAcrossLine(
   figure: Figure,
-  axis: "vertical" | "horizontal",
-  axisPos: number
+  axisPointWorld: Vec2,
+  axisDirWorld: Vec2
 ): Figure {
+  const axisDirUnit = (() => {
+    const l = len(axisDirWorld);
+    if (!Number.isFinite(l) || l < 1e-6) return { x: 1, y: 0 };
+    return mul(axisDirWorld, 1 / l);
+  })();
+
   const mirroredNodes: FigureNode[] = figure.nodes.map((n) => {
     const pWorld = figureLocalToWorld(figure, { x: n.x, y: n.y });
-    const p = mirrorVec2(pWorld, axis, axisPos);
+    const p = mirrorVec2AcrossLine(pWorld, axisPointWorld, axisDirUnit);
     const inH = n.inHandle
-      ? mirrorVec2(figureLocalToWorld(figure, n.inHandle), axis, axisPos)
+      ? mirrorVec2AcrossLine(
+          figureLocalToWorld(figure, n.inHandle),
+          axisPointWorld,
+          axisDirUnit
+        )
       : undefined;
     const outH = n.outHandle
-      ? mirrorVec2(figureLocalToWorld(figure, n.outHandle), axis, axisPos)
+      ? mirrorVec2AcrossLine(
+          figureLocalToWorld(figure, n.outHandle),
+          axisPointWorld,
+          axisDirUnit
+        )
       : undefined;
     return {
       ...n,
@@ -1018,53 +1006,6 @@ function mirrorFigure(
     y: 0,
     rotation: 0,
     nodes: mirroredNodes,
-  };
-}
-
-function unfoldFigure(
-  figure: Figure,
-  axis: "vertical" | "horizontal",
-  axisPos: number
-): Figure | null {
-  const pts = figureWorldPolyline(figure, 60);
-  if (pts.length < 4) return null;
-
-  // world polyline points
-  const original: Vec2[] = [];
-  for (let i = 0; i < pts.length; i += 2) {
-    original.push({ x: pts[i], y: pts[i + 1] });
-  }
-  if (original.length < 2) return null;
-
-  const mirrored = original.map((p) => mirrorVec2(p, axis, axisPos));
-  const reversed = [...mirrored].reverse();
-
-  // Merge: original + reversed mirrored, then close
-  const merged = [...original, ...reversed];
-  if (merged.length < 3) return null;
-
-  const nodes: FigureNode[] = merged.map((p) => ({
-    id: id("n"),
-    x: p.x,
-    y: p.y,
-    mode: "corner",
-  }));
-  const edges: FigureEdge[] = [];
-  for (let i = 0; i < nodes.length; i++) {
-    const a = nodes[i];
-    const b = nodes[(i + 1) % nodes.length];
-    edges.push({ id: id("e"), from: a.id, to: b.id, kind: "line" });
-  }
-
-  return {
-    ...figure,
-    tool: "line",
-    x: 0,
-    y: 0,
-    rotation: 0,
-    closed: true,
-    nodes,
-    edges,
   };
 }
 
@@ -1410,8 +1351,6 @@ export default function Canvas() {
     getEdgeAnchorPreference,
     offsetValueCm,
     setOffsetTargetId,
-    mirrorAxis,
-    unfoldAxis,
     modifierKeys,
     measureSnapStrengthPx,
     measureDisplayMode,
@@ -1607,6 +1546,9 @@ export default function Canvas() {
     toNodeId: string;
   } | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<EdgeHover>(null);
+  const [hoveredMirrorLinkFigureId, setHoveredMirrorLinkFigureId] = useState<
+    string | null
+  >(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredFigureId, setHoveredFigureId] = useState<string | null>(null);
   const [hoveredSelectFigureId, setHoveredSelectFigureId] = useState<
@@ -2514,6 +2456,26 @@ export default function Canvas() {
 
     if (!updates.size) return;
 
+    // Synced mirror copies are locked.
+    for (const node of nodes) {
+      const figId = (node.getAttr("figureId") as string | undefined) ?? null;
+      if (!figId) continue;
+      const fig = figures.find((f) => f.id === figId) ?? null;
+      if (!fig) continue;
+      const link = fig.mirrorLink;
+      if (link && link.role === "mirror" && link.sync === true) {
+        // Revert the Konva node back to the current (state) transform.
+        const tr = getRuntimeFigureTransform(fig);
+        node.position({ x: tr.x, y: tr.y });
+        node.rotation(tr.rotation);
+        node.scaleX(1);
+        node.scaleY(1);
+        transformer.getLayer()?.batchDraw();
+        toast("Espelho sincronizado está bloqueado. Desligue a sincronização para editar.", "error");
+        return;
+      }
+    }
+
     // Reset Konva node scaling; we bake scale into figure geometry.
     for (const node of nodes) {
       node.scaleX(1);
@@ -2604,7 +2566,7 @@ export default function Canvas() {
         }),
       true
     );
-  }, [setFigures]);
+  }, [figures, getRuntimeFigureTransform, setFigures]);
 
   const getSnappedWorldForTool = useCallback(
     (
@@ -3080,10 +3042,75 @@ export default function Canvas() {
     };
   }, [edgeContextMenu]);
 
+  const handleContextUnlinkMirror = useCallback(() => {
+    if (!edgeContextMenu) return;
+    const figId = edgeContextMenu.figureId;
+    const fig = figures.find((f) => f.id === figId) ?? null;
+    const link = fig?.mirrorLink;
+    if (!fig || !link) {
+      setEdgeContextMenu(null);
+      return;
+    }
+
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id === fig.id || f.id === link.otherId) {
+          return { ...f, mirrorLink: undefined };
+        }
+        return f;
+      })
+    );
+    toast("Espelho desvinculado.");
+    setEdgeContextMenu(null);
+  }, [edgeContextMenu, figures, setFigures]);
+
+  const handleContextDesespelhar = useCallback(() => {
+    if (!edgeContextMenu) return;
+    const figId = edgeContextMenu.figureId;
+    const fig = figures.find((f) => f.id === figId) ?? null;
+    const link = fig?.mirrorLink;
+    if (!fig || !link) {
+      setEdgeContextMenu(null);
+      return;
+    }
+
+    const other = figures.find((f) => f.id === link.otherId) ?? null;
+    if (!other) {
+      setFigures((prev) =>
+        prev.map((f) => (f.id === fig.id ? { ...f, mirrorLink: undefined } : f))
+      );
+      toast("Link de espelho inválido; removido.");
+      setEdgeContextMenu(null);
+      return;
+    }
+
+    const originalId = link.role === "mirror" ? other.id : fig.id;
+    const mirrorId = link.role === "mirror" ? fig.id : other.id;
+
+    setFigures((prev) =>
+      prev
+        .filter(
+          (f) =>
+            f.id !== mirrorId && !(f.kind === "seam" && f.parentId === mirrorId)
+        )
+        .map((f) => {
+          if (f.id === originalId || f.id === mirrorId) {
+            return { ...f, mirrorLink: undefined };
+          }
+          return f;
+        })
+    );
+
+    setSelectedFigureId(originalId);
+    toast("Espelho removido.");
+    setEdgeContextMenu(null);
+  }, [edgeContextMenu, figures, setFigures, setSelectedFigureId]);
+
   const handleConvertContextEdge = useCallback(
     (kind: "cubic" | "line") => {
       if (!edgeContextMenu) return;
       const { figureId, edgeId } = edgeContextMenu;
+      if (!edgeId) return;
 
       setFigures((prev) =>
         prev.map((f) => {
@@ -4381,6 +4408,40 @@ export default function Canvas() {
       }
     }
 
+    if (tool === "mirror") {
+      const thresholdWorld = 10 / scale;
+      const figId = findHoveredFigureId(figures, world, thresholdWorld);
+      const fig = figId ? (figures.find((f) => f.id === figId) ?? null) : null;
+      if (!fig || fig.kind === "seam") {
+        if (hoveredEdge) setHoveredEdge(null);
+      } else {
+        const local = worldToFigureLocal(fig, world);
+        const hit = findNearestEdge(fig, local);
+        if (!hit.best || hit.bestDist > thresholdWorld) {
+          if (hoveredEdge) setHoveredEdge(null);
+        } else {
+          setHoveredEdge(hit.best);
+        }
+      }
+    } else if (tool !== "dart" && tool !== "node") {
+      if (hoveredEdge) setHoveredEdge(null);
+    }
+
+    if (tool === "unfold") {
+      const thresholdWorld = 10 / scale;
+      const hitId = findHoveredFigureId(figures, world, thresholdWorld);
+      const insideId = hitId
+        ? null
+        : findHoveredClosedFigureOrSeamBaseId(figures, world, 60);
+      const baseId = hitId ?? insideId;
+      const fig = baseId ? (figures.find((f) => f.id === baseId) ?? null) : null;
+
+      const nextId = fig?.mirrorLink ? fig.id : null;
+      setHoveredMirrorLinkFigureId((prev) => (prev === nextId ? prev : nextId));
+    } else if (hoveredMirrorLinkFigureId) {
+      setHoveredMirrorLinkFigureId(null);
+    }
+
     if (tool === "node" && selectedFigure) {
       const local = worldToFigureLocal(selectedFigure, world);
 
@@ -5290,6 +5351,34 @@ export default function Canvas() {
   const nodeOverlay = useMemo(() => {
     if (tool !== "node" || !selectedFigure) return null;
 
+    const isLockedSyncedMirror =
+      selectedFigure.mirrorLink?.role === "mirror" &&
+      selectedFigure.mirrorLink.sync === true;
+
+    if (isLockedSyncedMirror) {
+      // Show nodes but disable editing/dragging.
+      return (
+        <Group
+          x={selectedFigure.x}
+          y={selectedFigure.y}
+          rotation={selectedFigure.rotation || 0}
+          listening={false}
+        >
+          <MemoizedNodeOverlay
+            figure={selectedFigure}
+            scale={scale}
+            stroke={aci7}
+            nodeStroke="#22c55e"
+            opacity={0.9}
+            visible={true}
+            x={0}
+            y={0}
+            rotation={0}
+          />
+        </Group>
+      );
+    }
+
     const rNode = 6 / scale;
     const rHandle = 3.5 / scale;
     const rNodeHit = 12 / scale;
@@ -5359,6 +5448,25 @@ export default function Canvas() {
                   if (!ref) return;
                   let nx = ev.target.x();
                   let ny = ev.target.y();
+
+                  // Shift: lock movement direction in 15° increments (relative to drag start).
+                  const shiftKey =
+                    ((ev.evt as unknown as { shiftKey?: boolean } | undefined)
+                      ?.shiftKey ??
+                      false) === true;
+                  if (shiftKey) {
+                    const dx0 = nx - ref.startNode.x;
+                    const dy0 = ny - ref.startNode.y;
+                    const d0 = Math.hypot(dx0, dy0);
+                    if (Number.isFinite(d0) && d0 > 1e-6) {
+                      const step = (15 * Math.PI) / 180;
+                      const a = Math.atan2(dy0, dx0);
+                      const snapped = Math.round(a / step) * step;
+                      nx = ref.startNode.x + Math.cos(snapped) * d0;
+                      ny = ref.startNode.y + Math.sin(snapped) * d0;
+                      ev.target.position({ x: nx, y: ny });
+                    }
+                  }
 
                   // Node-to-node snap within the same figure (local coords).
                   const fig = figures.find((f) => f.id === ref.figureId);
@@ -5879,6 +5987,7 @@ export default function Canvas() {
 
     const fig = figures.find((f) => f.id === hoveredEdge.figureId) ?? null;
     if (!fig || fig.kind === "seam") return null;
+    if (fig.mirrorLink) return null;
 
     const edge = fig.edges.find((e) => e.id === hoveredEdge.edgeId) ?? null;
     if (!edge) return null;
@@ -5965,6 +6074,143 @@ export default function Canvas() {
       </Group>
     );
   }, [dartDraft, figures, hoveredEdge, previewStroke, scale, tool]);
+
+  const mirrorPreviewOverlay = useMemo(() => {
+    if (tool !== "mirror") return null;
+    if (!hoveredEdge) return null;
+
+    const fig = figures.find((f) => f.id === hoveredEdge.figureId) ?? null;
+    if (!fig || fig.kind === "seam") return null;
+
+    const edge = fig.edges.find((e) => e.id === hoveredEdge.edgeId) ?? null;
+    if (!edge) return null;
+
+    const axisPointWorld = figureLocalToWorld(fig, hoveredEdge.pointLocal);
+    const axisDirUnit = getEdgeTangentWorld(fig, edge, hoveredEdge.t);
+    const mirrored = mirrorFigureAcrossLine(fig, axisPointWorld, axisDirUnit);
+
+    const viewW = size.width / scale;
+    const viewH = size.height / scale;
+    const L = Math.max(200, Math.hypot(viewW, viewH));
+    const p1 = add(axisPointWorld, mul(axisDirUnit, L));
+    const p2 = add(axisPointWorld, mul(axisDirUnit, -L));
+
+    const edgePts = edgeLocalPoints(fig, edge, edge.kind === "line" ? 1 : 60);
+    const edgeFlat: number[] = [];
+    for (const p of edgePts) edgeFlat.push(p.x, p.y);
+
+    const mirroredPoly = figureWorldPolyline(mirrored, 80);
+
+    return (
+      <>
+        <Line
+          points={[p1.x, p1.y, p2.x, p2.y]}
+          stroke={previewStroke}
+          strokeWidth={1 / scale}
+          dash={previewDash}
+          opacity={0.85}
+          listening={false}
+          lineCap="round"
+        />
+
+        <Group x={fig.x} y={fig.y} rotation={fig.rotation || 0} listening={false}>
+          <Line
+            points={edgeFlat}
+            stroke={previewStroke}
+            strokeWidth={2 / scale}
+            opacity={0.95}
+            lineCap="round"
+            lineJoin="round"
+            listening={false}
+          />
+          <Circle
+            x={hoveredEdge.pointLocal.x}
+            y={hoveredEdge.pointLocal.y}
+            radius={4 / scale}
+            fill={previewStroke}
+            stroke="#ffffff"
+            strokeWidth={1 / scale}
+          />
+        </Group>
+
+        <Line
+          points={mirroredPoly}
+          closed={mirrored.closed}
+          stroke={previewStroke}
+          strokeWidth={2 / scale}
+          dash={previewDash}
+          opacity={0.65}
+          lineCap="round"
+          lineJoin="round"
+          listening={false}
+        />
+      </>
+    );
+  }, [figures, hoveredEdge, previewDash, previewStroke, scale, size.height, size.width, tool]);
+
+  const unmirrorPreviewOverlay = useMemo(() => {
+    if (tool !== "unfold") return null;
+    if (!hoveredMirrorLinkFigureId) return null;
+
+    const fig = figures.find((f) => f.id === hoveredMirrorLinkFigureId) ?? null;
+    const link = fig?.mirrorLink;
+    if (!fig || !link) return null;
+
+    const other = figures.find((f) => f.id === link.otherId) ?? null;
+    if (!other) return null;
+
+    const original = link.role === "mirror" ? other : fig;
+    const mirrored = link.role === "mirror" ? fig : other;
+
+    const axisPointWorld = link.axisPointWorld;
+    const axisDirUnit = link.axisDirWorld;
+
+    const viewW = size.width / scale;
+    const viewH = size.height / scale;
+    const L = Math.max(200, Math.hypot(viewW, viewH));
+    const p1 = add(axisPointWorld, mul(axisDirUnit, L));
+    const p2 = add(axisPointWorld, mul(axisDirUnit, -L));
+
+    const polyOriginal = figureWorldPolyline(original, 80);
+    const polyMirrored = figureWorldPolyline(mirrored, 80);
+
+    return (
+      <>
+        <Line
+          points={[p1.x, p1.y, p2.x, p2.y]}
+          stroke={previewStroke}
+          strokeWidth={1 / scale}
+          dash={previewDash}
+          opacity={0.85}
+          listening={false}
+          lineCap="round"
+        />
+
+        <Line
+          points={polyOriginal}
+          closed={original.closed}
+          stroke={previewStroke}
+          strokeWidth={2 / scale}
+          opacity={0.55}
+          listening={false}
+          lineCap="round"
+          lineJoin="round"
+        />
+
+        <Line
+          points={polyMirrored}
+          closed={mirrored.closed}
+          stroke={previewRemoveStroke}
+          strokeWidth={2 / scale}
+          dash={previewDash}
+          opacity={0.8}
+          listening={false}
+          lineCap="round"
+          lineJoin="round"
+        />
+      </>
+    );
+  }, [figures, hoveredMirrorLinkFigureId, previewDash, previewRemoveStroke, previewStroke, scale, size.height, size.width, tool]);
 
   const dartOverlay = useMemo(() => {
     if (tool !== "dart" || !selectedFigure || !dartDraft) return null;
@@ -6202,7 +6448,7 @@ export default function Canvas() {
               >
                 Converter para curva
               </button>
-            ) : (
+            ) : edgeContextMenu.edgeKind === "cubic" ? (
               <button
                 type="button"
                 data-testid="edge-context-convert-to-line"
@@ -6211,7 +6457,31 @@ export default function Canvas() {
               >
                 Converter para linha
               </button>
-            )}
+            ) : null}
+
+            {(() => {
+              const fig = figures.find((f) => f.id === edgeContextMenu.figureId);
+              if (!fig?.mirrorLink) return null;
+              return (
+                <>
+                  <div className="my-1 h-px bg-gray-200 dark:bg-gray-700" />
+                  <button
+                    type="button"
+                    className="w-full text-left text-xs px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
+                    onClick={handleContextDesespelhar}
+                  >
+                    Desespelhar
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full text-left text-xs px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
+                    onClick={handleContextUnlinkMirror}
+                  >
+                    Desvincular espelho
+                  </button>
+                </>
+              );
+            })()}
           </div>
         ) : null}
 
@@ -6467,14 +6737,14 @@ export default function Canvas() {
 
             const local = worldToFigureLocal(fig, world);
             const hit = findNearestEdge(fig, local);
-            if (!hit.best || hit.bestDist > thresholdWorld) {
-              setEdgeContextMenu(null);
-              return;
-            }
-
+            const hasEdge = !!hit.best && hit.bestDist <= thresholdWorld;
             const edge =
-              fig.edges.find((ed) => ed.id === hit.best!.edgeId) ?? null;
-            if (!edge) {
+              hasEdge && hit.best
+                ? (fig.edges.find((ed) => ed.id === hit.best!.edgeId) ?? null)
+                : null;
+
+            // If it's not near an edge and not a mirrored figure, do nothing.
+            if (!edge && !fig.mirrorLink) {
               setEdgeContextMenu(null);
               return;
             }
@@ -6484,19 +6754,23 @@ export default function Canvas() {
 
             // Select for discoverability.
             setSelectedFigureIds([fig.id]);
-            setSelectedEdge({
-              figureId: fig.id,
-              edgeId: edge.id,
-              anchor: "mid",
-            });
+            setSelectedEdge(
+              edge
+                ? {
+                    figureId: fig.id,
+                    edgeId: edge.id,
+                    anchor: "mid",
+                  }
+                : null
+            );
 
             setEdgeEditDraft(null);
             setEdgeContextMenu({
               x: e.evt.clientX - rect.left,
               y: e.evt.clientY - rect.top,
               figureId: fig.id,
-              edgeId: edge.id,
-              edgeKind: edge.kind,
+              edgeId: edge ? edge.id : null,
+              edgeKind: edge ? edge.kind : null,
             });
           }}
         >
@@ -6629,12 +6903,25 @@ export default function Canvas() {
                     selectedIdsSet.has(baseId) ||
                     !isEffectivelyTransparentFill(fig.fill)
                   }
-                  draggable={
-                    tool === "select" &&
-                    selectedIdsSet.has(baseId) &&
-                    !selectDirectDragRef.current
-                  }
+                  draggable={(() => {
+                    const base = figuresById.get(baseId) ?? null;
+                    const locked =
+                      base?.mirrorLink?.role === "mirror" &&
+                      base.mirrorLink.sync === true;
+                    return (
+                      tool === "select" &&
+                      selectedIdsSet.has(baseId) &&
+                      !selectDirectDragRef.current &&
+                      !locked
+                    );
+                  })()}
                   showNodes={showNodes}
+                  nodeStrokeOverride={
+                    fig.mirrorLink?.role === "mirror" &&
+                    fig.mirrorLink.sync === true
+                      ? "#22c55e"
+                      : undefined
+                  }
                   showMeasures={showMeasures}
                   pointLabelsMode={pointLabelsMode}
                   pointLabelsByNodeId={nodeLabelsByFigureId.get(fig.id) ?? null}
@@ -6774,52 +7061,135 @@ export default function Canvas() {
 
                     if (tool === "mirror") {
                       setSelectedFigureId(baseId);
-                      const bb = figureWorldBoundingBox(base);
-                      const axisPos =
-                        mirrorAxis === "vertical"
-                          ? bb
-                            ? bb.x + bb.width / 2
-                            : base.x
-                          : bb
-                            ? bb.y + bb.height / 2
-                            : base.y;
-                      const mirrored = mirrorFigure(base, mirrorAxis, axisPos);
-                      setFigures((prev) => [...prev, mirrored]);
+                      if (base.mirrorLink) {
+                        toast(
+                          "Esta forma já está espelhada. Use Desespelhar (G) para desfazer.",
+                          "error"
+                        );
+                        return;
+                      }
+
+                      const stage = stageRef.current;
+                      if (!stage) return;
+                      stage.setPointersPositions(e.evt);
+                      const pos = stage.getPointerPosition();
+                      if (!pos) return;
+
+                      const world = {
+                        x: (pos.x - position.x) / scale,
+                        y: (pos.y - position.y) / scale,
+                      };
+
+                      const local = worldToFigureLocal(base, world);
+                      const hit = findNearestEdge(base, local);
+                      const thresholdWorld = 10 / scale;
+                      if (!hit.best || hit.bestDist > thresholdWorld) {
+                        toast(
+                          "Passe o mouse em uma aresta para definir o eixo e clique para espelhar.",
+                          "error"
+                        );
+                        return;
+                      }
+
+                      const edge =
+                        base.edges.find((ed) => ed.id === hit.best!.edgeId) ??
+                        null;
+                      if (!edge) return;
+
+                      const axisPointWorld = figureLocalToWorld(
+                        base,
+                        hit.best.pointLocal
+                      );
+                      const axisDirUnit = getEdgeTangentWorld(
+                        base,
+                        edge,
+                        hit.best.t
+                      );
+
+                      const mirrored = mirrorFigureAcrossLine(
+                        base,
+                        axisPointWorld,
+                        axisDirUnit
+                      );
+
+                      const pairId = id("ml");
+                      const baseWithLink: Figure = {
+                        ...base,
+                        mirrorLink: {
+                          pairId,
+                          otherId: mirrored.id,
+                          role: "original",
+                          sync: true,
+                          axisPointWorld,
+                          axisDirWorld: axisDirUnit,
+                        },
+                      };
+                      const mirroredWithLink: Figure = {
+                        ...mirrored,
+                        mirrorLink: {
+                          pairId,
+                          otherId: base.id,
+                          role: "mirror",
+                          sync: true,
+                          axisPointWorld,
+                          axisDirWorld: axisDirUnit,
+                        },
+                      };
+
+                      setFigures((prev) => [
+                        ...prev.map((f) =>
+                          f.id === base.id ? baseWithLink : f
+                        ),
+                        mirroredWithLink,
+                      ]);
                       return;
                     }
 
                     if (tool === "unfold") {
                       setSelectedFigureId(baseId);
-                      const poly = figureWorldPolyline(base, 60);
-                      if (poly.length < 4) return;
-                      let axisPos = 0;
-                      if (unfoldAxis === "vertical") {
-                        let minX = Infinity;
-                        for (let i = 0; i < poly.length; i += 2) {
-                          minX = Math.min(minX, poly[i]);
-                        }
-                        axisPos = minX;
-                      } else {
-                        let minY = Infinity;
-                        for (let i = 0; i < poly.length; i += 2) {
-                          minY = Math.min(minY, poly[i + 1]);
-                        }
-                        axisPos = minY;
+                      const link = base.mirrorLink;
+                      if (!link) {
+                        toast(
+                          "Esta forma não está espelhada. Use Espelhar (F) primeiro.",
+                          "error"
+                        );
+                        return;
                       }
 
-                      const unfolded = unfoldFigure(base, unfoldAxis, axisPos);
-                      if (!unfolded) return;
+                      const other =
+                        figures.find((f) => f.id === link.otherId) ?? null;
+                      if (!other) {
+                        // Link is stale; just clear it.
+                        setFigures((prev) =>
+                          prev.map((f) =>
+                            f.id === base.id
+                              ? { ...f, mirrorLink: undefined }
+                              : f
+                          )
+                        );
+                        return;
+                      }
 
-                      // Keep same id (preserves selection) and drop old seams (need re-create)
-                      const nextUnfolded: Figure = { ...unfolded, id: base.id };
+                      const originalId =
+                        link.role === "mirror" ? other.id : base.id;
+                      const mirrorId = link.role === "mirror" ? base.id : other.id;
+
                       setFigures((prev) =>
                         prev
                           .filter(
                             (f) =>
-                              !(f.kind === "seam" && f.parentId === base.id)
+                              f.id !== mirrorId &&
+                              !(f.kind === "seam" && f.parentId === mirrorId)
                           )
-                          .map((f) => (f.id === base.id ? nextUnfolded : f))
+                          .map((f) => {
+                            if (f.id === originalId || f.id === mirrorId) {
+                              return { ...f, mirrorLink: undefined };
+                            }
+                            return f;
+                          })
                       );
+
+                      setSelectedFigureId(originalId);
                       return;
                     }
 
@@ -7248,6 +7618,10 @@ export default function Canvas() {
             {edgeHoverOverlay}
 
             {nodeSplitMeasuresPreviewOverlay}
+
+            {mirrorPreviewOverlay}
+
+            {unmirrorPreviewOverlay}
 
             {dartPickAOverlay}
 
