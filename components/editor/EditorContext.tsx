@@ -1043,6 +1043,13 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           y: f.y,
           rotation: f.rotation || 0,
           closed: f.closed,
+          piques: (f.piques ?? []).map((p) => ({
+            id: p.id,
+            edgeId: p.edgeId,
+            t01: p.t01,
+            lengthCm: p.lengthCm,
+            side: p.side,
+          })),
           textValue: f.textValue,
           textFontFamily: f.textFontFamily,
           textFontSizePx: f.textFontSizePx,

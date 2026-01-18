@@ -126,6 +126,18 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
       descriptionPtBr: "Alta precisão (1mm)",
     },
   ],
+  pique: [
+    {
+      key: "alt",
+      label: { mac: "⌥", win: "Alt" },
+      descriptionPtBr: "Travar no meio da aresta",
+    },
+    {
+      key: "cmdOrCtrl",
+      label: { mac: "⌘", win: "Ctrl" },
+      descriptionPtBr: "Alta precisão (1mm)",
+    },
+  ],
 };
 
 export function detectPlatformKind(): PlatformKind {

@@ -10,6 +10,7 @@ type ToolName =
   | "curve"
   | "text"
   | "measure"
+  | "pique"
   | "offset"
   | "dart"
   | "mirror"
@@ -116,6 +117,15 @@ function getToolIconInternal(
           <path d="M15 17V19" />
         </Svg>
       );
+    case "pique":
+      return (
+        <Svg className={className} strokeWidth={strokeWidth}>
+          {/* Pique: traço perpendicular sobre uma borda */}
+          <path d="M6 12H18" />
+          <path d="M12 12V6" />
+          <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+        </Svg>
+      );
     case "offset":
       return (
         <Svg className={className} strokeWidth={strokeWidth}>
@@ -207,6 +217,7 @@ export function isToolCursorOverlayEnabled(tool: string): boolean {
     tool === "curve" ||
     tool === "text" ||
     tool === "measure" ||
+    tool === "pique" ||
     tool === "offset" ||
     tool === "dart" ||
     tool === "mirror" ||

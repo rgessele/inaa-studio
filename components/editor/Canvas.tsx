@@ -122,11 +122,10 @@ function snapPointAlongDirFloor(
 
 function quantizeEdgeHoverByChordLengthFloor(
   figure: Figure,
-  hover: EdgeHover,
+  hover: NonNullable<EdgeHover>,
   fromLocal: Vec2,
   stepPx: number
-): EdgeHover {
-  if (!hover) return hover;
+): NonNullable<EdgeHover> {
   if (!Number.isFinite(stepPx) || stepPx <= 0) return hover;
 
   const edge = figure.edges.find((e) => e.id === hover.edgeId);
@@ -181,6 +180,11 @@ type EdgeHover = {
   t: number;
   pointLocal: Vec2;
   snapKind?: "mid";
+} | null;
+
+type HoveredPique = {
+  figureId: string;
+  piqueId: string;
 } | null;
 
 type DartDraft = {
@@ -558,6 +562,63 @@ function splitPolylineAtPoint(
   };
 }
 
+function pointAndTangentAtArcLength(
+  points: Vec2[],
+  sPx: number
+): { point: Vec2; tangentUnit: Vec2 } | null {
+  if (points.length < 2) return null;
+
+  const segLens: number[] = [];
+  let total = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const l = dist(points[i], points[i + 1]);
+    segLens.push(l);
+    total += l;
+  }
+  if (!Number.isFinite(total) || total < 1e-6) {
+    const v = sub(points[points.length - 1], points[0]);
+    return { point: points[0], tangentUnit: norm(v) };
+  }
+
+  const s = clamp(sPx, 0, total);
+  let acc = 0;
+  for (let i = 0; i < segLens.length; i++) {
+    const l = segLens[i];
+    if (acc + l >= s || i === segLens.length - 1) {
+      const a = points[i];
+      const b = points[i + 1];
+      const u = l > 1e-6 ? (s - acc) / l : 0;
+      const point = lerp(a, b, u);
+      const tangentUnit = norm(sub(b, a));
+      return { point, tangentUnit };
+    }
+    acc += l;
+  }
+
+  const a = points[points.length - 2];
+  const b = points[points.length - 1];
+  return { point: b, tangentUnit: norm(sub(b, a)) };
+}
+
+function pointAndTangentAtT01(
+  points: Vec2[],
+  t01: number
+): { point: Vec2; tangentUnit: Vec2; totalLengthPx: number } | null {
+  if (points.length < 2) return null;
+  let total = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    total += dist(points[i], points[i + 1]);
+  }
+  if (!Number.isFinite(total) || total < 1e-6) {
+    const v = sub(points[points.length - 1], points[0]);
+    return { point: points[0], tangentUnit: norm(v), totalLengthPx: 0 };
+  }
+  const s = clamp(t01, 0, 1) * total;
+  const at = pointAndTangentAtArcLength(points, s);
+  if (!at) return null;
+  return { ...at, totalLengthPx: total };
+}
+
 function nearestOnPolylineWorld(
   pWorld: Vec2,
   poly: number[]
@@ -757,6 +818,61 @@ function findNearestEdge(
     }
   }
   return { best, bestDist };
+}
+
+function computePiqueSegmentWorld(
+  figure: Figure,
+  pique: { edgeId: string; t01: number; lengthCm: number; side: 1 | -1 }
+): { aWorld: Vec2; bWorld: Vec2 } | null {
+  if (!figure.closed) return null;
+  const edge = figure.edges.find((e) => e.id === pique.edgeId) ?? null;
+  if (!edge) return null;
+
+  const pts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 2 : 120);
+  if (pts.length < 2) return null;
+
+  const at = pointAndTangentAtT01(pts, pique.t01);
+  if (!at) return null;
+
+  const n = norm(perp(at.tangentUnit));
+  const side = pique.side === -1 ? -1 : 1;
+  const lengthPx = Math.max(0, (pique.lengthCm || 0.5) * PX_PER_CM);
+  const aLocal = at.point;
+  const bLocal = add(aLocal, mul(n, lengthPx * side));
+
+  return {
+    aWorld: figureLocalToWorld(figure, aLocal),
+    bWorld: figureLocalToWorld(figure, bLocal),
+  };
+}
+
+function findHoveredPique(
+  figures: Figure[],
+  pWorld: Vec2,
+  thresholdWorld: number
+): { figureId: string; piqueId: string } | null {
+  if (!Number.isFinite(thresholdWorld) || thresholdWorld <= 0) return null;
+
+  let best: { figureId: string; piqueId: string } | null = null;
+  let bestD = Number.POSITIVE_INFINITY;
+
+  for (const fig of figures) {
+    if (!fig.closed) continue;
+    const piques = fig.piques ?? [];
+    if (!piques.length) continue;
+    for (const pk of piques) {
+      const seg = computePiqueSegmentWorld(fig, pk);
+      if (!seg) continue;
+      const hit = pointToSegmentDistance(pWorld, seg.aWorld, seg.bWorld);
+      if (hit.d < bestD) {
+        bestD = hit.d;
+        best = { figureId: fig.id, piqueId: pk.id };
+      }
+    }
+  }
+
+  if (!best || bestD > thresholdWorld) return null;
+  return best;
 }
 
 function splitFigureEdge(
@@ -1659,6 +1775,11 @@ export default function Canvas() {
     if (tool === "select" || tool === "node") return;
     if (selectedEdge) setSelectedEdge(null);
   }, [selectedEdge, setSelectedEdge, tool]);
+
+  useEffect(() => {
+    if (tool === "pique") return;
+    setHoveredPique(null);
+  }, [tool]);
   const backgroundRef = useRef<Konva.Rect | null>(null);
   const [draft, setDraft] = useState<Draft>(null);
   const [curveDraft, setCurveDraft] = useState<CurveDraft>(null);
@@ -1671,6 +1792,7 @@ export default function Canvas() {
     toNodeId: string;
   } | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<EdgeHover>(null);
+  const [hoveredPique, setHoveredPique] = useState<HoveredPique>(null);
   const [hoveredMirrorLinkFigureId, setHoveredMirrorLinkFigureId] = useState<
     string | null
   >(null);
@@ -3898,6 +4020,119 @@ export default function Canvas() {
       return;
     }
 
+    if (tool === "pique" && e.evt.button === 0) {
+      // Remove mode: hovering an existing pique highlights it in red.
+      if (hoveredPique) {
+        const { figureId, piqueId } = hoveredPique;
+        setFigures((prev) =>
+          prev.map((f) => {
+            if (f.id !== figureId) return f;
+            const next = (f.piques ?? []).filter((p) => p.id !== piqueId);
+            return next.length !== (f.piques ?? []).length
+              ? { ...f, piques: next }
+              : f;
+          })
+        );
+        return;
+      }
+
+      const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
+      const midLock = !!e.evt.altKey;
+
+      // Prefer the hovered edge; fallback to a direct hit-test.
+      let hitEdge = hoveredEdge;
+      let fig: Figure | null = hitEdge
+        ? figures.find((f) => f.id === hitEdge!.figureId) ?? null
+        : null;
+
+      if (!hitEdge || !fig) {
+        const thresholdWorld = 10 / scale;
+        const figId = findHoveredFigureId(figures, world, thresholdWorld);
+        fig = figId ? figures.find((f) => f.id === figId) ?? null : null;
+        if (!fig || fig.kind === "seam") return;
+        const local = worldToFigureLocal(fig, world);
+        const hit = findNearestEdge(fig, local);
+        if (!hit.best || hit.bestDist > thresholdWorld) return;
+        hitEdge = hit.best;
+      }
+
+      if (!fig || fig.kind === "seam") return;
+      if (!fig.closed) {
+        toast("Pique só funciona em figuras fechadas.", "error");
+        return;
+      }
+
+      const edge = fig.edges.find((ed) => ed.id === hitEdge.edgeId) ?? null;
+      if (!edge) return;
+
+      const pts = edgeLocalPoints(fig, edge, edge.kind === "line" ? 2 : 160);
+      if (pts.length < 2) return;
+
+      let t01 = 0;
+      let at: { point: Vec2; tangentUnit: Vec2 } | null = null;
+
+      if (midLock) {
+        const mid = pointAndTangentAtT01(pts, 0.5);
+        if (!mid || mid.totalLengthPx < 1e-6) return;
+        t01 = 0.5;
+        at = { point: mid.point, tangentUnit: mid.tangentUnit };
+      } else {
+        // Compute arc-length position and (optionally) snap it for high precision.
+        const split = splitPolylineAtPoint(pts, hitEdge.pointLocal);
+        if (!split || split.totalLengthPx < 1e-6) return;
+
+        const stepPx = PX_PER_MM;
+        const sRaw = split.leftLengthPx;
+        const s = precisionSnap
+          ? Math.floor(sRaw / stepPx) * stepPx
+          : sRaw;
+
+        at = pointAndTangentAtArcLength(pts, s);
+        if (!at) return;
+
+        t01 = clamp(s / split.totalLengthPx, 0, 1);
+      }
+
+      // Choose the notch direction so it points inward.
+      const polyFlat = figureLocalPolyline(fig, 120);
+      const poly: Vec2[] = [];
+      for (let i = 0; i < polyFlat.length - 1; i += 2) {
+        poly.push({ x: polyFlat[i], y: polyFlat[i + 1] });
+      }
+      if (poly.length < 3) {
+        toast("Pique só funciona em figuras fechadas.", "error");
+        return;
+      }
+
+      const n = norm(perp(at.tangentUnit));
+      const eps = 2 * PX_PER_MM;
+      const test = add(at.point, mul(n, eps));
+      const side: 1 | -1 = pointInPolygon(test, poly) ? 1 : -1;
+
+      const newPiqueId = id("pique");
+
+      setFigures((prev) =>
+        prev.map((f) => {
+          if (f.id !== fig!.id) return f;
+          return {
+            ...f,
+            piques: [
+              ...(f.piques ?? []),
+              {
+                id: newPiqueId,
+                edgeId: edge.id,
+                t01,
+                lengthCm: 0.5,
+                side,
+              },
+            ],
+          };
+        })
+      );
+
+      return;
+    }
+
     if (tool === "dart") {
       if (!dartDraft) {
         const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
@@ -3919,6 +4154,7 @@ export default function Canvas() {
             const edge = fig.edges.find((ed) => ed.id === hitEdge!.edgeId) ?? null;
             const fromNode = edge ? getNodeById(fig.nodes, edge.from) : undefined;
             if (fromNode) {
+              if (!hitEdge) return;
               hitEdge = quantizeEdgeHoverByChordLengthFloor(
                 fig,
                 hitEdge,
@@ -3928,6 +4164,8 @@ export default function Canvas() {
             }
           }
         }
+
+        if (!hitEdge) return;
 
         const targetFigure =
           figures.find((f) => f.id === hitEdge.figureId) ?? null;
@@ -4533,6 +4771,82 @@ export default function Canvas() {
       }
     }
 
+    if (tool === "pique") {
+      const edgeThresholdWorld = 10 / scale;
+      const piqueThresholdWorld = 8 / scale;
+
+      const pk = findHoveredPique(figures, worldForToolRaw, piqueThresholdWorld);
+      if (pk) {
+        if (!hoveredPique || hoveredPique.figureId !== pk.figureId || hoveredPique.piqueId !== pk.piqueId) {
+          setHoveredPique(pk);
+        }
+        if (hoveredEdge) setHoveredEdge(null);
+      } else {
+        if (hoveredPique) setHoveredPique(null);
+
+        const figId = findHoveredFigureId(figures, world, edgeThresholdWorld);
+        const fig = figId
+          ? (figures.find((f) => f.id === figId) ?? null)
+          : null;
+        if (!fig || fig.kind === "seam") {
+          if (hoveredEdge) setHoveredEdge(null);
+        } else {
+          const local = worldToFigureLocal(fig, world);
+          const hit = findNearestEdge(fig, local);
+          if (!hit.best || hit.bestDist > edgeThresholdWorld) {
+            if (hoveredEdge) setHoveredEdge(null);
+          } else {
+            let best = hit.best;
+
+            const midLock = !!e.evt.altKey;
+
+            if (midLock) {
+              const edge = fig.edges.find((e) => e.id === best.edgeId) ?? null;
+              if (edge) {
+                const pts = edgeLocalPoints(
+                  fig,
+                  edge,
+                  edge.kind === "line" ? 2 : 160
+                );
+                const mid = pointAndTangentAtT01(pts, 0.5);
+                if (mid) {
+                  best = {
+                    ...best,
+                    t: 0.5,
+                    pointLocal: mid.point,
+                    snapKind: "mid",
+                  };
+                }
+              }
+            } else if (precisionSnap) {
+              const edge = fig.edges.find((e) => e.id === best.edgeId) ?? null;
+              if (edge) {
+                const pts = edgeLocalPoints(
+                  fig,
+                  edge,
+                  edge.kind === "line" ? 2 : 160
+                );
+                const split = splitPolylineAtPoint(pts, best.pointLocal);
+                if (split && split.totalLengthPx > 1e-6) {
+                  const s = Math.floor(split.leftLengthPx / PX_PER_MM) * PX_PER_MM;
+                  const at = pointAndTangentAtArcLength(pts, s);
+                  if (at) {
+                    best = {
+                      ...best,
+                      t: clamp(s / split.totalLengthPx, 0, 1),
+                      pointLocal: at.point,
+                    };
+                  }
+                }
+              }
+            }
+
+            setHoveredEdge(best);
+          }
+        }
+      }
+    }
+
     if (tool === "mirror") {
       const thresholdWorld = 10 / scale;
       const figId = findHoveredFigureId(figures, world, thresholdWorld);
@@ -4548,7 +4862,7 @@ export default function Canvas() {
           setHoveredEdge(hit.best);
         }
       }
-    } else if (tool !== "dart" && tool !== "node") {
+    } else if (tool !== "dart" && tool !== "node" && tool !== "pique") {
       if (hoveredEdge) setHoveredEdge(null);
     }
 
@@ -4647,26 +4961,6 @@ export default function Canvas() {
             });
             return;
           }
-        }
-      }
-
-      if (
-        tool === "dart" &&
-        dartDraft?.step === "pickB" &&
-        precisionSnap &&
-        hit.best
-      ) {
-        const aLocal = getFigureNodePoint(selectedFigure, dartDraft.aNodeId);
-        if (aLocal) {
-          setHoveredEdge(
-            quantizeEdgeHoverByChordLengthFloor(
-              selectedFigure,
-              hit.best,
-              aLocal,
-              PX_PER_MM
-            )
-          );
-          return;
         }
       }
 
@@ -6105,6 +6399,173 @@ export default function Canvas() {
     );
   }, [hoveredEdge, scale, selectedFigure, tool]);
 
+  const piqueHoverOverlay = useMemo(() => {
+    if (tool !== "pique") return null;
+    if (hoveredPique) return null;
+    if (!hoveredEdge) return null;
+
+    const fig = figures.find((f) => f.id === hoveredEdge.figureId) ?? null;
+    if (!fig || fig.kind === "seam") return null;
+
+    const edge = fig.edges.find((e) => e.id === hoveredEdge.edgeId) ?? null;
+    if (!edge) return null;
+
+    const pts = edgeLocalPoints(fig, edge, edge.kind === "line" ? 2 : 160);
+    if (pts.length < 2) return null;
+
+    const split = splitPolylineAtPoint(pts, hoveredEdge.pointLocal);
+    if (!split) return null;
+
+    const leftLengthPx = Math.max(0, split.leftLengthPx);
+    const rightLengthPx = Math.max(0, split.totalLengthPx - split.leftLengthPx);
+
+    const fontSize = 11 / scale;
+    const textWidth = 120 / scale;
+    const offset = 12 / scale;
+
+    const previewStroke = "#2563eb";
+    const previewOpacity = 0.95;
+
+    if (!fig.closed) {
+      return (
+        <Group x={fig.x} y={fig.y} rotation={fig.rotation || 0} listening={false}>
+          <Text
+            x={split.cutPoint.x}
+            y={split.cutPoint.y - 18 / scale}
+            text="Pique só funciona em figuras fechadas"
+            fontSize={12 / scale}
+            fill="#ef4444"
+            opacity={0.95}
+            listening={false}
+          />
+        </Group>
+      );
+    }
+
+    const centroid = figureCentroidLocal(fig);
+
+    const renderSegmentLabel = (
+      key: string,
+      segmentPts: Vec2[],
+      lengthPx: number
+    ) => {
+      if (segmentPts.length < 2) return null;
+      if (!Number.isFinite(lengthPx)) return null;
+
+      const mt = midAndTangent(segmentPts);
+      if (!mt) return null;
+
+      const n = norm(perp(mt.tangent));
+      const p1 = add(mt.mid, mul(n, offset));
+      const p2 = add(mt.mid, mul(n, -offset));
+      const p = dist(p1, centroid) >= dist(p2, centroid) ? p1 : p2;
+
+      const rawAngleDeg =
+        (Math.atan2(mt.tangent.y, mt.tangent.x) * 180) / Math.PI;
+      const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
+
+      const label = formatCm(pxToCm(lengthPx), 2);
+
+      const chordLenLocal = dist(
+        segmentPts[0],
+        segmentPts[segmentPts.length - 1]
+      );
+      const chordLenScreenPx = chordLenLocal * scale;
+      const SHORT_EDGE_THRESHOLD_PX = 42;
+      const isShort = chordLenScreenPx < SHORT_EDGE_THRESHOLD_PX;
+
+      const leader = isShort ? (
+        <Line
+          key={`${key}:leader`}
+          points={[mt.mid.x, mt.mid.y, p.x, p.y]}
+          stroke={previewStroke}
+          strokeWidth={1 / scale}
+          dash={[4 / scale, 4 / scale]}
+          opacity={0.6}
+          listening={false}
+          lineCap="round"
+        />
+      ) : null;
+
+      return (
+        <>
+          {leader}
+          <Text
+            key={key}
+            x={p.x}
+            y={p.y}
+            offsetX={textWidth / 2}
+            offsetY={fontSize / 2}
+            rotation={angleDeg}
+            width={textWidth}
+            align="center"
+            text={label}
+            fontSize={fontSize}
+            fill={previewStroke}
+            opacity={previewOpacity}
+            fontStyle="bold"
+            listening={false}
+            name="inaa-pique-measure-preview"
+          />
+        </>
+      );
+    };
+
+    // Preview notch segment pointing inward.
+    const polyFlat = figureLocalPolyline(fig, 120);
+    const poly: Vec2[] = [];
+    for (let i = 0; i < polyFlat.length - 1; i += 2) {
+      poly.push({ x: polyFlat[i], y: polyFlat[i + 1] });
+    }
+    if (poly.length < 3) return null;
+
+    const at = pointAndTangentAtArcLength(pts, leftLengthPx);
+    if (!at) return null;
+
+    const n = norm(perp(at.tangentUnit));
+    const eps = 2 * PX_PER_MM;
+    const test = add(at.point, mul(n, eps));
+    const side: 1 | -1 = pointInPolygon(test, poly) ? 1 : -1;
+
+    const lengthPx = 0.5 * PX_PER_CM;
+    const p0 = at.point;
+    const p1 = add(p0, mul(n, lengthPx * side));
+
+    return (
+      <Group x={fig.x} y={fig.y} rotation={fig.rotation || 0} listening={false}>
+        {renderSegmentLabel(
+          `pique:${fig.id}:${edge.id}:a`,
+          split.left,
+          leftLengthPx
+        )}
+        {renderSegmentLabel(
+          `pique:${fig.id}:${edge.id}:b`,
+          split.right,
+          rightLengthPx
+        )}
+
+        <Line
+          points={[p0.x, p0.y, p1.x, p1.y]}
+          stroke={previewStroke}
+          strokeWidth={2 / scale}
+          dash={[6 / scale, 6 / scale]}
+          opacity={0.75}
+          lineCap="round"
+          listening={false}
+        />
+        <Circle
+          x={p0.x}
+          y={p0.y}
+          radius={4 / scale}
+          fill={previewStroke}
+          stroke="#ffffff"
+          strokeWidth={1 / scale}
+          listening={false}
+        />
+      </Group>
+    );
+  }, [figures, hoveredEdge, hoveredPique, scale, tool]);
+
   const dartPickAOverlay = useMemo(() => {
     if (tool !== "dart") return null;
     if (dartDraft) return null;
@@ -7070,6 +7531,9 @@ export default function Canvas() {
                   selectedEdge={selectedEdge}
                   hoveredEdge={hoveredMeasureEdge}
                   hoveredSelectEdge={hoveredSelectEdge}
+                  hoveredPiqueId={
+                    hoveredPique?.figureId === fig.id ? hoveredPique.piqueId : null
+                  }
                   showNameHandle={
                     tool === "select" &&
                     selectedFigureIds.length === 1 &&
@@ -7772,6 +8236,8 @@ export default function Canvas() {
             {edgeHoverOverlay}
 
             {nodeSplitMeasuresPreviewOverlay}
+
+            {piqueHoverOverlay}
 
             {mirrorPreviewOverlay}
 

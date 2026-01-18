@@ -11,6 +11,7 @@ export type Tool =
   | "pan"
   | "node"
   | "measure"
+  | "pique"
   | "offset"
   | "mirror"
   | "unfold";
@@ -151,6 +152,17 @@ export interface FigureDart {
   cNodeId: string;
 }
 
+export interface FigurePique {
+  id: string;
+  edgeId: string;
+  // Normalized arc-length position along the edge: 0 at edge start, 1 at edge end.
+  t01: number;
+  // Fixed by UX for now, but kept for forward-compat.
+  lengthCm: number;
+  // Which side of the edge normal the tick is drawn (chosen to point inward).
+  side: 1 | -1;
+}
+
 export interface Figure {
   id: string;
 
@@ -221,6 +233,11 @@ export interface Figure {
   // Dart / Pence tool (non-destructive)
   // =====================
   darts?: FigureDart[];
+
+  // =====================
+  // Pique tool (notches)
+  // =====================
+  piques?: FigurePique[];
 
   // =====================
   // Text tool (tool === "text")

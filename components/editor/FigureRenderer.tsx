@@ -4,6 +4,7 @@ import type Konva from "konva";
 import { Figure } from "./types";
 import { edgeLocalPoints, figureLocalPolyline } from "./figurePath";
 import { figureCentroidLocal } from "./figurePath";
+import { PX_PER_CM } from "./constants";
 import { MemoizedNodeOverlay } from "./NodeOverlay";
 import { MemoizedMeasureOverlay } from "./MeasureOverlay";
 import { MemoizedSeamLabel } from "./SeamLabel";
@@ -43,6 +44,8 @@ interface FigureRendererProps {
   hoveredEdge?: { figureId: string; edgeId: string } | null;
   hoveredSelectEdge?: { figureId: string; edgeId: string } | null;
 
+  hoveredPiqueId?: string | null;
+
   // Figure name label handle (drag to reposition)
   showNameHandle?: boolean;
   onNameOffsetChange?: (
@@ -53,6 +56,72 @@ interface FigureRendererProps {
     figureId: string,
     nextOffsetLocal: { x: number; y: number }
   ) => void;
+}
+
+type Vec2 = { x: number; y: number };
+
+function len(v: Vec2): number {
+  return Math.hypot(v.x, v.y);
+}
+
+function sub(a: Vec2, b: Vec2): Vec2 {
+  return { x: a.x - b.x, y: a.y - b.y };
+}
+
+function add(a: Vec2, b: Vec2): Vec2 {
+  return { x: a.x + b.x, y: a.y + b.y };
+}
+
+function mul(v: Vec2, s: number): Vec2 {
+  return { x: v.x * s, y: v.y * s };
+}
+
+function perp(v: Vec2): Vec2 {
+  return { x: -v.y, y: v.x };
+}
+
+function norm(v: Vec2): Vec2 {
+  const l = len(v);
+  if (!Number.isFinite(l) || l < 1e-6) return { x: 0, y: 0 };
+  return mul(v, 1 / l);
+}
+
+function pointAndTangentAtT01(
+  points: Vec2[],
+  t01: number
+): { point: Vec2; tangentUnit: Vec2 } | null {
+  if (points.length < 2) return null;
+  const t = Math.max(0, Math.min(1, t01));
+
+  const segLens: number[] = [];
+  let total = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const l = len(sub(points[i + 1], points[i]));
+    segLens.push(l);
+    total += l;
+  }
+  if (!Number.isFinite(total) || total < 1e-6) {
+    const v = sub(points[points.length - 1], points[0]);
+    return { point: points[0], tangentUnit: norm(v) };
+  }
+
+  const targetS = t * total;
+  let acc = 0;
+  for (let i = 0; i < segLens.length; i++) {
+    const l = segLens[i];
+    if (acc + l >= targetS || i === segLens.length - 1) {
+      const a = points[i];
+      const b = points[i + 1];
+      const u = l > 1e-6 ? (targetS - acc) / l : 0;
+      const point = { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+      const tangentUnit = norm(sub(b, a));
+      return { point, tangentUnit };
+    }
+    acc += l;
+  }
+
+  const v = sub(points[points.length - 1], points[points.length - 2]);
+  return { point: points[points.length - 1], tangentUnit: norm(v) };
 }
 
 function resolveAci7(isDark: boolean): string {
@@ -102,6 +171,7 @@ const FigureRenderer = ({
   selectedEdge = null,
   hoveredEdge = null,
   hoveredSelectEdge = null,
+  hoveredPiqueId = null,
   showNameHandle,
   onNameOffsetChange,
   onNameOffsetCommit,
@@ -356,6 +426,47 @@ const FigureRenderer = ({
       onDragMove={onDragMove}
       onDragEnd={onDragEnd}
     >
+      {/* Piques (notches) */}
+      {figure.closed && figure.piques?.length
+        ? figure.piques.map((p) => {
+            const edge = figure.edges.find((e) => e.id === p.edgeId) ?? null;
+            if (!edge) return null;
+            const edgePts = edgeLocalPoints(
+              figure,
+              edge,
+              edge.kind === "line" ? 2 : 120
+            );
+            if (edgePts.length < 2) return null;
+
+            const at = pointAndTangentAtT01(edgePts, p.t01);
+            if (!at) return null;
+
+            const n = norm(perp(at.tangentUnit));
+            const side = p.side === -1 ? -1 : 1;
+            const lengthPx = Math.max(0, (p.lengthCm || 0.5) * PX_PER_CM);
+            const p0 = at.point;
+            const p1 = add(p0, mul(n, lengthPx * side));
+
+            const isHover =
+              hoveredPiqueId === p.id;
+
+            return (
+              <Line
+                key={`pique:${figure.id}:${p.id}`}
+                points={[p0.x, p0.y, p1.x, p1.y]}
+                stroke={isHover ? "#ef4444" : stroke}
+                strokeWidth={strokeWidth}
+                opacity={Math.min(1, opacity + 0.05)}
+                lineCap="round"
+                lineJoin="round"
+                listening={false}
+                perfectDrawEnabled={false}
+                shadowForStrokeEnabled={false}
+              />
+            );
+          })
+        : null}
+
       {figure.kind === "seam" && figure.seamSegments?.length ? (
         figure.seamSegments.map((segment, idx) => (
           <Line
@@ -604,6 +715,7 @@ const arePropsEqual = (
     prev.selectedEdge === next.selectedEdge &&
     prev.hoveredEdge === next.hoveredEdge &&
     prev.hoveredSelectEdge === next.hoveredSelectEdge &&
+    prev.hoveredPiqueId === next.hoveredPiqueId &&
     prev.seamBaseCentroidLocal?.x === next.seamBaseCentroidLocal?.x &&
     prev.seamBaseCentroidLocal?.y === next.seamBaseCentroidLocal?.y &&
     prev.figure === next.figure && // Reference check for figure
