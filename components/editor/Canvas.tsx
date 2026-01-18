@@ -562,6 +562,92 @@ function splitPolylineAtPoint(
   };
 }
 
+function slicePolylineByArcLength(points: Vec2[], s0Px: number, s1Px: number): Vec2[] {
+  if (points.length < 2) return points;
+
+  const segLens: number[] = [];
+  let total = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const l = dist(points[i], points[i + 1]);
+    segLens.push(l);
+    total += l;
+  }
+  if (!Number.isFinite(total) || total < 1e-6) return [points[0], points[points.length - 1]];
+
+  const s0 = clamp(s0Px, 0, total);
+  const s1 = clamp(s1Px, 0, total);
+  const aS = Math.min(s0, s1);
+  const bS = Math.max(s0, s1);
+
+  const out: Vec2[] = [];
+
+  const pointAt = (sPx: number): Vec2 => {
+    const s = clamp(sPx, 0, total);
+    let acc = 0;
+    for (let i = 0; i < segLens.length; i++) {
+      const l = segLens[i];
+      if (acc + l >= s || i === segLens.length - 1) {
+        const u = l > 1e-6 ? (s - acc) / l : 0;
+        return lerp(points[i], points[i + 1], u);
+      }
+      acc += l;
+    }
+    return points[points.length - 1];
+  };
+
+  out.push(pointAt(aS));
+
+  let acc = 0;
+  for (let i = 0; i < segLens.length; i++) {
+    const l = segLens[i];
+    const nextAcc = acc + l;
+    const aInside = nextAcc > aS + 1e-9;
+    const bInside = nextAcc < bS - 1e-9;
+    if (aInside && bInside) {
+      out.push(points[i + 1]);
+    }
+    acc = nextAcc;
+  }
+
+  out.push(pointAt(bS));
+  return out;
+}
+
+function getPiqueEdgeBreakpointsT01(figure: Figure, edgeId: string): number[] {
+  const piques = figure.piques ?? [];
+  const ts: number[] = [];
+  for (const pk of piques) {
+    if (pk.edgeId !== edgeId) continue;
+    const t = clamp(pk.t01, 0, 1);
+    if (t <= 1e-6 || t >= 1 - 1e-6) continue;
+    ts.push(t);
+  }
+  ts.sort((a, b) => a - b);
+  const unique: number[] = [];
+  for (const t of ts) {
+    if (!unique.length || Math.abs(t - unique[unique.length - 1]) > 1e-4) {
+      unique.push(t);
+    }
+  }
+  return unique;
+}
+
+function pickActiveSegmentS(
+  breakpointsS: number[],
+  sCursorPx: number
+): { s0: number; s1: number } {
+  if (breakpointsS.length < 2) return { s0: 0, s1: 0 };
+  const s = clamp(sCursorPx, breakpointsS[0], breakpointsS[breakpointsS.length - 1]);
+
+  for (let i = 0; i < breakpointsS.length - 1; i++) {
+    const a = breakpointsS[i];
+    const b = breakpointsS[i + 1];
+    if (s >= a && s < b) return { s0: a, s1: b };
+  }
+  const n = breakpointsS.length;
+  return { s0: breakpointsS[n - 2], s1: breakpointsS[n - 1] };
+}
+
 function pointAndTangentAtArcLength(
   points: Vec2[],
   sPx: number
@@ -1247,6 +1333,12 @@ function mirrorFigureAcrossLine(
     y: 0,
     rotation: 0,
     nodes: mirroredNodes,
+    piques: figure.piques
+      ? figure.piques.map((p) => ({
+          ...p,
+          side: (p.side === -1 ? 1 : -1) as 1 | -1,
+        }))
+      : undefined,
   };
 }
 
@@ -4068,30 +4160,29 @@ export default function Canvas() {
       const pts = edgeLocalPoints(fig, edge, edge.kind === "line" ? 2 : 160);
       if (pts.length < 2) return;
 
-      let t01 = 0;
-      let at: { point: Vec2; tangentUnit: Vec2 } | null = null;
+      // Compute arc-length position and snap within the active segment (pseudo-edge).
+      const split = splitPolylineAtPoint(pts, hitEdge.pointLocal);
+      if (!split || split.totalLengthPx < 1e-6) return;
 
+      const total = split.totalLengthPx;
+      const sCursor = split.leftLengthPx;
+
+      const tBreaks = getPiqueEdgeBreakpointsT01(fig, edge.id);
+      const breaksS = [0, ...tBreaks.map((t) => t * total), total];
+      const { s0, s1 } = pickActiveSegmentS(breaksS, sCursor);
+
+      let sSnap = sCursor;
       if (midLock) {
-        const mid = pointAndTangentAtT01(pts, 0.5);
-        if (!mid || mid.totalLengthPx < 1e-6) return;
-        t01 = 0.5;
-        at = { point: mid.point, tangentUnit: mid.tangentUnit };
-      } else {
-        // Compute arc-length position and (optionally) snap it for high precision.
-        const split = splitPolylineAtPoint(pts, hitEdge.pointLocal);
-        if (!split || split.totalLengthPx < 1e-6) return;
-
-        const stepPx = PX_PER_MM;
-        const sRaw = split.leftLengthPx;
-        const s = precisionSnap
-          ? Math.floor(sRaw / stepPx) * stepPx
-          : sRaw;
-
-        at = pointAndTangentAtArcLength(pts, s);
-        if (!at) return;
-
-        t01 = clamp(s / split.totalLengthPx, 0, 1);
+        sSnap = (s0 + s1) / 2;
+      } else if (precisionSnap) {
+        sSnap = Math.floor(sCursor / PX_PER_MM) * PX_PER_MM;
+        sSnap = clamp(sSnap, s0, s1);
       }
+
+      const at = pointAndTangentAtArcLength(pts, sSnap);
+      if (!at) return;
+
+      const t01 = clamp(sSnap / total, 0, 1);
 
       // Choose the notch direction so it points inward.
       const polyFlat = figureLocalPolyline(fig, 120);
@@ -4798,45 +4889,39 @@ export default function Canvas() {
           } else {
             let best = hit.best;
 
-            const midLock = !!e.evt.altKey;
+            const edge = fig.edges.find((e) => e.id === best.edgeId) ?? null;
+            if (edge) {
+              const pts = edgeLocalPoints(
+                fig,
+                edge,
+                edge.kind === "line" ? 2 : 160
+              );
+              const split = splitPolylineAtPoint(pts, best.pointLocal);
+              if (split && split.totalLengthPx > 1e-6) {
+                const total = split.totalLengthPx;
+                const sCursor = split.leftLengthPx;
 
-            if (midLock) {
-              const edge = fig.edges.find((e) => e.id === best.edgeId) ?? null;
-              if (edge) {
-                const pts = edgeLocalPoints(
-                  fig,
-                  edge,
-                  edge.kind === "line" ? 2 : 160
-                );
-                const mid = pointAndTangentAtT01(pts, 0.5);
-                if (mid) {
+                const tBreaks = getPiqueEdgeBreakpointsT01(fig, edge.id);
+                const breaksS = [0, ...tBreaks.map((t) => t * total), total];
+                const { s0, s1 } = pickActiveSegmentS(breaksS, sCursor);
+
+                const midLock = !!e.evt.altKey;
+                let sSnap = sCursor;
+                if (midLock) {
+                  sSnap = (s0 + s1) / 2;
+                } else if (precisionSnap) {
+                  sSnap = Math.floor(sCursor / PX_PER_MM) * PX_PER_MM;
+                  sSnap = clamp(sSnap, s0, s1);
+                }
+
+                const at = pointAndTangentAtArcLength(pts, sSnap);
+                if (at) {
                   best = {
                     ...best,
-                    t: 0.5,
-                    pointLocal: mid.point,
-                    snapKind: "mid",
+                    t: clamp(sSnap / total, 0, 1),
+                    pointLocal: at.point,
+                    snapKind: midLock ? "mid" : undefined,
                   };
-                }
-              }
-            } else if (precisionSnap) {
-              const edge = fig.edges.find((e) => e.id === best.edgeId) ?? null;
-              if (edge) {
-                const pts = edgeLocalPoints(
-                  fig,
-                  edge,
-                  edge.kind === "line" ? 2 : 160
-                );
-                const split = splitPolylineAtPoint(pts, best.pointLocal);
-                if (split && split.totalLengthPx > 1e-6) {
-                  const s = Math.floor(split.leftLengthPx / PX_PER_MM) * PX_PER_MM;
-                  const at = pointAndTangentAtArcLength(pts, s);
-                  if (at) {
-                    best = {
-                      ...best,
-                      t: clamp(s / split.totalLengthPx, 0, 1),
-                      pointLocal: at.point,
-                    };
-                  }
                 }
               }
             }
@@ -6413,11 +6498,23 @@ export default function Canvas() {
     const pts = edgeLocalPoints(fig, edge, edge.kind === "line" ? 2 : 160);
     if (pts.length < 2) return null;
 
-    const split = splitPolylineAtPoint(pts, hoveredEdge.pointLocal);
-    if (!split) return null;
+    const splitAll = splitPolylineAtPoint(pts, hoveredEdge.pointLocal);
+    if (!splitAll || splitAll.totalLengthPx < 1e-6) return null;
 
-    const leftLengthPx = Math.max(0, split.leftLengthPx);
-    const rightLengthPx = Math.max(0, split.totalLengthPx - split.leftLengthPx);
+    const total = splitAll.totalLengthPx;
+    const sSnap = splitAll.leftLengthPx;
+    const tBreaks = getPiqueEdgeBreakpointsT01(fig, edge.id);
+    const breaksS = [0, ...tBreaks.map((t) => t * total), total];
+    const { s0, s1 } = pickActiveSegmentS(breaksS, sSnap);
+
+    const leftLengthPx = Math.max(0, sSnap - s0);
+    const rightLengthPx = Math.max(0, s1 - sSnap);
+
+    const segPts = slicePolylineByArcLength(pts, s0, s1);
+    const cutPoint = hoveredEdge.pointLocal;
+    const split = splitPolylineAtPoint(segPts, cutPoint);
+    const leftPts = split ? split.left : slicePolylineByArcLength(pts, s0, sSnap);
+    const rightPts = split ? split.right : slicePolylineByArcLength(pts, sSnap, s1);
 
     const fontSize = 11 / scale;
     const textWidth = 120 / scale;
@@ -6430,8 +6527,8 @@ export default function Canvas() {
       return (
         <Group x={fig.x} y={fig.y} rotation={fig.rotation || 0} listening={false}>
           <Text
-            x={split.cutPoint.x}
-            y={split.cutPoint.y - 18 / scale}
+            x={cutPoint.x}
+            y={cutPoint.y - 18 / scale}
             text="Pique só funciona em figuras fechadas"
             fontSize={12 / scale}
             fill="#ef4444"
@@ -6519,7 +6616,7 @@ export default function Canvas() {
     }
     if (poly.length < 3) return null;
 
-    const at = pointAndTangentAtArcLength(pts, leftLengthPx);
+    const at = pointAndTangentAtArcLength(pts, sSnap);
     if (!at) return null;
 
     const n = norm(perp(at.tangentUnit));
@@ -6535,12 +6632,12 @@ export default function Canvas() {
       <Group x={fig.x} y={fig.y} rotation={fig.rotation || 0} listening={false}>
         {renderSegmentLabel(
           `pique:${fig.id}:${edge.id}:a`,
-          split.left,
+          leftPts,
           leftLengthPx
         )}
         {renderSegmentLabel(
           `pique:${fig.id}:${edge.id}:b`,
-          split.right,
+          rightPts,
           rightLengthPx
         )}
 

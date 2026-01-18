@@ -84,19 +84,29 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
 
   const box = await getStageBox(page);
 
-  // Point on the right edge (x=320) roughly centered.
-  const p = { x: 320, y: 250 };
-  const x = clamp(box.x + p.x, box.x + 2, box.x + box.width - 2);
-  const y = clamp(box.y + p.y, box.y + 2, box.y + box.height - 2);
+  // Right edge (x=320). This edge runs from y=200 (t01=0) to y=300 (t01=1).
+  const pMid = { x: 320, y: 250 };
+  const xMid = clamp(box.x + pMid.x, box.x + 2, box.x + box.width - 2);
+  const yMid = clamp(box.y + pMid.y, box.y + 2, box.y + box.height - 2);
 
-  // With Alt/Option held, the hover/click locks to the midpoint.
-  const pNear = { x: 320, y: 210 };
-  const xNear = clamp(box.x + pNear.x, box.x + 2, box.x + box.width - 2);
-  const yNear = clamp(box.y + pNear.y, box.y + 2, box.y + box.height - 2);
+  // First insertion with Alt: locks to midpoint (t01 ~ 0.5).
+  const pNearTop = { x: 320, y: 210 };
+  const xNearTop = clamp(box.x + pNearTop.x, box.x + 2, box.x + box.width - 2);
+  const yNearTop = clamp(box.y + pNearTop.y, box.y + 2, box.y + box.height - 2);
 
   await page.keyboard.down("Alt");
-  await page.mouse.move(xNear, yNear);
-  await page.mouse.click(xNear, yNear);
+  await page.mouse.move(xNearTop, yNearTop);
+  await page.mouse.click(xNearTop, yNearTop);
+  await page.keyboard.up("Alt");
+
+  // Second insertion with Alt, but cursor stays in the top subsegment: snaps to midpoint of [0..0.5] => ~0.25.
+  const pTopAgain = { x: 320, y: 215 };
+  const xTopAgain = clamp(box.x + pTopAgain.x, box.x + 2, box.x + box.width - 2);
+  const yTopAgain = clamp(box.y + pTopAgain.y, box.y + 2, box.y + box.height - 2);
+
+  await page.keyboard.down("Alt");
+  await page.mouse.move(xTopAgain, yTopAgain);
+  await page.mouse.click(xTopAgain, yTopAgain);
   await page.keyboard.up("Alt");
 
   await expect
@@ -106,8 +116,47 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
           (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
-        const pk = base?.piques?.[0] ?? null;
-        return pk?.t01 ?? null;
+        const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
+        return ts;
+      });
+    })
+    .toHaveLength(2);
+
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => {
+        const figs =
+          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
+        const base = list.find((f) => f.id === "fig_base") ?? null;
+        const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
+        return ts[0] ?? null;
+      });
+    })
+    .toBeGreaterThan(0.2);
+
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => {
+        const figs =
+          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
+        const base = list.find((f) => f.id === "fig_base") ?? null;
+        const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
+        return ts[0] ?? null;
+      });
+    })
+    .toBeLessThan(0.3);
+
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => {
+        const figs =
+          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
+        const base = list.find((f) => f.id === "fig_base") ?? null;
+        const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
+        return ts[1] ?? null;
       });
     })
     .toBeGreaterThan(0.45);
@@ -119,47 +168,22 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
           (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
-        const pk = base?.piques?.[0] ?? null;
-        return pk?.t01 ?? null;
+        const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
+        return ts[1] ?? null;
       });
     })
     .toBeLessThan(0.55);
 
-  // Remove the inserted pique (move to the midpoint so hover removal hits it).
-  await page.mouse.move(x, y);
-  await page.mouse.click(x, y);
+  // Remove both piques by clicking at their snapped locations (midpoint and quarter point).
+  const pQuarter = { x: 320, y: 225 };
+  const xQuarter = clamp(box.x + pQuarter.x, box.x + 2, box.x + box.width - 2);
+  const yQuarter = clamp(box.y + pQuarter.y, box.y + 2, box.y + box.height - 2);
 
-  await expect
-    .poll(async () => {
-      return await page.evaluate(() => {
-        const figs =
-          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
-        const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
-        const base = list.find((f) => f.id === "fig_base") ?? null;
-        return base?.piques?.length ?? 0;
-      });
-    })
-    .toBe(0);
+  await page.mouse.move(xQuarter, yQuarter);
+  await page.mouse.click(xQuarter, yQuarter);
 
-  await page.mouse.move(x, y);
-  await page.mouse.click(x, y);
-
-  await expect
-    .poll(async () => {
-      return await page.evaluate(() => {
-        const figs =
-          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
-        const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
-        const base = list.find((f) => f.id === "fig_base") ?? null;
-        return base?.piques?.length ?? 0;
-      });
-    })
-    .toBe(1);
-
-  // Move again to ensure hover detection runs, then click to remove.
-  await page.mouse.move(x + 1, y + 1);
-  await page.mouse.move(x, y);
-  await page.mouse.click(x, y);
+  await page.mouse.move(xMid, yMid);
+  await page.mouse.click(xMid, yMid);
 
   await expect
     .poll(async () => {

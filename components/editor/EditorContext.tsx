@@ -86,6 +86,12 @@ function mirrorFigureAcrossLinePreserveId(
     y: 0,
     rotation: 0,
     nodes: mirroredNodes,
+    piques: original.piques
+      ? original.piques.map((p) => ({
+          ...p,
+          side: (p.side === -1 ? 1 : -1) as 1 | -1,
+        }))
+      : undefined,
   };
 
   if (!anchorNodeId) return baseMirrored;
