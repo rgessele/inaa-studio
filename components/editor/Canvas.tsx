@@ -6179,8 +6179,27 @@ export default function Canvas() {
                     });
                   }}
                   onDragMove={(ev) => {
-                    const nx = ev.target.x();
-                    const ny = ev.target.y();
+                    let nx = ev.target.x();
+                    let ny = ev.target.y();
+
+                    // Shift: lock handle angle in 15° increments around the node.
+                    const shiftKey =
+                      ((ev.evt as unknown as { shiftKey?: boolean } | undefined)
+                        ?.shiftKey ??
+                        false) === true;
+                    if (shiftKey) {
+                      const dx0 = nx - n.x;
+                      const dy0 = ny - n.y;
+                      const d0 = Math.hypot(dx0, dy0);
+                      if (Number.isFinite(d0) && d0 > 1e-6) {
+                        const step = (15 * Math.PI) / 180;
+                        const a = Math.atan2(dy0, dx0);
+                        const snapped = Math.round(a / step) * step;
+                        nx = n.x + Math.cos(snapped) * d0;
+                        ny = n.y + Math.sin(snapped) * d0;
+                        ev.target.position({ x: nx, y: ny });
+                      }
+                    }
                     setFigures((prev) =>
                       prev.map((f) => {
                         if (f.id !== selectedFigure.id) return f;
@@ -6244,8 +6263,27 @@ export default function Canvas() {
                     });
                   }}
                   onDragMove={(ev) => {
-                    const nx = ev.target.x();
-                    const ny = ev.target.y();
+                    let nx = ev.target.x();
+                    let ny = ev.target.y();
+
+                    // Shift: lock handle angle in 15° increments around the node.
+                    const shiftKey =
+                      ((ev.evt as unknown as { shiftKey?: boolean } | undefined)
+                        ?.shiftKey ??
+                        false) === true;
+                    if (shiftKey) {
+                      const dx0 = nx - n.x;
+                      const dy0 = ny - n.y;
+                      const d0 = Math.hypot(dx0, dy0);
+                      if (Number.isFinite(d0) && d0 > 1e-6) {
+                        const step = (15 * Math.PI) / 180;
+                        const a = Math.atan2(dy0, dx0);
+                        const snapped = Math.round(a / step) * step;
+                        nx = n.x + Math.cos(snapped) * d0;
+                        ny = n.y + Math.sin(snapped) * d0;
+                        ev.target.position({ x: nx, y: ny });
+                      }
+                    }
                     setFigures((prev) =>
                       prev.map((f) => {
                         if (f.id !== selectedFigure.id) return f;

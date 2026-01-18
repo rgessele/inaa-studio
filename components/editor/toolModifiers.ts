@@ -33,6 +33,11 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
   ],
   node: [
     {
+      key: "shift",
+      label: { mac: "⇧", win: "Shift" },
+      descriptionPtBr: "Travar ângulo (15°) ao arrastar",
+    },
+    {
       key: "alt",
       label: { mac: "⌥", win: "Alt" },
       descriptionPtBr: "Travar prévia de split no meio",
