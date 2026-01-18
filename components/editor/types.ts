@@ -192,6 +192,9 @@ export interface Figure {
     // When true, the mirror copy is auto-updated from the original.
     // When false, both sides become independent/editable.
     sync?: boolean;
+    // Node id used as the "hinge" anchor when mirroring.
+    // The mirrored copy is translated so that this node coincides between original and mirror.
+    anchorNodeId?: string;
     axisPointWorld: { x: number; y: number };
     // Unit direction vector of the mirror axis line in world coords.
     axisDirWorld: { x: number; y: number };

@@ -947,19 +947,144 @@ function mirrorVec2AcrossLine(p: Vec2, axisPoint: Vec2, axisDirUnit: Vec2): Vec2
   return add(axisPoint, sub(proj, perpV));
 }
 
-function getEdgeTangentWorld(figure: Figure, edge: FigureEdge, t: number): Vec2 {
-  const pts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 1 : 60);
-  if (pts.length < 2) return { x: 1, y: 0 };
+type MirrorSide = "left" | "right" | "top" | "bottom";
 
-  const idx = Math.round(clamp(t, 0, 1) * (pts.length - 1));
-  const i0 = Math.max(0, idx - 1);
-  const i1 = Math.min(pts.length - 1, idx + 1);
-  const p0w = figureLocalToWorld(figure, pts[i0]);
-  const p1w = figureLocalToWorld(figure, pts[i1]);
-  const v = sub(p1w, p0w);
-  const l = len(v);
-  if (!Number.isFinite(l) || l < 1e-6) return { x: 1, y: 0 };
-  return mul(v, 1 / l);
+function worldToScreen(
+  world: Vec2,
+  view: { position: { x: number; y: number }; scale: number }
+): Vec2 {
+  return {
+    x: world.x * view.scale + view.position.x,
+    y: world.y * view.scale + view.position.y,
+  };
+}
+
+function pickMirrorSideByScreenBBox(
+  figure: Figure,
+  pWorld: Vec2,
+  view: { position: { x: number; y: number }; scale: number }
+): MirrorSide {
+  const bb = figureWorldBoundingBox(figure);
+  if (!bb) return "right";
+
+  const left = bb.x * view.scale + view.position.x;
+  const right = (bb.x + bb.width) * view.scale + view.position.x;
+  const top = bb.y * view.scale + view.position.y;
+  const bottom = (bb.y + bb.height) * view.scale + view.position.y;
+
+  const s = worldToScreen(pWorld, view);
+  const dLeft = Math.abs(s.x - left);
+  const dRight = Math.abs(right - s.x);
+  const dTop = Math.abs(s.y - top);
+  const dBottom = Math.abs(bottom - s.y);
+
+  const min = Math.min(dLeft, dRight, dTop, dBottom);
+  if (min === dRight) return "right";
+  if (min === dLeft) return "left";
+  if (min === dBottom) return "bottom";
+  return "top";
+}
+
+function axisDirForSide(side: MirrorSide): Vec2 {
+  // Right/Left => horizontal flip => mirror across vertical axis (dir is vertical).
+  if (side === "right" || side === "left") return { x: 0, y: 1 };
+  // Top/Bottom => vertical flip => mirror across horizontal axis (dir is horizontal).
+  return { x: 1, y: 0 };
+}
+
+function pickAnchorNodeIdForEdgeSide(
+  figure: Figure,
+  edge: FigureEdge,
+  side: MirrorSide,
+  view: { position: { x: number; y: number }; scale: number }
+): string {
+  const nFrom = figure.nodes.find((n) => n.id === edge.from) ?? null;
+  const nTo = figure.nodes.find((n) => n.id === edge.to) ?? null;
+  if (!nFrom || !nTo) return edge.to;
+
+  const pFromW = figureLocalToWorld(figure, { x: nFrom.x, y: nFrom.y });
+  const pToW = figureLocalToWorld(figure, { x: nTo.x, y: nTo.y });
+  const sFrom = worldToScreen(pFromW, view);
+  const sTo = worldToScreen(pToW, view);
+
+  const EPS = 0.5;
+
+  const pickRightmost = () => {
+    if (sFrom.x > sTo.x + EPS) return nFrom.id;
+    if (sTo.x > sFrom.x + EPS) return nTo.id;
+    // Tie-break: choose lower on screen.
+    if (sFrom.y > sTo.y + EPS) return nFrom.id;
+    if (sTo.y > sFrom.y + EPS) return nTo.id;
+    return edge.to;
+  };
+
+  const pickLeftmost = () => {
+    if (sFrom.x < sTo.x - EPS) return nFrom.id;
+    if (sTo.x < sFrom.x - EPS) return nTo.id;
+    // Tie-break: choose lower on screen.
+    if (sFrom.y > sTo.y + EPS) return nFrom.id;
+    if (sTo.y > sFrom.y + EPS) return nTo.id;
+    return edge.to;
+  };
+
+  const pickTopmost = () => {
+    if (sFrom.y < sTo.y - EPS) return nFrom.id;
+    if (sTo.y < sFrom.y - EPS) return nTo.id;
+    // Tie-break: choose rightmost on screen.
+    if (sFrom.x > sTo.x + EPS) return nFrom.id;
+    if (sTo.x > sFrom.x + EPS) return nTo.id;
+    return edge.to;
+  };
+
+  const pickBottommost = () => {
+    if (sFrom.y > sTo.y + EPS) return nFrom.id;
+    if (sTo.y > sFrom.y + EPS) return nTo.id;
+    // Tie-break: choose rightmost on screen.
+    if (sFrom.x > sTo.x + EPS) return nFrom.id;
+    if (sTo.x > sFrom.x + EPS) return nTo.id;
+    return edge.to;
+  };
+
+  if (side === "right") return pickRightmost();
+  if (side === "left") return pickLeftmost();
+  if (side === "top") return pickTopmost();
+  return pickBottommost();
+}
+
+function translateFigureGeometryWorld(figure: Figure, delta: Vec2): Figure {
+  if (!Number.isFinite(delta.x) || !Number.isFinite(delta.y)) return figure;
+  if (Math.abs(delta.x) < 1e-12 && Math.abs(delta.y) < 1e-12) return figure;
+  return {
+    ...figure,
+    nodes: figure.nodes.map((n) => ({
+      ...n,
+      x: n.x + delta.x,
+      y: n.y + delta.y,
+      inHandle: n.inHandle
+        ? { x: n.inHandle.x + delta.x, y: n.inHandle.y + delta.y }
+        : undefined,
+      outHandle: n.outHandle
+        ? { x: n.outHandle.x + delta.x, y: n.outHandle.y + delta.y }
+        : undefined,
+    })),
+  };
+}
+
+function mirrorFigureAcrossLineAnchored(
+  figure: Figure,
+  axisPointWorld: Vec2,
+  axisDirWorld: Vec2,
+  anchorNodeId: string
+): Figure {
+  const mirrored = mirrorFigureAcrossLine(figure, axisPointWorld, axisDirWorld);
+  const origAnchor = figure.nodes.find((n) => n.id === anchorNodeId) ?? null;
+  const mirAnchor = mirrored.nodes.find((n) => n.id === anchorNodeId) ?? null;
+  if (!origAnchor || !mirAnchor) return mirrored;
+
+  const origWorld = figureLocalToWorld(figure, { x: origAnchor.x, y: origAnchor.y });
+  const mirWorld = { x: mirAnchor.x, y: mirAnchor.y };
+  const delta = { x: origWorld.x - mirWorld.x, y: origWorld.y - mirWorld.y };
+  return translateFigureGeometryWorld(mirrored, delta);
 }
 
 function mirrorFigureAcrossLine(
@@ -6085,9 +6210,23 @@ export default function Canvas() {
     const edge = fig.edges.find((e) => e.id === hoveredEdge.edgeId) ?? null;
     if (!edge) return null;
 
-    const axisPointWorld = figureLocalToWorld(fig, hoveredEdge.pointLocal);
-    const axisDirUnit = getEdgeTangentWorld(fig, edge, hoveredEdge.t);
-    const mirrored = mirrorFigureAcrossLine(fig, axisPointWorld, axisDirUnit);
+    const hoverWorld = figureLocalToWorld(fig, hoveredEdge.pointLocal);
+    const side = pickMirrorSideByScreenBBox(fig, hoverWorld, { position, scale });
+    const axisDirUnit = axisDirForSide(side);
+    const anchorNodeId = pickAnchorNodeIdForEdgeSide(fig, edge, side, {
+      position,
+      scale,
+    });
+    const anchorNode = fig.nodes.find((n) => n.id === anchorNodeId) ?? null;
+    const axisPointWorld = anchorNode
+      ? figureLocalToWorld(fig, { x: anchorNode.x, y: anchorNode.y })
+      : hoverWorld;
+    const mirrored = mirrorFigureAcrossLineAnchored(
+      fig,
+      axisPointWorld,
+      axisDirUnit,
+      anchorNodeId
+    );
 
     const viewW = size.width / scale;
     const viewH = size.height / scale;
@@ -6146,7 +6285,7 @@ export default function Canvas() {
         />
       </>
     );
-  }, [figures, hoveredEdge, previewDash, previewStroke, scale, size.height, size.width, tool]);
+  }, [figures, hoveredEdge, position, previewDash, previewStroke, scale, size.height, size.width, tool]);
 
   const unmirrorPreviewOverlay = useMemo(() => {
     if (tool !== "unfold") return null;
@@ -7096,20 +7235,33 @@ export default function Canvas() {
                         null;
                       if (!edge) return;
 
-                      const axisPointWorld = figureLocalToWorld(
-                        base,
-                        hit.best.pointLocal
-                      );
-                      const axisDirUnit = getEdgeTangentWorld(
-                        base,
-                        edge,
-                        hit.best.t
-                      );
+                      const hoverWorld = figureLocalToWorld(base, hit.best.pointLocal);
+                      const side = pickMirrorSideByScreenBBox(base, hoverWorld, {
+                        position,
+                        scale,
+                      });
 
-                      const mirrored = mirrorFigureAcrossLine(
+                      const anchorNodeId = pickAnchorNodeIdForEdgeSide(base, edge, side, {
+                        position,
+                        scale,
+                      });
+
+                      const anchorNode =
+                        base.nodes.find((n) => n.id === anchorNodeId) ?? null;
+
+                      const axisPointWorld = anchorNode
+                        ? figureLocalToWorld(base, {
+                            x: anchorNode.x,
+                            y: anchorNode.y,
+                          })
+                        : hoverWorld;
+                      const axisDirUnit = axisDirForSide(side);
+
+                      const mirrored = mirrorFigureAcrossLineAnchored(
                         base,
                         axisPointWorld,
-                        axisDirUnit
+                        axisDirUnit,
+                        anchorNodeId
                       );
 
                       const pairId = id("ml");
@@ -7120,6 +7272,7 @@ export default function Canvas() {
                           otherId: mirrored.id,
                           role: "original",
                           sync: true,
+                          anchorNodeId,
                           axisPointWorld,
                           axisDirWorld: axisDirUnit,
                         },
@@ -7131,6 +7284,7 @@ export default function Canvas() {
                           otherId: base.id,
                           role: "mirror",
                           sync: true,
+                          anchorNodeId,
                           axisPointWorld,
                           axisDirWorld: axisDirUnit,
                         },

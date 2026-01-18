@@ -44,7 +44,8 @@ function mirrorFigureAcrossLinePreserveId(
   original: Figure,
   mirrorId: string,
   axisPointWorld: Vec2,
-  axisDirWorld: Vec2
+  axisDirWorld: Vec2,
+  anchorNodeId?: string
 ): Figure {
   const axisDirUnit = (() => {
     const l = len(axisDirWorld);
@@ -78,13 +79,46 @@ function mirrorFigureAcrossLinePreserveId(
     };
   });
 
-  return {
+  const baseMirrored: Figure = {
     ...original,
     id: mirrorId,
     x: 0,
     y: 0,
     rotation: 0,
     nodes: mirroredNodes,
+  };
+
+  if (!anchorNodeId) return baseMirrored;
+
+  const origAnchor = original.nodes.find((n) => n.id === anchorNodeId) ?? null;
+  const mirAnchor = mirroredNodes.find((n) => n.id === anchorNodeId) ?? null;
+  if (!origAnchor || !mirAnchor) return baseMirrored;
+
+  const origAnchorWorld = figureLocalToWorld(original, {
+    x: origAnchor.x,
+    y: origAnchor.y,
+  });
+  const mirAnchorWorld = { x: mirAnchor.x, y: mirAnchor.y };
+  const dx = origAnchorWorld.x - mirAnchorWorld.x;
+  const dy = origAnchorWorld.y - mirAnchorWorld.y;
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return baseMirrored;
+  if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) return baseMirrored;
+
+  const translatedNodes = mirroredNodes.map((n) => ({
+    ...n,
+    x: n.x + dx,
+    y: n.y + dy,
+    inHandle: n.inHandle
+      ? { x: n.inHandle.x + dx, y: n.inHandle.y + dy }
+      : undefined,
+    outHandle: n.outHandle
+      ? { x: n.outHandle.x + dx, y: n.outHandle.y + dy }
+      : undefined,
+  }));
+
+  return {
+    ...baseMirrored,
+    nodes: translatedNodes,
   };
 }
 
@@ -622,11 +656,22 @@ export function EditorProvider({ children }: { children: ReactNode }) {
             continue;
           }
 
+          const anchorNodeId = link.anchorNodeId ?? mirrorLink.anchorNodeId;
+          const axisPointFromAnchor = (() => {
+            if (!anchorNodeId) return null;
+            const node = original.nodes.find((n) => n.id === anchorNodeId) ?? null;
+            if (!node) return null;
+            return figureLocalToWorld(original, { x: node.x, y: node.y });
+          })();
+
+          const axisPointWorld = axisPointFromAnchor ?? link.axisPointWorld;
+
           const computed = mirrorFigureAcrossLinePreserveId(
             original,
             mirror.id,
-            link.axisPointWorld,
-            link.axisDirWorld
+            axisPointWorld,
+            link.axisDirWorld,
+            anchorNodeId
           );
 
           const nextMirror: Figure = {
@@ -634,12 +679,30 @@ export function EditorProvider({ children }: { children: ReactNode }) {
             mirrorLink: {
               ...mirrorLink,
               sync: true,
-              axisPointWorld: link.axisPointWorld,
+              axisPointWorld,
               axisDirWorld: link.axisDirWorld,
+              anchorNodeId,
             },
           };
 
           replacements.set(mirror.id, nextMirror);
+
+          // Keep the original's axisPointWorld in sync with the current anchor node
+          // so overlays and future syncs stay consistent.
+          if (
+            axisPointFromAnchor &&
+            (link.axisPointWorld.x !== axisPointWorld.x ||
+              link.axisPointWorld.y !== axisPointWorld.y)
+          ) {
+            replacements.set(original.id, {
+              ...original,
+              mirrorLink: {
+                ...link,
+                axisPointWorld,
+                anchorNodeId,
+              },
+            });
+          }
         }
 
         if (!replacements.size) return nextFigs;
