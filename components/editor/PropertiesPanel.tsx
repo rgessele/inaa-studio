@@ -34,6 +34,7 @@ import {
   formatPtBrDecimalFixed,
   parsePtBrDecimal,
 } from "@/utils/numericInput";
+import { toast } from "@/utils/toast";
 import { makeSeamFigure } from "./seamFigure";
 
 export function PropertiesPanel() {
@@ -1669,31 +1670,15 @@ export function PropertiesPanel() {
   return (
     <aside
       className={
-        "hidden lg:flex relative overflow-hidden border-l border-gray-200 dark:border-gray-700 z-10 shrink-0 transition-[width] duration-200 ease-in-out " +
+        "hidden lg:flex flex-col relative overflow-hidden border-l border-gray-200 dark:border-gray-700 z-10 shrink-0 transition-[width] duration-200 ease-in-out " +
         (collapsed
           ? "w-8 bg-transparent"
           : "w-72 bg-surface-light dark:bg-surface-dark shadow-subtle")
       }
     >
-      <button
-        type="button"
-        aria-label={collapsed ? "Exibir painel" : "Recolher painel"}
-        onClick={() => setCollapsed((value) => !value)}
-        className={
-          "absolute left-1.5 bottom-2 rounded p-1 transition-colors " +
-          "z-20 " +
-          "text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 " +
-          "hover:bg-gray-200/70 dark:hover:bg-gray-700/60"
-        }
-      >
-        <span className="material-symbols-outlined text-[18px]">
-          {collapsed ? "chevron_left" : "chevron_right"}
-        </span>
-      </button>
-
       <div
         className={
-          "flex w-72 flex-col transition-all duration-200 ease-in-out " +
+          "flex-1 flex w-72 flex-col transition-all duration-200 ease-in-out " +
           (collapsed
             ? "translate-x-full opacity-0 pointer-events-none"
             : "translate-x-0 opacity-100")
@@ -3489,11 +3474,103 @@ export function PropertiesPanel() {
             </div>
           </>
         ) : (
-          <div className="p-4 text-center text-gray-500 text-xs">
+          <div className="flex-1 p-4 text-center text-gray-500 text-xs">
             Nenhum objeto selecionado
           </div>
         )}
       </div>
+
+      <div
+        className={
+          "flex items-center gap-1.5 border-t border-gray-200 dark:border-gray-700 " +
+          "shrink-0 " +
+          (collapsed
+            ? "bg-transparent px-1.5 py-1.5"
+            : "bg-surface-light dark:bg-surface-dark px-2 py-2")
+        }
+      >
+        <button
+          type="button"
+          aria-label={collapsed ? "Exibir painel" : "Recolher painel"}
+          onClick={() => setCollapsed((value) => !value)}
+          className={
+            "rounded p-1 transition-colors shrink-0 " +
+            "text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 " +
+            "hover:bg-gray-200/70 dark:hover:bg-gray-700/60"
+          }
+        >
+          <span className="material-symbols-outlined text-[18px]">
+            {collapsed ? "chevron_left" : "chevron_right"}
+          </span>
+        </button>
+
+        {!collapsed ? <BuildInfoFooter /> : null}
+      </div>
     </aside>
+  );
+}
+
+function BuildInfoFooter() {
+  const appVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
+  const vercelEnv = process.env.NEXT_PUBLIC_VERCEL_ENV ?? "";
+  const gitSha = process.env.NEXT_PUBLIC_GIT_SHA ?? "";
+  const gitRef = process.env.NEXT_PUBLIC_GIT_REF ?? "";
+  const gitCommitCount = process.env.NEXT_PUBLIC_GIT_COMMIT_COUNT ?? "";
+  const buildTimeIso = process.env.NEXT_PUBLIC_BUILD_TIME_ISO ?? "";
+
+  const envLabel = vercelEnv.trim() ? vercelEnv.trim() : "local";
+  const shaShort = gitSha.trim() ? gitSha.trim().slice(0, 7) : "";
+  const countLabel = gitCommitCount.trim() ? `+${gitCommitCount.trim()}` : "";
+
+  const display = `v${appVersion}${countLabel}${
+    shaShort ? ` (${shaShort})` : ""
+  } · ${envLabel}`;
+
+  const details = [
+    `v${appVersion}${countLabel}`,
+    shaShort ? `sha ${shaShort}` : null,
+    gitRef.trim() ? `ref ${gitRef.trim()}` : null,
+    envLabel ? `env ${envLabel}` : null,
+    buildTimeIso.trim() ? `build ${buildTimeIso.trim()}` : null,
+  ]
+    .filter((x): x is string => typeof x === "string" && x.length > 0)
+    .join(" · ");
+
+  const copyText = [
+    `version=${appVersion}${countLabel}`,
+    gitSha.trim() ? `sha=${gitSha.trim()}` : null,
+    gitRef.trim() ? `ref=${gitRef.trim()}` : null,
+    vercelEnv.trim() ? `env=${vercelEnv.trim()}` : null,
+    buildTimeIso.trim() ? `buildTime=${buildTimeIso.trim()}` : null,
+  ]
+    .filter((x): x is string => typeof x === "string" && x.length > 0)
+    .join("\n");
+
+  return (
+    <button
+      type="button"
+      className={
+        "min-w-0 flex-1 " +
+        "px-2 py-1.5 text-left text-[10px] " +
+        "text-gray-500 dark:text-gray-400 " +
+        "hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors rounded "
+      }
+      title={details}
+      onClick={async () => {
+        try {
+          if (!copyText.trim()) {
+            toast("Versão indisponível para copiar.", "error");
+            return;
+          }
+          await navigator.clipboard.writeText(copyText);
+          toast("Versão copiada.", "success");
+        } catch {
+          toast("Não foi possível copiar a versão.", "error");
+        }
+      }}
+    >
+      <span className="font-bold">Versão</span>{" "}
+      <span className="truncate whitespace-nowrap">{display}</span>
+    </button>
   );
 }
