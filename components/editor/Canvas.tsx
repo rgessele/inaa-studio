@@ -8104,20 +8104,31 @@ export default function Canvas() {
 
             <Transformer
               ref={transformerRef}
-              enabledAnchors={
-                tool === "select"
-                  ? [
-                      "top-left",
-                      "top-center",
-                      "top-right",
-                      "middle-left",
-                      "middle-right",
-                      "bottom-left",
-                      "bottom-center",
-                      "bottom-right",
-                    ]
-                  : []
-              }
+              enabledAnchors={(() => {
+                if (tool !== "select") return [];
+
+                // Level-of-detail at low zoom: keep the UI clean and avoid
+                // oversized handles relative to tiny shapes.
+                if (scale <= 0.45) {
+                  return [
+                    "top-left",
+                    "top-right",
+                    "bottom-left",
+                    "bottom-right",
+                  ];
+                }
+
+                return [
+                  "top-left",
+                  "top-center",
+                  "top-right",
+                  "middle-left",
+                  "middle-right",
+                  "bottom-left",
+                  "bottom-center",
+                  "bottom-right",
+                ];
+              })()}
               rotateEnabled={tool === "select"}
               keepRatio={transformMods.shift}
               centeredScaling={transformMods.alt}
@@ -8131,12 +8142,43 @@ export default function Canvas() {
               }
               rotateSnapTolerance={4}
               flipEnabled={false}
-              anchorSize={10 / scale}
+              // Sizes are specified in screen px, then converted to world-space
+              // so the UI remains stable across zoom levels.
+              anchorSize={(() => {
+                const s = Math.max(1e-6, scale);
+                const t = Math.sqrt(Math.min(1, s));
+                // Smaller handles overall; slightly smaller at low zoom,
+                // but clamped so it stays clickable.
+                const screenPx = Math.max(6, Math.min(9, 9 * t));
+                return screenPx / s;
+              })()}
               borderStroke="#2563eb"
               anchorStroke="#2563eb"
               anchorFill="#ffffff"
-              borderStrokeWidth={1 / scale}
-              anchorStrokeWidth={1 / scale}
+              borderStrokeWidth={(() => {
+                const s = Math.max(1e-6, scale);
+                const t = Math.sqrt(Math.min(1, s));
+                const screenPx = Math.max(0.6, Math.min(1.0, 0.9 * t));
+                return screenPx / s;
+              })()}
+              anchorStrokeWidth={(() => {
+                const s = Math.max(1e-6, scale);
+                const t = Math.sqrt(Math.min(1, s));
+                const screenPx = Math.max(0.6, Math.min(1.0, 0.9 * t));
+                return screenPx / s;
+              })()}
+              padding={(() => {
+                const s = Math.max(1e-6, scale);
+                const t = Math.sqrt(Math.min(1, s));
+                const screenPx = Math.max(2, Math.min(6, 5 * t));
+                return screenPx / s;
+              })()}
+              rotateAnchorOffset={(() => {
+                const s = Math.max(1e-6, scale);
+                const t = Math.sqrt(Math.min(1, s));
+                const screenPx = Math.max(12, Math.min(22, 18 * t));
+                return screenPx / s;
+              })()}
               boundBoxFunc={(oldBox, newBox) => {
                 if (newBox.width < 5 || newBox.height < 5) return oldBox;
                 return newBox;
