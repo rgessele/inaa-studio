@@ -14,6 +14,9 @@ export interface ExportSettings {
   paperSize: PaperSize;
   orientation: PaperOrientation;
   marginCm: number;
+  // When true, draw page border + margin guides on PDF export.
+  // This is independent from canvas page guides.
+  showPageGuides: boolean;
   includeBlankPages: boolean;
   dashedLines: boolean;
   toolFilter: Record<
@@ -51,6 +54,7 @@ export function createDefaultExportSettings(): ExportSettings {
     paperSize: "A4",
     orientation: "portrait",
     marginCm: 1,
+    showPageGuides: true,
     includeBlankPages: true,
     dashedLines: false,
     toolFilter: {

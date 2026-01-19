@@ -1208,6 +1208,16 @@ export function EditorToolbar() {
                     }
                   />
                   <SwitchRow
+                    label="Linhas da página (margens)"
+                    checked={exportSettings.showPageGuides}
+                    onCheckedChange={(checked) =>
+                      setExportSettings((prev) => ({
+                        ...prev,
+                        showPageGuides: checked,
+                      }))
+                    }
+                  />
+                  <SwitchRow
                     label="Linhas tracejadas"
                     checked={exportSettings.dashedLines}
                     onCheckedChange={(checked) =>

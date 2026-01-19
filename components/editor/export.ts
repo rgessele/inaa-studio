@@ -1274,10 +1274,24 @@ export async function generateTiledPDF(
     tileStage.destroy();
 
     if (pageNum > 1) {
-      pdf.addPage(
-        [pageFormatWidthCm, pageFormatHeightCm],
-        resolved.orientation
-      );
+      pdf.addPage([pageFormatWidthCm, pageFormatHeightCm], resolved.orientation);
+    }
+
+    // Page guide lines (paper border + margin rectangle)
+    if (resolved.showPageGuides) {
+      pdf.setDrawColor(140, 140, 140);
+      pdf.setLineWidth(0.03);
+
+      // Outer paper border.
+      pdf.rect(0, 0, paperWidthCm, paperHeightCm, "S");
+
+      // Inner margin guide (useful area).
+      if (marginCm > 0) {
+        // Slightly darker inner guide.
+        pdf.setDrawColor(110, 110, 110);
+        pdf.setLineWidth(0.03);
+        pdf.rect(marginCm, marginCm, safeWidthCm, safeHeightCm, "S");
+      }
     }
     pdf.addImage(dataURL, "PNG", marginCm, marginCm, safeWidthCm, safeHeightCm);
 
