@@ -726,6 +726,9 @@ export async function generateTiledPDF(
           dash: resolved.dashedLines ? [12, 6] : figure.dash,
           lineCap: "round",
           lineJoin: "round",
+          perfectDrawEnabled: false,
+          shadowForStrokeEnabled: false,
+          listening: false,
         })
       );
 
@@ -762,6 +765,8 @@ export async function generateTiledPDF(
               lineJoin: "round",
               listening: false,
               name: "inaa-dart-base-mask",
+              perfectDrawEnabled: false,
+              shadowForStrokeEnabled: false,
             })
           );
           tileLayer.add(
@@ -776,6 +781,8 @@ export async function generateTiledPDF(
               lineJoin: "round",
               listening: false,
               name: "inaa-dart-base",
+              perfectDrawEnabled: false,
+              shadowForStrokeEnabled: false,
             })
           );
 
@@ -796,6 +803,8 @@ export async function generateTiledPDF(
               lineJoin: "round",
               listening: false,
               name: "inaa-dart-leg-a",
+              perfectDrawEnabled: false,
+              shadowForStrokeEnabled: false,
             })
           );
           tileLayer.add(
@@ -814,6 +823,8 @@ export async function generateTiledPDF(
               lineJoin: "round",
               listening: false,
               name: "inaa-dart-leg-b",
+              perfectDrawEnabled: false,
+              shadowForStrokeEnabled: false,
             })
           );
 
@@ -836,6 +847,8 @@ export async function generateTiledPDF(
               lineJoin: "round",
               listening: false,
               name: "inaa-dart-height",
+              perfectDrawEnabled: false,
+              shadowForStrokeEnabled: false,
             })
           );
 
@@ -938,95 +951,105 @@ export async function generateTiledPDF(
       }
 
       if (shouldIncludeMeasures) {
-        // Edge length labels (matches MeasureOverlay intent; no hover/selection UI)
-        const fontSize = 11;
-        const textWidth = 120;
+        // Seam allowance figures can contain many small edges (especially offset circles
+        // approximated as polylines). Rendering per-edge length labels for them creates
+        // dozens of overlapping labels and looks like a blurred/dragged stroke in print.
+        // Seam figures already get a dedicated "Margem de Costura" label (below).
+        const isSeam = figure.kind === "seam";
 
-        for (const edge of figure.edges) {
-          const layout = computeEdgeMeasureLayoutWorld(figure, edge.id);
-          if (!layout) continue;
+        if (!isSeam) {
+          // Edge length labels (matches MeasureOverlay intent; no hover/selection UI)
+          const fontSize = 11;
+          const textWidth = 120;
 
-          const fallbackLen = edgeWorldLengthFallbackPx(figure, edge.id);
-          const lengthPx = safeEdgeLengthPx(figure, edge.id, fallbackLen);
-          const label = formatCm(pxToCm(lengthPx), 2);
+          for (const edge of figure.edges) {
+            const layout = computeEdgeMeasureLayoutWorld(figure, edge.id);
+            if (!layout) continue;
 
-          if (layout.isShortEdge) {
+            const fallbackLen = edgeWorldLengthFallbackPx(figure, edge.id);
+            const lengthPx = safeEdgeLengthPx(figure, edge.id, fallbackLen);
+            const label = formatCm(pxToCm(lengthPx), 2);
+
+            if (layout.isShortEdge) {
+              tileLayer.add(
+                new Konva.Line({
+                  points: [
+                    layout.midWorld.x - tileX,
+                    layout.midWorld.y - tileY,
+                    layout.posWorld.x - tileX,
+                    layout.posWorld.y - tileY,
+                  ],
+                  stroke: "#000000",
+                  strokeWidth: 1,
+                  dash: [4, 4],
+                  opacity: 0.5,
+                  listening: false,
+                  lineCap: "round",
+                  name: "inaa-measure-leader",
+                  perfectDrawEnabled: false,
+                  shadowForStrokeEnabled: false,
+                })
+              );
+            }
+
             tileLayer.add(
-              new Konva.Line({
-                points: [
-                  layout.midWorld.x - tileX,
-                  layout.midWorld.y - tileY,
-                  layout.posWorld.x - tileX,
-                  layout.posWorld.y - tileY,
-                ],
-                stroke: "#000000",
-                strokeWidth: 1,
-                dash: [4, 4],
-                opacity: 0.5,
+              new Konva.Text({
+                x: layout.posWorld.x - tileX,
+                y: layout.posWorld.y - tileY,
+                text: label,
+                fontSize,
+                fill: "#000000",
+                opacity: 0.75,
+                rotation: layout.angleDeg,
+                width: textWidth,
+                align: "center",
+                offsetX: textWidth / 2,
+                offsetY: fontSize / 2,
                 listening: false,
-                lineCap: "round",
-                name: "inaa-measure-leader",
+                name: "inaa-measure-label",
               })
             );
           }
 
-          tileLayer.add(
-            new Konva.Text({
-              x: layout.posWorld.x - tileX,
-              y: layout.posWorld.y - tileY,
-              text: label,
-              fontSize,
-              fill: "#000000",
-              opacity: 0.75,
-              rotation: layout.angleDeg,
-              width: textWidth,
-              align: "center",
-              offsetX: textWidth / 2,
-              offsetY: fontSize / 2,
-              listening: false,
-              name: "inaa-measure-label",
-            })
-          );
-        }
+          // Circle summary block (radius/circumference)
+          if (figure.tool === "circle" && figure.measures?.circle) {
+            const c = figure.measures.circle;
+            const isCircle = c.radiusPx != null;
+            const lines: string[] = [];
+            if (isCircle && c.radiusPx != null) {
+              lines.push(`Raio: ${formatCm(pxToCm(c.radiusPx), 2)}`);
+              lines.push(`Circ.: ${formatCm(pxToCm(c.circumferencePx), 2)}`);
+            } else {
+              lines.push(`Raio X: ${formatCm(pxToCm(c.rxPx), 2)}`);
+              lines.push(`Raio Y: ${formatCm(pxToCm(c.ryPx), 2)}`);
+              lines.push(
+                `Circ. (aprox.): ${formatCm(pxToCm(c.circumferencePx), 2)}`
+              );
+            }
 
-        // Circle summary block (radius/circumference)
-        if (figure.tool === "circle" && figure.measures?.circle) {
-          const c = figure.measures.circle;
-          const isCircle = c.radiusPx != null;
-          const lines: string[] = [];
-          if (isCircle && c.radiusPx != null) {
-            lines.push(`Raio: ${formatCm(pxToCm(c.radiusPx), 2)}`);
-            lines.push(`Circ.: ${formatCm(pxToCm(c.circumferencePx), 2)}`);
-          } else {
-            lines.push(`Raio X: ${formatCm(pxToCm(c.rxPx), 2)}`);
-            lines.push(`Raio Y: ${formatCm(pxToCm(c.ryPx), 2)}`);
-            lines.push(
-              `Circ. (aprox.): ${formatCm(pxToCm(c.circumferencePx), 2)}`
+            const centroidWorld = figureLocalToWorld(
+              figure,
+              figureCentroidLocal(figure)
+            );
+            const text = lines.join("\n");
+
+            tileLayer.add(
+              new Konva.Text({
+                x: centroidWorld.x - tileX,
+                y: centroidWorld.y - tileY - (13 * lines.length) / 2,
+                text,
+                fontSize,
+                lineHeight: 1.15,
+                fill: "#000000",
+                opacity: 0.75,
+                width: 150,
+                align: "center",
+                offsetX: 150 / 2,
+                listening: false,
+                name: "inaa-measure-label",
+              })
             );
           }
-
-          const centroidWorld = figureLocalToWorld(
-            figure,
-            figureCentroidLocal(figure)
-          );
-          const text = lines.join("\n");
-
-          tileLayer.add(
-            new Konva.Text({
-              x: centroidWorld.x - tileX,
-              y: centroidWorld.y - tileY - (13 * lines.length) / 2,
-              text,
-              fontSize,
-              lineHeight: 1.15,
-              fill: "#000000",
-              opacity: 0.75,
-              width: 150,
-              align: "center",
-              offsetX: 150 / 2,
-              listening: false,
-              name: "inaa-measure-label",
-            })
-          );
         }
 
         // Seam allowance labels ("Margem de Costura")
