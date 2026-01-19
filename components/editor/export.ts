@@ -551,7 +551,7 @@ export async function generateTiledPDF(
   const cols = Math.ceil(exportArea.width / safeWidthPx);
   const rows = Math.ceil(exportArea.height / safeHeightPx);
 
-  const tiles: Array<{ tileX: number; tileY: number }> = [];
+  const tiles: Array<{ tileX: number; tileY: number; row: number; col: number }> = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const tileX = exportArea.x + col * safeWidthPx;
@@ -571,7 +571,7 @@ export async function generateTiledPDF(
         if (!hasContent) continue;
       }
 
-      tiles.push({ tileX, tileY });
+      tiles.push({ tileX, tileY, row, col });
     }
   }
 
@@ -588,7 +588,7 @@ export async function generateTiledPDF(
   });
 
   let pageNum = 0;
-  for (const { tileX, tileY } of tiles) {
+  for (const { tileX, tileY, row, col } of tiles) {
     pageNum++;
 
     const container = document.createElement("div");
@@ -1244,6 +1244,23 @@ export async function generateTiledPDF(
 
     if (pageNum > 1) pdf.addPage();
     pdf.addImage(dataURL, "PNG", marginCm, marginCm, safeWidthCm, safeHeightCm);
+
+    // Page assembly guide (top-right, in the paper margin): row/col coordinate + page N/T.
+    // Drawn on the PDF (outside the tiled image) so it never overlaps the pattern.
+    {
+      const line = row + 1;
+      const column = col + 1;
+      const label = `L${line} C${column} · Pág. ${pageNum}/${totalPages}`;
+
+      // Place it in the top-right margin area.
+      const xCm = Math.max(0.1, paperWidthCm - 0.3);
+      const yCm = Math.max(0.35, Math.min(marginCm - 0.2, 0.8));
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(10);
+      pdf.setTextColor(30, 30, 30);
+      pdf.text(label, xCm, yCm, { align: "right" });
+    }
   }
 
   pdf.save(`inaa-pattern-${new Date().getTime()}.pdf`);

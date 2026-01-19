@@ -51,7 +51,7 @@ export function createDefaultExportSettings(): ExportSettings {
     paperSize: "A4",
     orientation: "portrait",
     marginCm: 1,
-    includeBlankPages: false,
+    includeBlankPages: true,
     dashedLines: false,
     toolFilter: {
       rectangle: true,
