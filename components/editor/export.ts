@@ -140,8 +140,80 @@ function computeDartBaseWorldPolyline(
 type PointLabelsExportOptions = {
   includePointLabels?: boolean;
   includeMeasures?: boolean;
+  includePatternName?: boolean;
+  includePiques?: boolean;
   pointLabelsMode?: PointLabelsMode;
 };
+
+function pointAndTangentAtT01(
+  points: Vec2[],
+  t01: number
+): { point: Vec2; tangentUnit: Vec2 } | null {
+  if (points.length < 2) return null;
+
+  const clamped = Math.max(0, Math.min(1, t01));
+
+  let total = 0;
+  const segLens: number[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i]!;
+    const b = points[i + 1]!;
+    const l = dist(a, b);
+    segLens.push(l);
+    total += l;
+  }
+
+  if (!(total > 1e-6)) {
+    const a = points[0]!;
+    const b = points[points.length - 1]!;
+    return { point: a, tangentUnit: norm(sub(b, a)) };
+  }
+
+  const target = clamped * total;
+  let acc = 0;
+  for (let i = 0; i < segLens.length; i++) {
+    const l = segLens[i]!;
+    const a = points[i]!;
+    const b = points[i + 1]!;
+
+    if (acc + l >= target || i === segLens.length - 1) {
+      const localT = l > 1e-6 ? (target - acc) / l : 0;
+      return { point: lerp(a, b, localT), tangentUnit: norm(sub(b, a)) };
+    }
+
+    acc += l;
+  }
+
+  const a = points[0]!;
+  const b = points[points.length - 1]!;
+  return { point: b, tangentUnit: norm(sub(b, a)) };
+}
+
+function computePiqueSegmentWorld(
+  figure: Figure,
+  pique: { edgeId: string; t01: number; lengthCm: number; side: 1 | -1 }
+): { aWorld: Vec2; bWorld: Vec2 } | null {
+  if (!figure.closed) return null;
+  const edge = figure.edges.find((e) => e.id === pique.edgeId) ?? null;
+  if (!edge) return null;
+
+  const ptsLocal = edgeLocalPoints(figure, edge, edge.kind === "line" ? 2 : 120);
+  if (ptsLocal.length < 2) return null;
+
+  const at = pointAndTangentAtT01(ptsLocal, pique.t01);
+  if (!at) return null;
+
+  const n = norm(perp(at.tangentUnit));
+  const side = pique.side === -1 ? -1 : 1;
+  const lengthPx = Math.max(0, (pique.lengthCm || 0.5) * PX_PER_CM);
+  const aLocal = at.point;
+  const bLocal = add(aLocal, mul(n, lengthPx * side));
+
+  return {
+    aWorld: figureLocalToWorld(figure, aLocal),
+    bWorld: figureLocalToWorld(figure, bLocal),
+  };
+}
 
 function safeEdgeLengthPx(fig: Figure, edgeId: string, fallbackPx: number) {
   const hit = fig.measures?.perEdge?.find((m) => m.edgeId === edgeId);
@@ -432,6 +504,8 @@ export async function generateTiledPDF(
   const filtered = filterFiguresBySettings(figures, resolved);
 
   const shouldIncludeMeasures = options?.includeMeasures !== false;
+  const shouldIncludePatternName = options?.includePatternName !== false;
+  const shouldIncludePiques = options?.includePiques !== false;
 
   const shouldIncludePointLabels =
     options?.includePointLabels === true &&
@@ -654,7 +728,7 @@ export async function generateTiledPDF(
 
       // Dart/Pence overlays (non-destructive): base dashed on contour + legs + height.
       const darts = figure.darts ?? [];
-      if (darts.length) {
+      if (resolved.toolFilter.dart !== false && darts.length) {
         const strokeWidth = figure.strokeWidth || 1;
         const dash = [12, 6];
         for (const dart of darts) {
@@ -830,6 +904,33 @@ export async function generateTiledPDF(
               })
             );
           }
+        }
+      }
+
+      // Piques (notches)
+      const piques = figure.piques ?? [];
+      if (shouldIncludePiques && figure.closed && piques.length) {
+        for (const pk of piques) {
+          const seg = computePiqueSegmentWorld(figure, pk);
+          if (!seg) continue;
+          tileLayer.add(
+            new Konva.Line({
+              points: [
+                seg.aWorld.x - tileX,
+                seg.aWorld.y - tileY,
+                seg.bWorld.x - tileX,
+                seg.bWorld.y - tileY,
+              ],
+              stroke: "#000000",
+              strokeWidth: Math.max(1, (figure.strokeWidth || 1) * 0.9),
+              closed: false,
+              opacity: 1,
+              lineCap: "round",
+              lineJoin: "round",
+              listening: false,
+              name: "inaa-pique",
+            })
+          );
         }
       }
 
@@ -1103,7 +1204,7 @@ export async function generateTiledPDF(
       }
 
       const figureName = (figure.name ?? "").trim();
-      if (figureName) {
+      if (shouldIncludePatternName && figureName) {
         const layout = computeFigureNameLayoutLocal(figure, figureName);
         if (layout) {
           const worldPos = figureLocalToWorld(figure, layout.posLocal);
@@ -1160,6 +1261,8 @@ export function generateSVG(
   const filtered = filterFiguresBySettings(figures, resolved);
 
   const shouldIncludeMeasures = options?.includeMeasures !== false;
+  const shouldIncludePatternName = options?.includePatternName !== false;
+  const shouldIncludePiques = options?.includePiques !== false;
 
   const shouldIncludePointLabels =
     options?.includePointLabels === true &&
@@ -1302,7 +1405,7 @@ export function generateSVG(
 
     // Dart/Pence overlays (vector): base dashed on contour + legs + height + height label.
     const darts = fig.darts ?? [];
-    if (darts.length) {
+    if (resolved.toolFilter.dart !== false && darts.length) {
       const dartDash = "12 6";
       for (const dart of darts) {
         const aNode = fig.nodes.find((n) => n.id === dart.aNodeId);
@@ -1377,6 +1480,19 @@ export function generateSVG(
           svg += ` transform="rotate(${angleDeg} ${pos.x} ${pos.y})"`;
           svg += `>${escaped}</text>\n`;
         }
+      }
+    }
+
+    // Piques (notches)
+    const piques = fig.piques ?? [];
+    if (shouldIncludePiques && fig.closed && piques.length) {
+      for (const pk of piques) {
+        const seg = computePiqueSegmentWorld(fig, pk);
+        if (!seg) continue;
+        svg += `  <line class="inaa-pique" x1="${seg.aWorld.x}" y1="${seg.aWorld.y}" x2="${seg.bWorld.x}" y2="${seg.bWorld.y}" stroke="#000" stroke-width="${Math.max(
+          1,
+          (fig.strokeWidth || 1) * 0.9
+        )}" stroke-linecap="round" />\n`;
       }
     }
 
@@ -1602,7 +1718,7 @@ export function generateSVG(
     }
 
     const figName = (fig.name ?? "").trim();
-    if (figName) {
+    if (shouldIncludePatternName && figName) {
       const layout = computeFigureNameLayoutLocal(fig, figName);
       if (layout) {
         const worldPos = figureLocalToWorld(fig, layout.posLocal);

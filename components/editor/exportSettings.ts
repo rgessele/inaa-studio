@@ -16,7 +16,6 @@ export interface ExportSettings {
   marginCm: number;
   includeBlankPages: boolean;
   dashedLines: boolean;
-  showBaseSize: boolean;
   toolFilter: Record<
     "rectangle" | "circle" | "line" | "curve" | "dart" | "text",
     boolean
@@ -54,7 +53,6 @@ export function createDefaultExportSettings(): ExportSettings {
     marginCm: 1,
     includeBlankPages: false,
     dashedLines: false,
-    showBaseSize: false,
     toolFilter: {
       rectangle: true,
       circle: true,
