@@ -213,9 +213,6 @@ export function seamSourceSignature(
     return null;
   })();
   const sig = {
-    x: base.x,
-    y: base.y,
-    rotation: base.rotation ?? 0,
     closed: base.closed,
     offsetCm: offsetKey,
     nodes: base.nodes.map((n) => ({

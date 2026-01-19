@@ -2273,13 +2273,6 @@ export default function Canvas() {
     el.style.cursor = "";
   }, [figures, hoveredOffsetBaseId, isPanning, tool]);
 
-  const selectionDragSyncRef = useRef<{
-    anchorFigureId: string;
-    affectedIds: string[];
-    startPositions: Map<string, Vec2>;
-    startBounds: BoundingBox | null;
-  } | null>(null);
-
   const snapSelectionDeltaToGuidesRef = useRef<
     (
       startBounds: BoundingBox | null,
@@ -2531,11 +2524,29 @@ export default function Canvas() {
 
     if (Math.abs(dx) >= 1e-6 || Math.abs(dy) >= 1e-6) {
       const affected = new Set(direct.affectedIds);
-      setFigures((prev) =>
-        prev.map((f) =>
-          affected.has(f.id) ? { ...f, x: f.x + dx, y: f.y + dy } : f
-        )
-      );
+      const startPositions = direct.startPositions;
+      setFigures((prev) => {
+        const moved = prev.map((f) => {
+          if (!affected.has(f.id)) return f;
+          const start = startPositions.get(f.id);
+          if (!start) return { ...f, x: f.x + dx, y: f.y + dy };
+          return { ...f, x: start.x + dx, y: start.y + dy };
+        });
+
+        // Hard guarantee: seam figures always share the exact same transform
+        // as their base after committing a move.
+        const movedById = new Map(moved.map((f) => [f.id, f] as const));
+        return moved.map((f) => {
+          if (f.kind !== "seam" || !f.parentId) return f;
+          if (!affected.has(f.parentId)) return f;
+          const base = movedById.get(f.parentId);
+          if (!base) return f;
+          const baseRot = base.rotation ?? 0;
+          const seamRot = f.rotation ?? 0;
+          if (f.x === base.x && f.y === base.y && seamRot === baseRot) return f;
+          return { ...f, x: base.x, y: base.y, rotation: baseRot };
+        });
+      });
     }
 
     dragPreviewPendingRef.current = null;
@@ -3020,6 +3031,7 @@ export default function Canvas() {
     const byId = new Map(figures.map((f) => [f.id, f] as const));
     const toRemove = new Set<string>();
     const toUpdate = new Set<string>();
+    const toSyncTransform = new Set<string>();
 
     for (const seam of figures) {
       if (seam.kind !== "seam" || !seam.parentId) continue;
@@ -3030,6 +3042,16 @@ export default function Canvas() {
       }
 
       const sig = seamSourceSignature(base, seam.offsetCm ?? 1);
+
+      const baseRot = base.rotation ?? 0;
+      const seamRot = seam.rotation ?? 0;
+      const needsTransformSync =
+        seam.x !== base.x || seam.y !== base.y || seamRot !== baseRot;
+
+      if (needsTransformSync) {
+        toSyncTransform.add(seam.id);
+      }
+
       if (seam.sourceSignature === sig) continue;
 
       // If the base is no longer closed or the seam can't be regenerated,
@@ -3043,7 +3065,7 @@ export default function Canvas() {
       toUpdate.add(seam.id);
     }
 
-    if (!toRemove.size && !toUpdate.size) return;
+    if (!toRemove.size && !toUpdate.size && !toSyncTransform.size) return;
 
     setFigures((prev) => {
       let changed = false;
@@ -3054,6 +3076,20 @@ export default function Canvas() {
         if (toRemove.has(f.id)) {
           changed = true;
           continue;
+        }
+
+        if (f.kind === "seam" && f.parentId && toSyncTransform.has(f.id)) {
+          const base = byId.get(f.parentId) ?? null;
+          if (base) {
+            const baseRot = base.rotation ?? 0;
+            const seamRot = f.rotation ?? 0;
+            if (f.x !== base.x || f.y !== base.y || seamRot !== baseRot) {
+              changed = true;
+              // Sync transform without regenerating geometry.
+              next.push({ ...f, x: base.x, y: base.y, rotation: baseRot });
+              continue;
+            }
+          }
         }
 
         if (f.kind !== "seam" || !f.parentId || !toUpdate.has(f.id)) {
@@ -3924,11 +3960,17 @@ export default function Canvas() {
       });
 
       if (pickedId) {
+        const pickedFigure = figures.find((f) => f.id === pickedId) ?? null;
+        const pickedBaseId =
+          pickedFigure?.kind === "seam" && pickedFigure.parentId
+            ? pickedFigure.parentId
+            : pickedId;
+
         // Reset any in-progress direct drag candidate.
         selectDirectDragRef.current = null;
 
         if (e.evt.metaKey || e.evt.ctrlKey) {
-          const fig = figures.find((f) => f.id === pickedId) ?? null;
+          const fig = figures.find((f) => f.id === pickedBaseId) ?? null;
           if (fig && fig.kind !== "seam") {
             const local = worldToFigureLocal(fig, world);
             const hit = findNearestEdge(fig, local);
@@ -3966,32 +4008,33 @@ export default function Canvas() {
         }
 
         if (e.evt.shiftKey) {
-          toggleSelectedFigureId(pickedId);
+          toggleSelectedFigureId(pickedBaseId);
         } else {
-          setSelectedFigureIds([pickedId]);
-
-          // Market-standard: click+drag should move immediately even if the
-          // figure wasn't selected before. We implement a Stage-level drag so it
-          // works regardless of Konva hit-testing/z-order.
-          if (!selectedIdsSet.has(pickedId)) {
-            if (e.evt instanceof PointerEvent) {
-              try {
-                stage.container().setPointerCapture(e.evt.pointerId);
-              } catch {
-                // ignore
-              }
-            }
-
-            selectDirectDragRef.current = {
-              active: false,
-              anchorFigureId: pickedId,
-              affectedIds: [],
-              startPositions: new Map(),
-              startBounds: null,
-              startWorld: world,
-              lastWorld: world,
-            };
+          // Keep multi-selection when dragging a selected member; only collapse
+          // to a single selection when clicking a non-selected figure.
+          if (!selectedIdsSet.has(pickedBaseId)) {
+            setSelectedFigureIds([pickedBaseId]);
           }
+
+          // Always use a Stage-level drag for moving figures/selection.
+          // This avoids Konva drag path differences that can cause seams to drift.
+          if (e.evt instanceof PointerEvent) {
+            try {
+              stage.container().setPointerCapture(e.evt.pointerId);
+            } catch {
+              // ignore
+            }
+          }
+
+          selectDirectDragRef.current = {
+            active: false,
+            anchorFigureId: pickedBaseId,
+            affectedIds: [],
+            startPositions: new Map(),
+            startBounds: null,
+            startWorld: world,
+            lastWorld: world,
+          };
         }
         setMarqueeDraft(null);
         return;
@@ -7639,16 +7682,9 @@ export default function Canvas() {
                     !isEffectivelyTransparentFill(fig.fill)
                   }
                   draggable={(() => {
-                    const base = figuresById.get(baseId) ?? null;
-                    const locked =
-                      base?.mirrorLink?.role === "mirror" &&
-                      base.mirrorLink.sync === true;
-                    return (
-                      tool === "select" &&
-                      selectedIdsSet.has(baseId) &&
-                      !selectDirectDragRef.current &&
-                      !locked
-                    );
+                    // Select-tool dragging is handled at the Stage level to keep
+                    // behavior consistent for single/multi selection (and seams).
+                    return false;
                   })()}
                   showNodes={showNodes}
                   nodeStrokeOverride={
@@ -8057,180 +8093,6 @@ export default function Canvas() {
                     }
 
                     setSelectedFigureId(baseId);
-                  }}
-                  onDragStart={() => {
-                    if (tool !== "select") return;
-                    if (!selectedIdsSet.has(baseId)) return;
-                    if (selectDirectDragRef.current) return;
-
-                    if (dragPreviewRafRef.current != null) {
-                      cancelAnimationFrame(dragPreviewRafRef.current);
-                      dragPreviewRafRef.current = null;
-                    }
-                    dragPreviewPendingRef.current = null;
-                    setDragPreviewPositions(null);
-
-                    const stage = stageRef.current;
-                    if (!stage) return;
-
-                    const affectedIds = figures
-                      .filter(
-                        (f) =>
-                          selectedIdsSet.has(f.id) ||
-                          (f.kind === "seam" &&
-                            f.parentId &&
-                            selectedIdsSet.has(f.parentId))
-                      )
-                      .map((f) => f.id);
-
-                    let startBounds: BoundingBox | null = null;
-                    for (const f of figures) {
-                      if (!affectedIds.includes(f.id)) continue;
-                      const bb = figureWorldBoundingBox(f);
-                      if (!bb) continue;
-                      if (!startBounds) {
-                        startBounds = { ...bb };
-                      } else {
-                        const x0 = Math.min(startBounds.x, bb.x);
-                        const y0 = Math.min(startBounds.y, bb.y);
-                        const x1 = Math.max(
-                          startBounds.x + startBounds.width,
-                          bb.x + bb.width
-                        );
-                        const y1 = Math.max(
-                          startBounds.y + startBounds.height,
-                          bb.y + bb.height
-                        );
-                        startBounds = {
-                          x: x0,
-                          y: y0,
-                          width: x1 - x0,
-                          height: y1 - y0,
-                        };
-                      }
-                    }
-
-                    const startPositions = new Map<string, Vec2>();
-                    for (const id of affectedIds) {
-                      const node = stage.findOne(`.fig_${id}`);
-                      if (!node) continue;
-                      startPositions.set(id, { x: node.x(), y: node.y() });
-                    }
-
-                    selectionDragSyncRef.current = {
-                      anchorFigureId: fig.id,
-                      affectedIds,
-                      startPositions,
-                      startBounds,
-                    };
-                  }}
-                  onDragMove={(e) => {
-                    const sync = selectionDragSyncRef.current;
-                    if (!sync) return;
-                    if (sync.anchorFigureId !== fig.id) return;
-                    if (selectDirectDragRef.current) return;
-
-                    const stage = stageRef.current;
-                    if (!stage) return;
-
-                    const anchorStart = sync.startPositions.get(
-                      sync.anchorFigureId
-                    );
-                    if (!anchorStart) return;
-
-                    const desired = { x: e.target.x(), y: e.target.y() };
-                    let dx = desired.x - anchorStart.x;
-                    let dy = desired.y - anchorStart.y;
-
-                    // Snap the selection bounds (left/center/right and top/center/bottom)
-                    // to nearby guide lines for a more intuitive "CAD-like" behavior.
-                    const snappedDelta = snapSelectionDeltaToGuides(
-                      sync.startBounds ?? null,
-                      dx,
-                      dy
-                    );
-                    dx = snappedDelta.dx;
-                    dy = snappedDelta.dy;
-
-                    const nextAnchor = {
-                      x: anchorStart.x + dx,
-                      y: anchorStart.y + dy,
-                    };
-                    if (
-                      nextAnchor.x !== desired.x ||
-                      nextAnchor.y !== desired.y
-                    ) {
-                      e.target.position(nextAnchor);
-                    }
-
-                    // Move other selected figures manually using refs
-                    for (const id of sync.affectedIds) {
-                      if (id === fig.id) continue; // Already moved by Konva
-                      const start = sync.startPositions.get(id);
-                      if (!start) continue;
-                      const node = figureNodeRefs.current.get(id);
-                      if (node) {
-                        node.position({ x: start.x + dx, y: start.y + dy });
-                      }
-                    }
-
-                    // Force redraw of layer to show changes immediately
-                    const layer = e.target.getLayer();
-                    if (layer) layer.batchDraw();
-                  }}
-                  onDragEnd={(e) => {
-                    const sync = selectionDragSyncRef.current;
-                    selectionDragSyncRef.current = null;
-                    if (!sync || sync.anchorFigureId !== fig.id) return;
-                    if (selectDirectDragRef.current) return;
-
-                    const anchorStart = sync.startPositions.get(
-                      sync.anchorFigureId
-                    );
-                    if (!anchorStart) return;
-
-                    const desired = { x: e.target.x(), y: e.target.y() };
-                    let dx = desired.x - anchorStart.x;
-                    let dy = desired.y - anchorStart.y;
-
-                    const snappedDelta = snapSelectionDeltaToGuides(
-                      sync.startBounds ?? null,
-                      dx,
-                      dy
-                    );
-                    dx = snappedDelta.dx;
-                    dy = snappedDelta.dy;
-
-                    const nextAnchor = {
-                      x: anchorStart.x + dx,
-                      y: anchorStart.y + dy,
-                    };
-                    if (
-                      nextAnchor.x !== desired.x ||
-                      nextAnchor.y !== desired.y
-                    ) {
-                      e.target.position(nextAnchor);
-                    }
-
-                    if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) {
-                      dragPreviewPendingRef.current = null;
-                      setDragPreviewPositions(null);
-                      requestDragPreviewRender();
-                      return;
-                    }
-
-                    const affected = new Set(sync.affectedIds);
-                    setFigures((prev) =>
-                      prev.map((f) =>
-                        affected.has(f.id)
-                          ? { ...f, x: f.x + dx, y: f.y + dy }
-                          : f
-                      )
-                    );
-
-                    // Clear preview; next render uses updated figure positions.
-                    dragPreviewPendingRef.current = null;
-                    setDragPreviewPositions(null);
                   }}
                 />
               );

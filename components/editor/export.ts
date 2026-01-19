@@ -545,22 +545,32 @@ export async function generateTiledPDF(
   const safeWidthPx = safeWidthCm * PX_PER_CM;
   const safeHeightPx = safeHeightCm * PX_PER_CM;
 
-  const padding = 10;
-  const exportArea = {
-    x: bbox.x - padding,
-    y: bbox.y - padding,
-    width: bbox.width + 2 * padding,
-    height: bbox.height + 2 * padding,
-  };
+  // Behavior A: tile pages exactly like the on-canvas page guides.
+  // Canvas page guides are anchored at world (0,0) and repeat every paperWidth/Height.
+  // Each PDF tile corresponds to the *inner* printable area (paper minus margins).
+  const paperWidthPx = paperWidthCm * PX_PER_CM;
+  const paperHeightPx = paperHeightCm * PX_PER_CM;
+  const marginPx = marginCm * PX_PER_CM;
 
-  const cols = Math.ceil(exportArea.width / safeWidthPx);
-  const rows = Math.ceil(exportArea.height / safeHeightPx);
+  const padding = 10;
+  const x0 = bbox.x - padding;
+  const y0 = bbox.y - padding;
+  const x1 = bbox.x + bbox.width + padding;
+  const y1 = bbox.y + bbox.height + padding;
+
+  // Determine which page indices might contain content within their printable area.
+  const ix0 = Math.floor((x0 - marginPx) / paperWidthPx);
+  const ix1 = Math.floor((x1 - marginPx) / paperWidthPx);
+  const iy0 = Math.floor((y0 - marginPx) / paperHeightPx);
+  const iy1 = Math.floor((y1 - marginPx) / paperHeightPx);
 
   const tiles: Array<{ tileX: number; tileY: number; row: number; col: number }> = [];
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const tileX = exportArea.x + col * safeWidthPx;
-      const tileY = exportArea.y + row * safeHeightPx;
+  for (let iy = iy0; iy <= iy1; iy++) {
+    for (let ix = ix0; ix <= ix1; ix++) {
+      const tileX = ix * paperWidthPx + marginPx;
+      const tileY = iy * paperHeightPx + marginPx;
+      const row = iy - iy0;
+      const col = ix - ix0;
 
       if (!resolved.includeBlankPages) {
         const tileRect: BoundingBox = {
