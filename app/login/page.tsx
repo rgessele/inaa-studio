@@ -79,22 +79,27 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-md space-y-8">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-gray-900">Inaá Studio</h1>
-          <p className="mt-2 text-sm text-gray-600">
-            Faça login para acessar seus projetos
-          </p>
-        </div>
+    <div className="relative overflow-hidden isolate bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 transition-colors min-h-screen flex items-center justify-center px-4 before:content-[''] before:fixed before:inset-0 before:bg-[url('/dashboard-bg.png')] before:bg-right before:bg-no-repeat before:bg-[length:80%] before:opacity-10 before:pointer-events-none before:select-none before:z-0">
+      <div className="relative z-10 w-full max-w-md">
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-surface-light dark:bg-surface-dark p-8 shadow-subtle">
+          <div className="text-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.png"
+              alt="Inaá Studio"
+              className="mx-auto h-14 w-auto object-contain"
+            />
+            <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
+              Faça login para acessar seus projetos
+            </p>
+          </div>
 
-        <div className="mt-8 space-y-6 rounded-lg bg-white p-8 shadow">
           {message && (
             <div
               className={`rounded-md p-4 ${
                 message.type === "success"
-                  ? "bg-green-50 text-green-800"
-                  : "bg-red-50 text-red-800"
+                  ? "bg-green-50 text-green-800 dark:bg-green-950/40 dark:text-green-200"
+                  : "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-200"
               }`}
             >
               <p className="text-sm">{message.text}</p>
@@ -105,7 +110,7 @@ export default function LoginPage() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-gray-700"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-200"
               >
                 Email
               </label>
@@ -115,7 +120,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-surface-dark px-3 py-2 shadow-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:border-gray-500 dark:focus:ring-gray-700"
                 placeholder="seu@email.com"
                 disabled={loading}
               />
@@ -124,7 +129,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+              className="w-full rounded-md bg-primary px-4 py-2 text-white hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-offset-2 focus:ring-offset-surface-light dark:focus:ring-offset-surface-dark disabled:opacity-50"
             >
               {loading ? "Enviando..." : "Enviar Link de Acesso"}
             </button>
@@ -132,10 +137,12 @@ export default function LoginPage() {
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300" />
+              <div className="w-full border-t border-gray-300 dark:border-gray-700" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="bg-white px-2 text-gray-500">Ou</span>
+              <span className="bg-surface-light dark:bg-surface-dark px-2 text-gray-500 dark:text-gray-400">
+                Ou
+              </span>
             </div>
           </div>
 
@@ -143,7 +150,7 @@ export default function LoginPage() {
             type="button"
             onClick={handleGoogleLogin}
             disabled={loading}
-            className="flex w-full items-center justify-center gap-3 rounded-md border border-gray-300 bg-white px-4 py-2 text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-3 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-surface-dark px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-offset-2 focus:ring-offset-surface-light dark:focus:ring-offset-surface-dark disabled:opacity-50"
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24">
               <path
