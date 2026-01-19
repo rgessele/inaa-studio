@@ -589,6 +589,9 @@ export async function generateTiledPDF(
 
   let pageNum = 0;
   for (const { tileX, tileY, row, col } of tiles) {
+    // Yield between pages so the UI can repaint (spinner, etc.) during long exports.
+    // setTimeout(0) is enough to release the main thread briefly.
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     pageNum++;
 
     const container = document.createElement("div");

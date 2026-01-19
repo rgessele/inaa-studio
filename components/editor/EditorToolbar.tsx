@@ -55,6 +55,8 @@ export function EditorToolbar() {
     paste,
   } = useEditor();
   const [showExportModal, setShowExportModal] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isExportingSvg, setIsExportingSvg] = useState(false);
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
 
   const [exportSettings, setExportSettings] = useState<ExportSettings>(() =>
@@ -78,6 +80,9 @@ export function EditorToolbar() {
   const isExportModalOpen = showExportModal || urlWantsExportModal;
 
   const closeExportModal = () => {
+    if (isExportingPdf || isExportingSvg) {
+      return;
+    }
     setShowExportModal(false);
 
     if (urlWantsExportModal) {
@@ -454,13 +459,16 @@ export function EditorToolbar() {
   }, [isClearConfirmOpen]);
 
   const handleExportPDF = async () => {
+    if (isExportingPdf || isExportingSvg) return;
     const stage = getStage();
     if (!stage) {
       toast("Canvas ainda não está pronto.", "error");
       return;
     }
 
-    closeExportModal();
+    setIsExportingPdf(true);
+    // Let React paint the loading state before the heavy PDF work.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
     const resolvedSettings: ExportSettings = {
       ...exportSettings,
@@ -475,45 +483,56 @@ export function EditorToolbar() {
       ? figures
       : figures.filter((figure) => figure.kind !== "seam");
 
-    await generateTiledPDF(
-      stage,
-      exportShapes,
-      () => setShowGrid(false),
-      () => setShowGrid(true),
-      resolvedSettings,
-      {
+    try {
+      await generateTiledPDF(
+        stage,
+        exportShapes,
+        () => setShowGrid(false),
+        () => setShowGrid(true),
+        resolvedSettings,
+        {
+          includePointLabels,
+          includeMeasures,
+          includePatternName,
+          includePiques,
+          pointLabelsMode,
+        }
+      );
+      closeExportModal();
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  const handleExportSVG = () => {
+    if (isExportingPdf || isExportingSvg) return;
+    setIsExportingSvg(true);
+
+    const resolvedSettings: ExportSettings = {
+      ...exportSettings,
+      marginCm: customMargins ? exportSettings.marginCm : 1,
+      toolFilter: {
+        ...exportSettings.toolFilter,
+        text: includePatternTexts,
+      },
+    };
+
+    const exportShapes = includeSeamAllowance
+      ? figures
+      : figures.filter((figure) => figure.kind !== "seam");
+
+    try {
+      generateSVG(exportShapes, resolvedSettings, {
         includePointLabels,
         includeMeasures,
         includePatternName,
         includePiques,
         pointLabelsMode,
-      }
-    );
-  };
-
-  const handleExportSVG = () => {
-    closeExportModal();
-
-    const resolvedSettings: ExportSettings = {
-      ...exportSettings,
-      marginCm: customMargins ? exportSettings.marginCm : 1,
-      toolFilter: {
-        ...exportSettings.toolFilter,
-        text: includePatternTexts,
-      },
-    };
-
-    const exportShapes = includeSeamAllowance
-      ? figures
-      : figures.filter((figure) => figure.kind !== "seam");
-
-    generateSVG(exportShapes, resolvedSettings, {
-      includePointLabels,
-      includeMeasures,
-      includePatternName,
-      includePiques,
-      pointLabelsMode,
-    });
+      });
+      closeExportModal();
+    } finally {
+      setIsExportingSvg(false);
+    }
   };
 
   const toggleToolFilter = (drawingTool: DrawingTool) => {
@@ -1341,17 +1360,34 @@ export function EditorToolbar() {
               <button
                 type="button"
                 onClick={handleExportSVG}
-                className="px-4 py-2 text-sm rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                disabled={isExportingPdf || isExportingSvg}
+                className={`px-4 py-2 text-sm rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 transition-colors ${
+                  isExportingPdf || isExportingSvg
+                    ? "opacity-60 cursor-not-allowed"
+                    : "hover:bg-gray-50 dark:hover:bg-gray-700"
+                }`}
               >
-                Exportar SVG
+                {isExportingSvg ? "Gerando SVG…" : "Exportar SVG"}
               </button>
 
               <button
                 type="button"
                 onClick={handleExportPDF}
-                className="px-4 py-2 text-sm rounded-md bg-primary text-white hover:opacity-90 transition-opacity"
+                disabled={isExportingPdf || isExportingSvg}
+                className={`px-4 py-2 text-sm rounded-md bg-primary text-white transition-all flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  isExportingPdf || isExportingSvg
+                    ? "opacity-70 cursor-not-allowed"
+                    : "hover:brightness-110 hover:shadow-md active:brightness-95 active:scale-[0.99]"
+                }`}
               >
-                Exportar PDF
+                {isExportingPdf ? (
+                  <>
+                    <span className="inline-block h-4 w-4 rounded-full border-2 border-white/70 border-t-white animate-spin" />
+                    Gerando PDF…
+                  </>
+                ) : (
+                  "Exportar PDF"
+                )}
               </button>
             </div>
           </div>
