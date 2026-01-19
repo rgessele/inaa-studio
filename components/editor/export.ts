@@ -528,6 +528,11 @@ export async function generateTiledPDF(
 
   const { widthCm: paperWidthCm, heightCm: paperHeightCm } =
     getPaperDimensionsCm(resolved.paperSize, resolved.orientation);
+  // jsPDF needs the page "format" (size) specified independently. When passing an array,
+  // the values are interpreted in the unit configured below (we use "cm").
+  // We pass the base (portrait) dimensions and let jsPDF apply the orientation.
+  const { widthCm: pageFormatWidthCm, heightCm: pageFormatHeightCm } =
+    getPaperDimensionsCm(resolved.paperSize, "portrait");
   const marginCm = Math.max(0, Math.min(resolved.marginCm, 10));
   const safeWidthCm = paperWidthCm - 2 * marginCm;
   const safeHeightCm = paperHeightCm - 2 * marginCm;
@@ -584,7 +589,7 @@ export async function generateTiledPDF(
   const pdf = new jsPDF({
     orientation: resolved.orientation,
     unit: "cm",
-    format: "a4",
+    format: [pageFormatWidthCm, pageFormatHeightCm],
   });
 
   let pageNum = 0;
@@ -1268,7 +1273,12 @@ export async function generateTiledPDF(
     });
     tileStage.destroy();
 
-    if (pageNum > 1) pdf.addPage();
+    if (pageNum > 1) {
+      pdf.addPage(
+        [pageFormatWidthCm, pageFormatHeightCm],
+        resolved.orientation
+      );
+    }
     pdf.addImage(dataURL, "PNG", marginCm, marginCm, safeWidthCm, safeHeightCm);
 
     // Page assembly guide (top-right, in the paper margin): row/col coordinate + page N/T.
