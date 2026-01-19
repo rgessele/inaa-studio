@@ -18,7 +18,6 @@ export interface ExportSettings {
   // This is independent from canvas page guides.
   showPageGuides: boolean;
   includeBlankPages: boolean;
-  dashedLines: boolean;
   toolFilter: Record<
     "rectangle" | "circle" | "line" | "curve" | "dart" | "text",
     boolean
@@ -56,7 +55,6 @@ export function createDefaultExportSettings(): ExportSettings {
     marginCm: 1,
     showPageGuides: true,
     includeBlankPages: true,
-    dashedLines: false,
     toolFilter: {
       rectangle: true,
       circle: true,

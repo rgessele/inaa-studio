@@ -728,7 +728,7 @@ export async function generateTiledPDF(
           closed: figure.closed,
           fill: figure.closed ? "transparent" : undefined,
           opacity: figure.opacity ?? 1,
-          dash: resolved.dashedLines ? [12, 6] : figure.dash,
+          dash: figure.dash,
           lineCap: "round",
           lineJoin: "round",
           perfectDrawEnabled: false,
@@ -1358,7 +1358,7 @@ export function generateSVG(
     height: bbox.height + 2 * padding,
   };
 
-  const dashArray = resolved.dashedLines ? "12 6" : null;
+  const dashArray = null;
 
   let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
   svg += `<svg xmlns="http://www.w3.org/2000/svg" `;

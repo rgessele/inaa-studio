@@ -1217,16 +1217,6 @@ export function EditorToolbar() {
                       }))
                     }
                   />
-                  <SwitchRow
-                    label="Linhas tracejadas"
-                    checked={exportSettings.dashedLines}
-                    onCheckedChange={(checked) =>
-                      setExportSettings((prev) => ({
-                        ...prev,
-                        dashedLines: checked,
-                      }))
-                    }
-                  />
                 </div>
 
                 <div className="mt-8">
