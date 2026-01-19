@@ -4,8 +4,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-
-type GradeOption = "none";
+import {
+  getPaperDimensionsCm,
+  PAPER_SIZES,
+  PAPER_SIZE_LABELS,
+  type PaperSize,
+} from "@/components/editor/exportSettings";
+import type { DesignDataV2 } from "@/components/editor/types";
 
 interface NewProjectButtonProps {
   className?: string;
@@ -25,9 +30,7 @@ export function NewProjectButton({
   const [name, setName] = useState("");
   const [fabric, setFabric] = useState("");
   const [notes, setNotes] = useState("");
-  const [printWidthCm, setPrintWidthCm] = useState<number>(100);
-  const [printHeightCm, setPrintHeightCm] = useState<number>(100);
-  const [grade, setGrade] = useState<GradeOption>("none");
+  const [initialPaperSize, setInitialPaperSize] = useState<PaperSize>("A4");
 
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -58,12 +61,7 @@ export function NewProjectButton({
     };
   }, [coverPreviewUrl]);
 
-  const canSubmit =
-    name.trim().length > 0 &&
-    Number.isFinite(printWidthCm) &&
-    Number.isFinite(printHeightCm) &&
-    printWidthCm > 0 &&
-    printHeightCm > 0;
+  const canSubmit = name.trim().length > 0;
 
   const onPickImage = () => {
     inputRef.current?.click();
@@ -98,17 +96,25 @@ export function NewProjectButton({
         return;
       }
 
-      const baseDesignData = {
-        shapes: [],
+      const page = getPaperDimensionsCm(initialPaperSize, "portrait");
+
+      const baseDesignData: DesignDataV2 = {
+        version: 2,
+        figures: [],
+        guides: [],
+        pageGuideSettings: {
+          paperSize: initialPaperSize,
+          orientation: "portrait",
+          marginCm: 1,
+        },
         meta: {
           fabric: fabric.trim() || null,
           notes: notes.trim() || null,
           print: {
-            widthCm: printWidthCm,
-            heightCm: printHeightCm,
-            unit: "cm" as const,
+            widthCm: page.widthCm,
+            heightCm: page.heightCm,
+            unit: "cm",
           },
-          grade,
           coverUrl: null as string | null,
         },
       };
@@ -259,61 +265,23 @@ export function NewProjectButton({
                         />
                       </div>
 
-                      <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-                        <div>
-                          <label className="text-sm text-gray-600">
-                            Largura da Impressão{" "}
-                            <span className="text-red-500">*</span>
-                          </label>
-                          <div className="mt-2 flex items-end gap-3">
-                            <input
-                              type="number"
-                              value={printWidthCm}
-                              onChange={(e) =>
-                                setPrintWidthCm(Number(e.target.value))
-                              }
-                              min={1}
-                              className="w-full border-b border-gray-300 pb-2 text-2xl text-gray-900 focus:border-blue-600 focus:outline-none"
-                            />
-                            <span className="pb-2 text-lg text-gray-600">
-                              cm
-                            </span>
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="text-sm text-gray-600">
-                            Altura da Impressão{" "}
-                            <span className="text-red-500">*</span>
-                          </label>
-                          <div className="mt-2 flex items-end gap-3">
-                            <input
-                              type="number"
-                              value={printHeightCm}
-                              onChange={(e) =>
-                                setPrintHeightCm(Number(e.target.value))
-                              }
-                              min={1}
-                              className="w-full border-b border-gray-300 pb-2 text-2xl text-gray-900 focus:border-blue-600 focus:outline-none"
-                            />
-                            <span className="pb-2 text-lg text-gray-600">
-                              cm
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
                       <div>
-                        <label className="text-sm text-gray-600">Grades</label>
+                        <label className="text-sm text-gray-600">
+                          Página inicial do editor
+                        </label>
                         <div className="relative mt-2">
                           <select
-                            value={grade}
+                            value={initialPaperSize}
                             onChange={(e) =>
-                              setGrade(e.target.value as GradeOption)
+                              setInitialPaperSize(e.target.value as PaperSize)
                             }
                             className="w-full appearance-none border-b border-gray-300 pb-3 text-xl text-gray-900 focus:border-blue-600 focus:outline-none"
                           >
-                            <option value="none">Sem grade</option>
+                            {PAPER_SIZES.map((size) => (
+                              <option key={size} value={size}>
+                                {PAPER_SIZE_LABELS[size]}
+                              </option>
+                            ))}
                           </select>
                           <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-gray-500 material-symbols-outlined">
                             expand_more
