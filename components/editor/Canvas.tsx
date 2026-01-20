@@ -80,6 +80,10 @@ const ZOOM_FACTOR = 1.08;
 
 type Vec2 = { x: number; y: number };
 
+function isFiniteVec2(v: Vec2): boolean {
+  return Number.isFinite(v.x) && Number.isFinite(v.y);
+}
+
 function snapWorldToStepPxFloor(p: Vec2, stepPx: number): Vec2 {
   if (!Number.isFinite(stepPx) || stepPx <= 0) return p;
   if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return p;
@@ -127,6 +131,7 @@ function quantizeEdgeHoverByChordLengthFloor(
   stepPx: number
 ): NonNullable<EdgeHover> {
   if (!Number.isFinite(stepPx) || stepPx <= 0) return hover;
+  if (!isFiniteVec2(fromLocal) || !isFiniteVec2(hover.pointLocal)) return hover;
 
   const edge = figure.edges.find((e) => e.id === hover.edgeId);
   if (!edge) return hover;
@@ -141,6 +146,53 @@ function quantizeEdgeHoverByChordLengthFloor(
   const toNode = getNodeById(figure.nodes, edge.to);
   if (!fromNode || !toNode) return hover;
 
+  // Straight edges: sample-less quantization.
+  // edgeLocalPoints() returns only endpoints for line edges, which makes the hover
+  // point "stick" to endpoints under high-precision mode. Instead, quantize by
+  // intersecting the segment with the circle centered at fromLocal.
+  if (edge.kind === "line") {
+    const p0: Vec2 = { x: fromNode.x, y: fromNode.y };
+    const p1: Vec2 = { x: toNode.x, y: toNode.y };
+    if (!isFiniteVec2(p0) || !isFiniteVec2(p1)) return hover;
+
+    const d = sub(p1, p0);
+    const a = d.x * d.x + d.y * d.y;
+    if (!Number.isFinite(a) || a < 1e-12) return hover;
+
+    const r = targetLen;
+    const f = sub(p0, fromLocal);
+    const b = 2 * (f.x * d.x + f.y * d.y);
+    const c = f.x * f.x + f.y * f.y - r * r;
+    const disc = b * b - 4 * a * c;
+    if (!Number.isFinite(disc) || disc < 0) return hover;
+
+    const sqrtDisc = Math.sqrt(Math.max(0, disc));
+    const t1 = (-b - sqrtDisc) / (2 * a);
+    const t2 = (-b + sqrtDisc) / (2 * a);
+
+    const candidates: Array<{ t: number; p: Vec2 }> = [];
+    if (t1 >= 0 && t1 <= 1) candidates.push({ t: t1, p: add(p0, mul(d, t1)) });
+    if (t2 >= 0 && t2 <= 1) candidates.push({ t: t2, p: add(p0, mul(d, t2)) });
+    if (candidates.length === 0) return hover;
+
+    let best = candidates[0];
+    let bestD = dist(best.p, hover.pointLocal);
+    for (let i = 1; i < candidates.length; i++) {
+      const dd = dist(candidates[i].p, hover.pointLocal);
+      if (dd < bestD) {
+        best = candidates[i];
+        bestD = dd;
+      }
+    }
+
+    if (!isFiniteVec2(best.p) || !Number.isFinite(best.t)) return hover;
+    return {
+      ...hover,
+      t: best.t,
+      pointLocal: best.p,
+    };
+  }
+
   const pts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 1 : 60);
   if (pts.length < 2) return hover;
 
@@ -148,8 +200,12 @@ function quantizeEdgeHoverByChordLengthFloor(
   let bestCost = Number.POSITIVE_INFINITY;
 
   for (let i = 0; i < pts.length; i++) {
+    const pt = pts[i];
+    if (!isFiniteVec2(pt)) continue;
     const t = i / (pts.length - 1);
-    const dLen = Math.abs(dist(fromLocal, pts[i]) - targetLen);
+    const dRaw = dist(fromLocal, pt);
+    if (!Number.isFinite(dRaw)) continue;
+    const dLen = Math.abs(dRaw - targetLen);
     const tPenalty = Math.abs(t - hover.t) * stepPx * 0.5;
     const cost = dLen + tPenalty;
     if (cost < bestCost) {
@@ -158,11 +214,16 @@ function quantizeEdgeHoverByChordLengthFloor(
     }
   }
 
+  const bestPt = pts[bestIndex];
+  if (!bestPt || !isFiniteVec2(bestPt) || !Number.isFinite(bestCost)) {
+    return hover;
+  }
+
   const bestT = bestIndex / (pts.length - 1);
   return {
     ...hover,
     t: bestT,
-    pointLocal: pts[bestIndex],
+    pointLocal: bestPt,
   };
 }
 
@@ -194,6 +255,7 @@ type DartDraft = {
   bNodeId: string | null;
   shiftKey: boolean;
   shiftLockDirLocal: Vec2 | null;
+  precisionSnap: boolean;
   currentWorld: Vec2;
 } | null;
 
@@ -1100,6 +1162,9 @@ function resolveDartApexLocal(
 ): Vec2 {
   if (!draft || draft.step !== "pickApex") return rawApexLocal;
 
+  // Defensive: keep previews stable even if pointer math glitches.
+  if (!isFiniteVec2(rawApexLocal)) return rawApexLocal;
+
   const a = getFigureNodePoint(figure, draft.aNodeId);
   const b = draft.bNodeId ? getFigureNodePoint(figure, draft.bNodeId) : null;
   if (!a || !b) return rawApexLocal;
@@ -1109,12 +1174,13 @@ function resolveDartApexLocal(
   // Cmd/Ctrl precision (without Shift): quantize the apex distance from the midpoint
   // in 1mm steps, along the current drag direction.
   if (precisionSnap && !draft.shiftKey) {
-    return snapPointAlongDirFloor(
+    const snapped = snapPointAlongDirFloor(
       rawApexLocal,
       mid,
       sub(rawApexLocal, mid),
       PX_PER_MM
     );
+    return isFiniteVec2(snapped) ? snapped : rawApexLocal;
   }
 
   if (!draft.shiftKey) return rawApexLocal;
@@ -1137,7 +1203,8 @@ function resolveDartApexLocal(
     precisionSnap ? Math.floor(heightRaw / PX_PER_MM) * PX_PER_MM : heightRaw;
   const orientedN = signedHeight >= 0 ? nUnit : mul(nUnit, -1);
 
-  return add(mid, mul(orientedN, height));
+  const snapped = add(mid, mul(orientedN, height));
+  return isFiniteVec2(snapped) ? snapped : rawApexLocal;
 }
 
 function mirrorVec2AcrossLine(p: Vec2, axisPoint: Vec2, axisDirUnit: Vec2): Vec2 {
@@ -4269,7 +4336,11 @@ export default function Canvas() {
 
     if (tool === "dart") {
       if (!dartDraft) {
-        const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
+        const precisionSnap =
+          !!e.evt.metaKey ||
+          !!e.evt.ctrlKey ||
+          modifierKeys.meta ||
+          modifierKeys.ctrl;
 
         // Allow starting a dart on an unselected figure: click selects + marks point A.
         let hitEdge = hoveredEdge;
@@ -4327,6 +4398,7 @@ export default function Canvas() {
           bNodeId: null,
           shiftKey: false,
           shiftLockDirLocal: null,
+          precisionSnap,
           currentWorld: worldForTool,
         });
         return;
@@ -4372,7 +4444,11 @@ export default function Canvas() {
 
       const local = worldToFigureLocal(selectedFigure, worldForTool);
       const rawApexLocal = local;
-      const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
+      const precisionSnap =
+        !!e.evt.metaKey ||
+        !!e.evt.ctrlKey ||
+        modifierKeys.meta ||
+        modifierKeys.ctrl;
       const apexLocal = resolveDartApexLocal(
         selectedFigure,
         dartDraft,
@@ -4778,7 +4854,11 @@ export default function Canvas() {
 
     const resolvedMove = getSnappedWorldForTool(world, "move");
     const worldForToolRaw = resolvedMove.world;
-    const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
+    const precisionSnap =
+      !!e.evt.metaKey ||
+      !!e.evt.ctrlKey ||
+      modifierKeys.meta ||
+      modifierKeys.ctrl;
     const worldForTool = worldForToolRaw;
 
     if (tool !== "measure") {
@@ -4887,6 +4967,7 @@ export default function Canvas() {
                 currentWorld: worldForToolRaw,
                 shiftKey,
                 shiftLockDirLocal: null,
+                precisionSnap,
               }
             : prev
         );
@@ -4899,6 +4980,7 @@ export default function Canvas() {
                 currentWorld: worldForToolRaw,
                 shiftKey: false,
                 shiftLockDirLocal: null,
+                precisionSnap,
               }
             : prev
         );
@@ -7006,8 +7088,12 @@ export default function Canvas() {
           ? getFigureNodePoint(selectedFigure, dartDraft.bNodeId)
           : null;
 
-    const rawApexLocal = worldToFigureLocal(selectedFigure, dartDraft.currentWorld);
-    const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
+    const rawApexLocal = worldToFigureLocal(
+      selectedFigure,
+      dartDraft.currentWorld
+    );
+    const precisionSnap =
+      dartDraft.precisionSnap || modifierKeys.meta || modifierKeys.ctrl;
     const apexLocal =
       dartDraft.step === "pickApex"
         ? resolveDartApexLocal(

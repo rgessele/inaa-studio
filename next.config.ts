@@ -45,7 +45,10 @@ const gitSha = process.env.VERCEL_GIT_COMMIT_SHA ?? "";
 const gitRef = process.env.VERCEL_GIT_COMMIT_REF ?? "";
 const gitCommitCount = readGitCommitCount();
 
+const distDir = process.env.NEXT_DIST_DIR ?? ".next";
+
 const nextConfig: NextConfig = {
+  distDir,
   env: {
     NEXT_PUBLIC_APP_VERSION: appVersion,
     NEXT_PUBLIC_BUILD_TIME_ISO: buildTimeIso,

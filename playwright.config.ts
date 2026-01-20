@@ -91,6 +91,8 @@ export default defineConfig({
       E2E_TESTS: "1",
       E2E_TOKEN: e2eToken,
       NEXT_PUBLIC_E2E_TESTS: "1",
+      // Avoid .next/dev/lock conflicts with an already-running `next dev`.
+      NEXT_DIST_DIR: ".next-e2e",
     },
   },
 });

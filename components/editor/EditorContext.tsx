@@ -1074,6 +1074,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           y: f.y,
           rotation: f.rotation || 0,
           closed: f.closed,
+          darts: (f.darts ?? []).map((d) => ({
+            id: d.id,
+            aNodeId: d.aNodeId,
+            bNodeId: d.bNodeId,
+            cNodeId: d.cNodeId,
+          })),
           piques: (f.piques ?? []).map((p) => ({
             id: p.id,
             edgeId: p.edgeId,
