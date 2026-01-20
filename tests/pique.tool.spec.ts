@@ -72,7 +72,7 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
       opacity: 1,
     };
 
-    window.__INAA_DEBUG__?.loadTestProject({ figures: [fig] });
+    window.__INAA_DEBUG__?.loadTestProject?.({ figures: [fig] });
   });
 
   await page.getByRole("button", { name: "Pique" }).click();

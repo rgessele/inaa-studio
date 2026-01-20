@@ -4,6 +4,8 @@ import { NewProjectButton } from "@/components/dashboard/NewProjectButton";
 import { ThemeToggleButton } from "@/components/dashboard/ThemeToggleButton";
 import { DashboardClient } from "@/components/dashboard/DashboardClient";
 import type { Project } from "@/lib/projects";
+import { PresenceHeartbeat } from "@/components/PresenceHeartbeat";
+import Link from "next/link";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -14,6 +16,13 @@ export default async function DashboardPage() {
   if (!user) {
     redirect("/login");
   }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+  const isAdmin = profile?.role === "admin";
 
   // Fetch user's projects
   let projects: unknown[] | null = null;
@@ -62,13 +71,6 @@ export default async function DashboardPage() {
     error = fallback.error;
   }
 
-  const handleSignOut = async () => {
-    "use server";
-    const supabase = await createClient();
-    await supabase.auth.signOut();
-    redirect("/login");
-  };
-
   const displayName =
     (user.user_metadata?.full_name as string | undefined) ||
     (user.user_metadata?.name as string | undefined) ||
@@ -84,6 +86,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="relative overflow-hidden isolate bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 transition-colors min-h-screen flex flex-col before:content-[''] before:fixed before:inset-0 before:bg-[url('/dashboard-bg.png')] before:bg-right before:bg-no-repeat before:bg-[length:80%] before:opacity-10 before:pointer-events-none before:select-none before:z-0">
+      <PresenceHeartbeat />
       <nav className="sticky top-0 z-50 w-full bg-surface-light dark:bg-surface-dark border-b border-gray-200 dark:border-gray-700 shadow-subtle">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
@@ -97,6 +100,18 @@ export default async function DashboardPage() {
             </div>
 
             <div className="flex items-center gap-4">
+              {isAdmin ? (
+                <Link
+                  href="/admin"
+                  className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-200 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
+                  title="Ir para o Admin"
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    admin_panel_settings
+                  </span>
+                  Admin
+                </Link>
+              ) : null}
               <ThemeToggleButton />
 
               <div className="flex items-center gap-3 pl-4 border-l border-gray-200 dark:border-gray-700">
@@ -116,7 +131,7 @@ export default async function DashboardPage() {
                   <div className="absolute bottom-0 right-0 h-3 w-3 bg-green-500 rounded-full border-2 border-white dark:border-surface-dark" />
                 </div>
 
-                <form action={handleSignOut}>
+                <form action="/auth/signout" method="post">
                   <button
                     type="submit"
                     className="ml-2 text-red-500 hover:text-red-700 dark:text-accent-rose dark:hover:text-red-300 transition-colors"

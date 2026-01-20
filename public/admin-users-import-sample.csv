@@ -1,0 +1,6 @@
+email,full_name,role,status,access_expires_at
+aluno1@example.com,Ana Silva,assinante,ativo,2026-12-31T23:59:59-03:00
+aluno2@example.com,Bruno Souza,assinante,ativo,
+admin2@example.com,Carla Admin,admin,ativo,
+banido@example.com,Diego Banido,assinante,blocked,
+expira_rapido@example.com,Eva Expira,assinante,ativo,2026-01-31T23:59:59-03:00

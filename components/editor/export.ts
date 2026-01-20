@@ -1323,7 +1323,9 @@ export async function generateTiledPDF(
     }
   }
 
-  pdf.save(`inaa-pattern-${new Date().getTime()}.pdf`);
+  const filename = `inaa-pattern-${Date.now()}.pdf`;
+  const pdfBlob = pdf.output("blob");
+  downloadBlob(pdfBlob, filename);
 }
 
 /**

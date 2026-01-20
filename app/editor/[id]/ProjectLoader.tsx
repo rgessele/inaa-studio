@@ -10,12 +10,19 @@ interface ProjectLoaderProps {
     name: string;
     design_data: Partial<DesignDataV2> | null;
   };
+  readOnly?: boolean;
 }
 
-export default function ProjectLoader({ project }: ProjectLoaderProps) {
-  const { loadProject } = useEditor();
+export default function ProjectLoader({
+  project,
+  readOnly,
+}: ProjectLoaderProps) {
+  const { loadProject, setReadOnly } = useEditor();
 
   useEffect(() => {
+    if (readOnly) {
+      setReadOnly(true);
+    }
     // Load the project when the component mounts
     const figures = project.design_data?.figures ?? [];
     const pageGuideSettings = project.design_data?.pageGuideSettings;
@@ -29,7 +36,7 @@ export default function ProjectLoader({ project }: ProjectLoaderProps) {
       guides,
       meta
     );
-  }, [project, loadProject]);
+  }, [project, loadProject, readOnly, setReadOnly]);
 
   return null; // This component only handles loading, no UI
 }

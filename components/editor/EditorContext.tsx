@@ -137,6 +137,9 @@ export type SelectedEdge = {
 } | null;
 
 interface EditorContextType {
+  readOnly: boolean;
+  setReadOnly: (readOnly: boolean) => void;
+
   tool: Tool;
   setTool: (tool: Tool) => void;
 
@@ -262,7 +265,8 @@ import type { DesignDataV2 } from "./types";
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
 
 export function EditorProvider({ children }: { children: ReactNode }) {
-  const [tool, setTool] = useState<Tool>("select");
+  const [readOnly, setReadOnlyState] = useState(false);
+  const [tool, setToolState] = useState<Tool>("select");
   const [modifierKeys, setModifierKeys] = useState<{
     shift: boolean;
     alt: boolean;
@@ -271,6 +275,27 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   }>({ shift: false, alt: false, meta: false, ctrl: false });
   const [selectedFigureIds, setSelectedFigureIdsState] = useState<string[]>([]);
   const [selectedEdge, setSelectedEdge] = useState<SelectedEdge>(null);
+
+  const setReadOnly = useCallback((next: boolean) => {
+    setReadOnlyState(next);
+    if (next) {
+      setToolState("pan");
+      setSelectedFigureIdsState([]);
+      setSelectedEdge(null);
+    }
+  }, []);
+
+  const setTool = useCallback(
+    (nextTool: Tool) => {
+      if (readOnly) {
+        const allowed: Tool[] = ["pan", "measure"];
+        setToolState(allowed.includes(nextTool) ? nextTool : "pan");
+        return;
+      }
+      setToolState(nextTool);
+    },
+    [readOnly]
+  );
 
   type ClipboardPayload = {
     figures: Figure[];
@@ -1176,6 +1201,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   return (
     <EditorContext.Provider
       value={{
+        readOnly,
+        setReadOnly,
         tool,
         setTool,
         modifierKeys,

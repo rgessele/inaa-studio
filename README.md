@@ -10,6 +10,7 @@ Ferramenta para criação de projetos de modelagem
 - ✅ Armazenamento de projetos com dados em JSONB
 - ✅ Editor de moldes com React Konva
 - ✅ Canvas interativo para desenho de formas (retângulos, círculos, linhas)
+- ✅ Console Admin (`/admin`) para gestão e suporte
 
 ## Tecnologias
 
@@ -46,6 +47,7 @@ Ferramenta para criação de projetos de modelagem
 
 3. Configure o Supabase:
    - Siga as instruções em [docs/SUPABASE_SETUP.md](./docs/SUPABASE_SETUP.md)
+   - Para detalhes do painel admin, veja [docs/ADMIN_GUIDE.md](./docs/ADMIN_GUIDE.md)
    - Copie `.env.local.example` para `.env.local`
    - Adicione suas credenciais do Supabase
 
@@ -64,6 +66,7 @@ Ferramenta para criação de projetos de modelagem
 - `npm run start` - Inicia o servidor de produção
 - `npm run lint` - Executa o linter
 - `npm run format` - Formata o código com Prettier
+- `npm run test:e2e` - Roda os testes E2E (Playwright)
 
 ## Estrutura do Projeto
 

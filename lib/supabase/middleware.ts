@@ -62,17 +62,80 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (
-    !user &&
-    !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/auth") &&
-    request.nextUrl.pathname !== "/"
-  ) {
-    // no user, potentially respond by redirecting the user to the login page
+  const pathname = request.nextUrl.pathname;
+  const isPublic =
+    pathname === "/" || pathname.startsWith("/login") || pathname.startsWith("/auth");
+
+  if (!user && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
+
+  // If migrations are applied, enforce blocked/expired access and gate /admin.
+  // This is intentionally defensive: missing columns/RPCs should not crash.
+  if (user) {
+    // Bootstrap reserved admin emails: promote on first login.
+    // Uses a SECURITY DEFINER RPC when available.
+    const email = (user.email ?? "").toLowerCase();
+    const isReservedAdmin =
+      email === "admin@inaastudio.com.br" ||
+      email === "admin@comunidadeinaa.com.br";
+    if (isReservedAdmin) {
+      try {
+        await supabase.rpc("ensure_bootstrap_admin");
+      } catch {
+        // Ignore if RPC doesn't exist yet.
+      }
+    }
+
+    type ProfileAccessRow = {
+      role?: string | null;
+      blocked?: boolean | null;
+      access_expires_at?: string | null;
+    };
+
+    let profile: ProfileAccessRow | null = null;
+    try {
+      const { data } = await supabase
+        .from("profiles")
+        .select("role, blocked, access_expires_at")
+        .eq("id", user.id)
+        .single();
+      profile = (data as ProfileAccessRow | null) ?? null;
+    } catch {
+      profile = null;
+    }
+
+    const role = profile?.role ?? null;
+    const blocked = profile?.blocked ?? false;
+    const accessExpiresAt = profile?.access_expires_at
+      ? new Date(profile.access_expires_at)
+      : null;
+    const isExpired = accessExpiresAt ? accessExpiresAt.getTime() <= Date.now() : false;
+
+    if ((blocked || isExpired) && !isPublic) {
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        // Ignore: we still redirect.
+      }
+
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      url.searchParams.set("reason", blocked ? "blocked" : "expired");
+      return NextResponse.redirect(url);
+    }
+
+    const isAdminRoute = pathname.startsWith("/admin");
+    if (isAdminRoute && role !== "admin") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      return NextResponse.redirect(url);
+    }
+  }
+
+  // User is either public, authenticated, or explicitly allowed (E2E bypass).
 
   // IMPORTANT: You *must* return the supabaseResponse object as it is. If you're
   // creating a new response object with NextResponse.next() make sure to:

@@ -9,9 +9,11 @@ import { EditorProvider, useEditor } from "./EditorContext";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { useToolShortcuts } from "./useToolShortcuts";
 import { ToolModifiersOverlay } from "./ToolModifiersOverlay";
+import { PresenceHeartbeat } from "@/components/PresenceHeartbeat";
 
 function EditorLayoutContent({ children }: { children: React.ReactNode }) {
   const {
+    readOnly,
     undo,
     redo,
     setTool,
@@ -36,16 +38,17 @@ function EditorLayoutContent({ children }: { children: React.ReactNode }) {
     canCopy,
     onPaste: paste,
     canPaste,
-    enabled: !embedded,
+    enabled: !embedded && !readOnly,
   });
 
   useToolShortcuts({
     setTool,
-    enabled: !embedded,
+    enabled: !embedded && !readOnly,
   });
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background-light dark:bg-background-dark text-text-main dark:text-text-main-dark transition-colors duration-200 selection:bg-primary selection:text-white">
+      <PresenceHeartbeat />
       {embedded ? null : <EditorHeader />}
       <main className="flex-1 flex overflow-hidden">
         <EditorToolbar />
@@ -59,7 +62,7 @@ function EditorLayoutContent({ children }: { children: React.ReactNode }) {
           {children}
           {embedded ? null : <ToolModifiersOverlay />}
         </div>
-        {embedded ? null : <PropertiesPanel />}
+        {embedded || readOnly ? null : <PropertiesPanel />}
       </main>
     </div>
   );

@@ -284,7 +284,7 @@ test("point labels: PDF export toggles inclusion (size sanity)", async ({
 
   const downloadWithLabels = await Promise.all([
     page.waitForEvent("download"),
-    page.getByRole("button", { name: "Imprimir" }).click(),
+    page.getByRole("button", { name: "Exportar PDF" }).click(),
   ]);
   const pdfPathWithLabels = await downloadWithLabels[0].path();
   expect(pdfPathWithLabels).toBeTruthy();
@@ -295,7 +295,7 @@ test("point labels: PDF export toggles inclusion (size sanity)", async ({
 
   const downloadWithoutLabels = await Promise.all([
     page.waitForEvent("download"),
-    page.getByRole("button", { name: "Imprimir" }).click(),
+    page.getByRole("button", { name: "Exportar PDF" }).click(),
   ]);
   const pdfPathWithoutLabels = await downloadWithoutLabels[0].path();
   expect(pdfPathWithoutLabels).toBeTruthy();

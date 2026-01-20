@@ -38,6 +38,20 @@ This document provides step-by-step instructions for setting up Supabase authent
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    ```
 
+### Admin Console (server-side privileged key)
+
+Some `/admin` operations (import users, block/unblock, change email, transfer projects) require a privileged Supabase key that must **only** exist on the server.
+
+1. In your Supabase project dashboard, go to **Settings** → **API**.
+2. Under **API Keys**, copy the **Secret** key.
+3. Add it to `.env.local` (server-only):
+
+   ```env
+   SUPABASE_SECRET_KEY=your-secret-api-key
+   ```
+
+If your dashboard shows a different label/name, you can also use `SUPABASE_SECRET_API_KEY`. As a legacy fallback, `SUPABASE_SERVICE_ROLE_KEY` is still supported.
+
 ## Step 4: Run Database Migrations
 
 1. In your Supabase project dashboard, go to **SQL Editor**
@@ -97,6 +111,8 @@ For development, Supabase provides a default email service that works well for t
    - Google OAuth: Click "Continue with Google" (if configured)
 
 5. After successful login, you should be redirected to `/dashboard`
+
+If your user has `profiles.role = "admin"`, the app will redirect to `/admin` by default.
 
 ## Verify Database Setup
 

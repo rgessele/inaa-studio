@@ -28,6 +28,7 @@ export function EditorToolbar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const {
+    readOnly,
     tool,
     setTool,
     setFigures,
@@ -72,6 +73,8 @@ export function EditorToolbar() {
   const hasAutoExportedRef = useRef(false);
   const embedded =
     searchParams.get("embedded") === "1" || searchParams.get("embed") === "1";
+  const printOnly = searchParams.get("printOnly") === "1";
+  const printOnlyReadOnly = readOnly && printOnly;
 
   const urlWantsExportModal = useMemo(() => {
     return searchParams.get("export") === "pdf";
@@ -559,13 +562,36 @@ export function EditorToolbar() {
               : "w-12 bg-surface-light dark:bg-surface-dark border-r border-gray-200 dark:border-gray-700 flex flex-col relative z-50 shadow-subtle shrink-0 px-2 py-3"
           }
         >
+          {printOnlyReadOnly ? (
+            <div className="flex-1 flex items-start justify-center">
+              <button
+                onClick={() => setShowExportModal(true)}
+                onMouseEnter={exportTooltip.onMouseEnter}
+                onMouseLeave={exportTooltip.onMouseLeave}
+                className="group relative w-full aspect-square flex items-center justify-center rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
+                aria-label="Imprimir"
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[22px]">
+                  download
+                </span>
+                <ToolbarTooltip
+                  isMac={isMac}
+                  title="Imprimir"
+                  expanded={exportTooltip.expanded}
+                  details={["Exportação e impressão (PDF/SVG)."]}
+                />
+              </button>
+            </div>
+          ) : null}
+
           <div
             ref={toolbarListRef}
-            className={
+            className={`${
               isCompactToolbar
                 ? "grid grid-cols-2 content-start justify-items-stretch gap-1 flex-1 min-h-0"
                 : "grid grid-cols-1 content-start justify-items-stretch gap-1 flex-1 min-h-0"
-            }
+            }${printOnlyReadOnly ? " hidden" : ""}`}
           >
             <button
               onClick={() => {
@@ -1035,7 +1061,9 @@ export function EditorToolbar() {
 
           <div
             ref={toolbarBottomRef}
-            className="pt-2 flex items-center justify-center"
+            className={`pt-2 flex items-center justify-center${
+              printOnlyReadOnly ? " hidden" : ""
+            }`}
           >
             <button
               onMouseEnter={clearTooltip.onMouseEnter}

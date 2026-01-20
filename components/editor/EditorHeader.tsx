@@ -15,6 +15,7 @@ import { ThemeToggleButton } from "@/components/theme/ThemeToggleButton";
 
 export function EditorHeader() {
   const {
+    readOnly,
     figures,
     projectId,
     setProjectId,
@@ -252,6 +253,14 @@ export function EditorHeader() {
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_E2E_TESTS === "1") return;
 
+    if (readOnly) {
+      autoSavePrevUnsavedRef.current = false;
+      autoSaveDirtySinceRef.current = null;
+      autoSaveRetryDelayMsRef.current = AUTO_SAVE_MAX_INTERVAL_MS;
+      clearAutoSaveTimers();
+      return;
+    }
+
     if (!projectId) {
       autoSavePrevUnsavedRef.current = false;
       autoSaveDirtySinceRef.current = null;
@@ -312,6 +321,7 @@ export function EditorHeader() {
     pageGuideSettings,
     projectId,
     projectName,
+    readOnly,
     runAutoSave,
   ]);
 
@@ -381,6 +391,14 @@ export function EditorHeader() {
   }, [router]);
 
   const handleSaveClick = useCallback(async () => {
+    if (readOnly) {
+      setToast({
+        message: "Modo somente leitura (admin)",
+        type: "error",
+        isVisible: true,
+      });
+      return;
+    }
     if (isSaving) return;
     if (!projectId) {
       setShowSaveModal(true);
@@ -418,6 +436,7 @@ export function EditorHeader() {
 
     setIsSaving(false);
   }, [
+    readOnly,
     isSaving,
     markProjectSaved,
     projectId,
@@ -429,13 +448,21 @@ export function EditorHeader() {
   ]);
 
   const handleSaveAsShortcut = useCallback(() => {
+    if (readOnly) {
+      setToast({
+        message: "Modo somente leitura (admin)",
+        type: "error",
+        isVisible: true,
+      });
+      return;
+    }
     if (isSaving) return;
     if (!projectId) {
       setShowSaveModal(true);
       return;
     }
     setShowSaveAsModal(true);
-  }, [isSaving, projectId]);
+  }, [readOnly, isSaving, projectId]);
 
   useEffect(() => {
     const isTypingElement = (target: EventTarget | null) => {
@@ -450,6 +477,7 @@ export function EditorHeader() {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isTypingElement(event.target)) return;
+      if (readOnly) return;
 
       const isMac = /Mac|iPhone|iPod|iPad/.test(navigator.userAgent);
       const cmdOrCtrl = isMac ? event.metaKey : event.ctrlKey;
@@ -476,7 +504,7 @@ export function EditorHeader() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleSaveAsShortcut, handleSaveClick]);
+  }, [handleSaveAsShortcut, handleSaveClick, readOnly]);
 
   useEffect(() => {
     const onSave = () => {
@@ -495,6 +523,14 @@ export function EditorHeader() {
   }, [handleSaveAsShortcut, handleSaveClick]);
 
   const handleSave = async (name: string) => {
+    if (readOnly) {
+      setToast({
+        message: "Modo somente leitura (admin)",
+        type: "error",
+        isVisible: true,
+      });
+      return;
+    }
     setIsSaving(true);
     const result = await saveProject(
       name,
@@ -628,22 +664,27 @@ export function EditorHeader() {
           )}
         </div>
         <div className="flex items-center gap-3">
-          {/* Save button */}
-          <button
-            onClick={handleSaveClick}
-            onMouseEnter={saveTooltip.onMouseEnter}
-            onMouseLeave={saveTooltip.onMouseLeave}
-            className="group relative bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-4 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={isSaving}
-          >
-            <span className="material-symbols-outlined text-[16px]">save</span>
-            {isSaving ? "Salvando..." : "Salvar"}
-            <HeaderTooltip
-              title="Salvar Projeto"
-              expanded={saveTooltip.expanded}
-              details={["Salva as alterações do projeto atual."]}
-            />
-          </button>
+          {readOnly ? (
+            <div className="text-[11px] px-3 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-900/30">
+              Admin • Somente leitura
+            </div>
+          ) : (
+            <button
+              onClick={handleSaveClick}
+              onMouseEnter={saveTooltip.onMouseEnter}
+              onMouseLeave={saveTooltip.onMouseLeave}
+              className="group relative bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-4 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isSaving}
+            >
+              <span className="material-symbols-outlined text-[16px]">save</span>
+              {isSaving ? "Salvando..." : "Salvar"}
+              <HeaderTooltip
+                title="Salvar Projeto"
+                expanded={saveTooltip.expanded}
+                details={["Salva as alterações do projeto atual."]}
+              />
+            </button>
+          )}
           <div className="flex items-center mr-2">
             <ThemeToggleButton
               onMouseEnter={themeTooltip.onMouseEnter}

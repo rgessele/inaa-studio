@@ -52,7 +52,7 @@ test("pique: espelho inverte a direção (side)", async ({ page }) => {
       opacity: 1,
     };
 
-    window.__INAA_DEBUG__?.loadTestProject({ figures: [fig] });
+    window.__INAA_DEBUG__?.loadTestProject?.({ figures: [fig] });
   });
 
   await page.getByLabel("Espelhar", { exact: true }).click();

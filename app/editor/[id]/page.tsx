@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { EditorLayout, Canvas } from "@/components/editor";
 import type { DesignDataV2 } from "@/components/editor/types";
+import { createAdminClient } from "@/lib/supabase/admin";
 import ProjectLoader from "./ProjectLoader";
 
 function getE2ETestProject(id: string): {
@@ -80,6 +81,29 @@ export async function generateMetadata({
     .single();
 
   if (!project?.name) {
+    try {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profile?.role === "admin") {
+        const admin = createAdminClient();
+        const { data: anyProject } = await admin
+          .from("projects")
+          .select("name")
+          .eq("id", id)
+          .maybeSingle();
+
+        if (anyProject?.name) {
+          return { title: anyProject.name };
+        }
+      }
+    } catch {
+      // Ignore and fall back to default title.
+    }
+
     return {};
   }
 
@@ -115,20 +139,49 @@ export default async function EditorProjectPage({ params }: PageProps) {
   }
 
   // Fetch the project - ensure user owns it
-  const { data: project, error } = await supabase
+  const { data: ownProject } = await supabase
     .from("projects")
     .select("*")
     .eq("id", id)
     .eq("user_id", user.id)
-    .single();
+    .maybeSingle();
 
-  if (error || !project) {
-    redirect("/dashboard");
+  const project = ownProject;
+  const adminReadOnly = !project;
+
+  if (!project) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profile?.role !== "admin") {
+      redirect("/dashboard");
+    }
+
+    const admin = createAdminClient();
+    const { data: anyProject } = await admin
+      .from("projects")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!anyProject) {
+      redirect("/dashboard");
+    }
+
+    return (
+      <EditorLayout>
+        <ProjectLoader project={anyProject} readOnly={true} />
+        <Canvas />
+      </EditorLayout>
+    );
   }
 
   return (
     <EditorLayout>
-      <ProjectLoader project={project} />
+      <ProjectLoader project={project} readOnly={adminReadOnly} />
       <Canvas />
     </EditorLayout>
   );
