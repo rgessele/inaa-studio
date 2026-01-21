@@ -59,6 +59,7 @@ export default async function AdminUserDetailPage({
   }
 
   const mq = toStr(sp.mq).trim();
+  const recoveryFromQuery = toStr(sp.recovery).trim() || null;
   const pageSize = clampInt(toInt(sp.mPageSize, 50), 10, 200);
   const pageRaw = clampInt(toInt(sp.mPage, 1), 1, 1_000_000);
 
@@ -182,10 +183,12 @@ export default async function AdminUserDetailPage({
                 userId={id}
                 currentUserId={currentUserId}
                 email={user.email}
+                fullName={user.full_name}
                 role={user.role}
                 status={user.status}
                 blocked={Boolean(user.blocked)}
                 accessExpiresAt={user.access_expires_at}
+                initialRecoveryLink={recoveryFromQuery}
               />
             </div>
           </div>

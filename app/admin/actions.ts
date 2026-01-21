@@ -148,6 +148,125 @@ async function audit(params: {
   });
 }
 
+export async function adminUpdateUserFullName(userId: string, fullNameRaw: string) {
+  const { user } = await requireAdmin();
+
+  const fullName = fullNameRaw.trim();
+  if (!fullName) throw new Error("Nome inválido");
+
+  const admin = createAdminClient();
+
+  const { error: authErr } = await admin.auth.admin.updateUserById(userId, {
+    user_metadata: { full_name: fullName },
+  });
+  if (authErr) throw new Error(authErr.message);
+
+  const { error: profileErr } = await admin
+    .from("profiles")
+    .update({ full_name: fullName })
+    .eq("id", userId);
+  if (profileErr) throw new Error(profileErr.message);
+
+  await audit({
+    actorUserId: user.id,
+    targetUserId: userId,
+    action: "update_user_full_name",
+    payload: { full_name: fullName },
+  });
+
+  revalidatePath("/admin/users");
+  revalidatePath(`/admin/users/${userId}`);
+}
+
+export async function adminCreateUser(params: {
+  email: string;
+  fullName?: string;
+  role?: Role;
+  status?: Status;
+  accessExpiresAtIso?: string | null;
+  sendInvite?: boolean;
+}) {
+  const { user } = await requireAdmin();
+
+  const email = normalizeEmail(params.email);
+  if (!email || !isValidEmail(email)) throw new Error("Email inválido");
+
+  const role: Role = params.role ?? "assinante";
+  const status: Status = params.status ?? "active";
+  const fullName = (params.fullName ?? "").trim();
+  const accessExpiresAtIso = params.accessExpiresAtIso ?? null;
+  const sendInvite = params.sendInvite !== false;
+
+  const admin = createAdminClient();
+
+  // Prevent duplicates (by profile email).
+  const { data: existing } = await admin
+    .from("profiles")
+    .select("id")
+    .ilike("email", email)
+    .maybeSingle();
+  if (existing?.id) {
+    throw new Error("Usuário já existe");
+  }
+
+  let createdUserId: string | null = null;
+  let recoveryLink: string | null = null;
+
+  if (sendInvite) {
+    const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
+      data: fullName ? { full_name: fullName } : undefined,
+    });
+    if (error) throw new Error(error.message);
+    createdUserId = data.user?.id ?? null;
+  } else {
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password: randomPassword(),
+      email_confirm: true,
+      user_metadata: fullName ? { full_name: fullName } : undefined,
+    });
+    if (error) throw new Error(error.message);
+    createdUserId = data.user?.id ?? null;
+
+    if (createdUserId) {
+      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+        type: "recovery",
+        email,
+      });
+      if (linkErr) throw new Error(linkErr.message);
+      recoveryLink = linkData.properties?.action_link ?? null;
+    }
+  }
+
+  if (!createdUserId) throw new Error("Não foi possível criar o usuário");
+
+  // Ensure profile has desired access fields.
+  const update: Record<string, unknown> = {
+    role,
+    status,
+  };
+  if (fullName) update.full_name = fullName;
+  if (accessExpiresAtIso !== null) update.access_expires_at = accessExpiresAtIso;
+
+  const { error: updErr } = await admin
+    .from("profiles")
+    .update(update)
+    .eq("id", createdUserId);
+  if (updErr) throw new Error(updErr.message);
+
+  await audit({
+    actorUserId: user.id,
+    targetUserId: createdUserId,
+    action: "create_user",
+    payload: { email, role, status, access_expires_at: accessExpiresAtIso, sendInvite },
+  });
+
+  revalidatePath("/admin/users");
+  revalidatePath(`/admin/users/${createdUserId}`);
+
+  return { userId: createdUserId, recoveryLink };
+}
+
 function isExpired(accessExpiresAt: string | null): boolean {
   if (!accessExpiresAt) return false;
   const t = new Date(accessExpiresAt).getTime();

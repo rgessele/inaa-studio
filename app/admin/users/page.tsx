@@ -189,6 +189,12 @@ export default async function AdminUsersPage({
         >
           Importar CSV
         </Link>
+          <Link
+            href="/admin/users/new"
+            className="px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-white font-medium transition-colors"
+          >
+            Novo usuário
+          </Link>
       </div>
 
       {filters}
