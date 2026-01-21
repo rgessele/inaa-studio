@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ThemeToggleButton } from "@/components/dashboard/ThemeToggleButton";
 import { PresenceHeartbeat } from "@/components/PresenceHeartbeat";
+import { UserAvatarMenu } from "@/components/UserAvatarMenu";
 
 export default async function AdminLayout({
   children,
@@ -27,7 +28,7 @@ export default async function AdminLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, full_name, avatar_url")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -35,18 +36,22 @@ export default async function AdminLayout({
     redirect("/dashboard");
   }
 
+  const displayNameFromProfile = profile?.full_name?.trim() || "";
   const displayName =
+    displayNameFromProfile ||
     (user.user_metadata?.full_name as string | undefined) ||
     (user.user_metadata?.name as string | undefined) ||
-    (user.email ? user.email.split("@")[0] : "Usuário");
+    (user.email ? user.email.split("@")[0] : "") ||
+    "Usuário";
   const email = user.email ?? "";
   const initials = displayName
     .split(" ")
     .filter(Boolean)
     .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
+    .map((p: string) => p[0]?.toUpperCase())
     .join("")
     .slice(0, 2);
+  const avatarUrl = profile?.avatar_url ?? null;
 
   const navLink = (href: string, label: string) => (
     <Link
@@ -111,9 +116,15 @@ export default async function AdminLayout({
                   </p>
                 </div>
 
-                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-accent-gold flex items-center justify-center text-white font-semibold shadow-subtle border-2 border-white dark:border-gray-700">
-                  {initials || "A"}
-                </div>
+                <UserAvatarMenu
+                  userId={user.id}
+                  displayName={displayName}
+                  email={email}
+                  initials={initials || "A"}
+                  avatarUrl={avatarUrl}
+                  sizeClassName="h-10 w-10"
+                  showOnlineIndicator
+                />
 
                 <form action="/auth/signout" method="post">
                   <button

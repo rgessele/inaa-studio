@@ -40,10 +40,16 @@ export function EditorHeader() {
   const [showSaveAsModal, setShowSaveAsModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [userInfo, setUserInfo] = useState<{
+    userId: string;
     displayName: string;
     email: string;
     initials: string;
+    avatarUrl: string | null;
   } | null>(null);
+  const [isAvatarMenuOpen, setIsAvatarMenuOpen] = useState(false);
+  const [isAvatarBusy, setIsAvatarBusy] = useState(false);
+  const avatarMenuRef = useRef<HTMLDivElement | null>(null);
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "error";
@@ -357,23 +363,34 @@ export function EditorHeader() {
 
       if (!isMounted || !user) return;
 
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name, avatar_url")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      const displayNameFromProfile = profile?.full_name?.trim() || "";
       const displayName =
+        displayNameFromProfile ||
         (user.user_metadata?.full_name as string | undefined) ||
         (user.user_metadata?.name as string | undefined) ||
-        (user.email ? user.email.split("@")[0] : "Usuário");
+        (user.email ? user.email.split("@")[0] : "") ||
+        "Usuário";
       const email = user.email ?? "";
       const initials = displayName
         .split(" ")
         .filter(Boolean)
         .slice(0, 2)
-        .map((p) => p[0]?.toUpperCase())
+        .map((p: string) => p[0]?.toUpperCase())
         .join("")
         .slice(0, 2);
 
       setUserInfo({
+        userId: user.id,
         displayName,
         email,
         initials: initials || "U",
+        avatarUrl: profile?.avatar_url ?? null,
       });
     };
 
@@ -382,6 +399,126 @@ export function EditorHeader() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAvatarMenuOpen) return;
+
+    const onMouseDown = (event: MouseEvent) => {
+      const root = avatarMenuRef.current;
+      if (!root) return;
+      if (event.target instanceof Node && root.contains(event.target)) return;
+      setIsAvatarMenuOpen(false);
+    };
+
+    document.addEventListener("mousedown", onMouseDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+    };
+  }, [isAvatarMenuOpen]);
+
+  const showToast = useCallback(
+    (message: string, type: "success" | "error") => {
+      setToast({ message, type, isVisible: true });
+    },
+    []
+  );
+
+  const uploadAvatar = useCallback(
+    async (file: File) => {
+      if (!userInfo?.userId) return;
+      if (!file.type.startsWith("image/")) {
+        showToast("Escolha uma imagem (PNG/JPG/WebP).", "error");
+        return;
+      }
+      if (file.size > 3 * 1024 * 1024) {
+        showToast("A imagem deve ter no máximo 3MB.", "error");
+        return;
+      }
+
+      setIsAvatarBusy(true);
+      try {
+        const supabase = createClient();
+        const path = `${userInfo.userId}/avatar`;
+
+        const uploadRes = await supabase.storage
+          .from("avatars")
+          .upload(path, file, {
+            upsert: true,
+            contentType: file.type,
+          });
+
+        if (uploadRes.error) {
+          showToast("Não foi possível enviar sua foto.", "error");
+          return;
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from("avatars")
+          .getPublicUrl(path);
+
+        const avatarUrl = publicUrlData.publicUrl
+          ? `${publicUrlData.publicUrl}?v=${Date.now()}`
+          : null;
+
+        const updateRes = await supabase
+          .from("profiles")
+          .update({ avatar_url: avatarUrl })
+          .eq("id", userInfo.userId);
+
+        if (updateRes.error) {
+          showToast("Não foi possível salvar sua foto no perfil.", "error");
+          return;
+        }
+
+        try {
+          await supabase.auth.updateUser({
+            data: avatarUrl ? { avatar_url: avatarUrl } : {},
+          });
+        } catch {
+          // best-effort only
+        }
+
+        setUserInfo((prev) => (prev ? { ...prev, avatarUrl } : prev));
+        showToast("Foto de perfil atualizada!", "success");
+      } finally {
+        setIsAvatarBusy(false);
+      }
+    },
+    [showToast, userInfo]
+  );
+
+  const removeAvatar = useCallback(async () => {
+    if (!userInfo?.userId) return;
+
+    setIsAvatarBusy(true);
+    try {
+      const supabase = createClient();
+      const path = `${userInfo.userId}/avatar`;
+
+      await supabase.storage.from("avatars").remove([path]);
+
+      const updateRes = await supabase
+        .from("profiles")
+        .update({ avatar_url: null })
+        .eq("id", userInfo.userId);
+
+      if (updateRes.error) {
+        showToast("Não foi possível remover a foto do perfil.", "error");
+        return;
+      }
+
+      try {
+        await supabase.auth.updateUser({ data: { avatar_url: null } });
+      } catch {
+        // best-effort only
+      }
+
+      setUserInfo((prev) => (prev ? { ...prev, avatarUrl: null } : prev));
+      showToast("Foto de perfil removida.", "success");
+    } finally {
+      setIsAvatarBusy(false);
+    }
+  }, [showToast, userInfo]);
 
   const handleSignOut = useCallback(async () => {
     const supabase = createClient();
@@ -719,20 +856,98 @@ export function EditorHeader() {
               </p>
             </div>
 
-            <div
-              onMouseEnter={profileTooltip.onMouseEnter}
-              onMouseLeave={profileTooltip.onMouseLeave}
-              className="relative group cursor-pointer"
-            >
-              <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary to-accent-gold flex items-center justify-center text-white font-semibold shadow-subtle border-2 border-white dark:border-gray-700 text-xs">
-                {userInfo?.initials ?? "U"}
-              </div>
-              <div className="absolute bottom-0 right-0 h-3 w-3 bg-green-500 rounded-full border-2 border-white dark:border-surface-dark" />
-              <HeaderTooltip
-                title="Perfil do Usuário"
-                expanded={profileTooltip.expanded}
-                details={["Informações da conta e sessão."]}
-              />
+            <div ref={avatarMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setIsAvatarMenuOpen((prev) => !prev)}
+                onMouseEnter={profileTooltip.onMouseEnter}
+                onMouseLeave={profileTooltip.onMouseLeave}
+                className="relative group cursor-pointer"
+                aria-haspopup="menu"
+                aria-expanded={isAvatarMenuOpen}
+                aria-label="Abrir menu do perfil"
+              >
+                {userInfo?.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={userInfo.avatarUrl}
+                    alt="Foto de perfil"
+                    className="h-9 w-9 rounded-full object-cover shadow-subtle border-2 border-white dark:border-gray-700"
+                  />
+                ) : (
+                  <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary to-accent-gold flex items-center justify-center text-white font-semibold shadow-subtle border-2 border-white dark:border-gray-700 text-xs">
+                    {userInfo?.initials ?? "U"}
+                  </div>
+                )}
+                <div className="absolute bottom-0 right-0 h-3 w-3 bg-green-500 rounded-full border-2 border-white dark:border-surface-dark" />
+                <HeaderTooltip
+                  title="Perfil do Usuário"
+                  expanded={profileTooltip.expanded}
+                  details={["Clique para gerenciar sua foto."]}
+                />
+              </button>
+
+              {isAvatarMenuOpen ? (
+                <div
+                  className="absolute right-0 mt-2 w-72 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-surface-dark shadow-lg overflow-hidden z-50"
+                  role="menu"
+                >
+                  <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center gap-3">
+                    {userInfo?.avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={userInfo.avatarUrl}
+                        alt="Foto de perfil"
+                        className="h-10 w-10 rounded-full object-cover border border-gray-200 dark:border-gray-700"
+                      />
+                    ) : (
+                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-accent-gold flex items-center justify-center text-white font-semibold border border-gray-200 dark:border-gray-700">
+                        {userInfo?.initials ?? "U"}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                        {userInfo?.displayName ?? "Usuário"}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {userInfo?.email ?? ""}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-3 space-y-2">
+                    <input
+                      ref={avatarFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.currentTarget.files?.[0] ?? null;
+                        e.currentTarget.value = "";
+                        if (f) void uploadAvatar(f);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => avatarFileInputRef.current?.click()}
+                      disabled={isAvatarBusy}
+                      className="w-full h-9 rounded-md bg-primary hover:bg-primary-hover text-white text-xs font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      role="menuitem"
+                    >
+                      {isAvatarBusy ? "Processando..." : "Adicionar/alterar foto"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void removeAvatar()}
+                      disabled={isAvatarBusy || !userInfo?.avatarUrl}
+                      className="w-full h-9 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-surface-dark text-gray-900 dark:text-gray-100 text-xs font-medium hover:bg-gray-50 dark:hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      role="menuitem"
+                    >
+                      Remover foto
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <button

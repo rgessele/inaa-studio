@@ -6,6 +6,7 @@ import { DashboardClient } from "@/components/dashboard/DashboardClient";
 import type { Project } from "@/lib/projects";
 import { PresenceHeartbeat } from "@/components/PresenceHeartbeat";
 import Link from "next/link";
+import { UserAvatarMenu } from "@/components/UserAvatarMenu";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -19,10 +20,27 @@ export default async function DashboardPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, full_name, avatar_url")
     .eq("id", user.id)
     .maybeSingle();
   const isAdmin = profile?.role === "admin";
+
+  const displayNameFromProfile = profile?.full_name?.trim() || "";
+  const displayName =
+    displayNameFromProfile ||
+    (user.user_metadata?.full_name as string | undefined) ||
+    (user.user_metadata?.name as string | undefined) ||
+    (user.email ? user.email.split("@")[0] : "") ||
+    "Usuário";
+  const email = user.email ?? "";
+  const initials = displayName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p: string) => p[0]?.toUpperCase())
+    .join("")
+    .slice(0, 2);
+  const avatarUrl = profile?.avatar_url ?? null;
 
   // Fetch user's projects
   let projects: unknown[] | null = null;
@@ -71,19 +89,6 @@ export default async function DashboardPage() {
     error = fallback.error;
   }
 
-  const displayName =
-    (user.user_metadata?.full_name as string | undefined) ||
-    (user.user_metadata?.name as string | undefined) ||
-    (user.email ? user.email.split("@")[0] : "Usuário");
-  const email = user.email ?? "";
-  const initials = displayName
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join("")
-    .slice(0, 2);
-
   return (
     <div className="relative overflow-hidden isolate bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 transition-colors min-h-screen flex flex-col before:content-[''] before:fixed before:inset-0 before:bg-[url('/dashboard-bg.png')] before:bg-right before:bg-no-repeat before:bg-[length:80%] before:opacity-10 before:pointer-events-none before:select-none before:z-0">
       <PresenceHeartbeat />
@@ -124,12 +129,15 @@ export default async function DashboardPage() {
                   </p>
                 </div>
 
-                <div className="relative group cursor-pointer">
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-accent-gold flex items-center justify-center text-white font-semibold shadow-subtle border-2 border-white dark:border-gray-700">
-                    {initials || "U"}
-                  </div>
-                  <div className="absolute bottom-0 right-0 h-3 w-3 bg-green-500 rounded-full border-2 border-white dark:border-surface-dark" />
-                </div>
+                <UserAvatarMenu
+                  userId={user.id}
+                  displayName={displayName}
+                  email={email}
+                  initials={initials || "U"}
+                  avatarUrl={avatarUrl}
+                  sizeClassName="h-10 w-10"
+                  showOnlineIndicator
+                />
 
                 <form action="/auth/signout" method="post">
                   <button
