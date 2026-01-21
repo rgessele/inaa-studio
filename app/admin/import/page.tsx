@@ -78,6 +78,17 @@ export default async function AdminImportPage({
             </p>
           </div>
 
+          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+            <input
+              type="checkbox"
+              name="send_invites"
+              value="1"
+              defaultChecked
+              className="accent-primary"
+            />
+            Enviar convites por email (para novos usuários)
+          </label>
+
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="submit"

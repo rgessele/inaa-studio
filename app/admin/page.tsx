@@ -42,6 +42,7 @@ export default async function AdminOverviewPage() {
     usersCount,
     projectsCount,
     blockedCount,
+    inactiveCount,
     expiredCount,
     onlineCount,
     onlineRows,
@@ -52,6 +53,10 @@ export default async function AdminOverviewPage() {
       .from("profiles")
       .select("id", { count: "exact", head: true })
       .eq("blocked", true),
+    supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "inactive"),
     supabase
       .from("profiles")
       .select("id", { count: "exact", head: true })
@@ -103,7 +108,7 @@ export default async function AdminOverviewPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
         <StatCard
           label="Usuários"
           value={String(usersCount.count ?? 0)}
@@ -118,6 +123,11 @@ export default async function AdminOverviewPage() {
           label="Banidos"
           value={String(blockedCount.count ?? 0)}
           href="/admin/users?status=blocked"
+        />
+        <StatCard
+          label="Inativos"
+          value={String(inactiveCount.count ?? 0)}
+          href="/admin/users?status=inactive"
         />
         <StatCard
           label="Acesso expirado"

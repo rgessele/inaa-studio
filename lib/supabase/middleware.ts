@@ -64,7 +64,11 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const isPublic =
-    pathname === "/" || pathname.startsWith("/login") || pathname.startsWith("/auth");
+    pathname === "/" ||
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/forgot-password") ||
+    pathname.startsWith("/reset-password");
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
@@ -91,6 +95,7 @@ export async function updateSession(request: NextRequest) {
 
     type ProfileAccessRow = {
       role?: string | null;
+      status?: string | null;
       blocked?: boolean | null;
       access_expires_at?: string | null;
     };
@@ -99,7 +104,7 @@ export async function updateSession(request: NextRequest) {
     try {
       const { data } = await supabase
         .from("profiles")
-        .select("role, blocked, access_expires_at")
+        .select("role, status, blocked, access_expires_at")
         .eq("id", user.id)
         .single();
       profile = (data as ProfileAccessRow | null) ?? null;
@@ -108,13 +113,15 @@ export async function updateSession(request: NextRequest) {
     }
 
     const role = profile?.role ?? null;
+    const status = profile?.status ?? "active";
     const blocked = profile?.blocked ?? false;
     const accessExpiresAt = profile?.access_expires_at
       ? new Date(profile.access_expires_at)
       : null;
     const isExpired = accessExpiresAt ? accessExpiresAt.getTime() <= Date.now() : false;
+    const isInactive = status !== "active";
 
-    if ((blocked || isExpired) && !isPublic) {
+    if ((blocked || isExpired || isInactive) && !isPublic) {
       try {
         await supabase.auth.signOut();
       } catch {
@@ -123,7 +130,10 @@ export async function updateSession(request: NextRequest) {
 
       const url = request.nextUrl.clone();
       url.pathname = "/login";
-      url.searchParams.set("reason", blocked ? "blocked" : "expired");
+      url.searchParams.set(
+        "reason",
+        blocked ? "blocked" : isInactive ? "inactive" : "expired"
+      );
       return NextResponse.redirect(url);
     }
 

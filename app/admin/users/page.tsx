@@ -53,7 +53,7 @@ export default async function AdminUsersPage({
   let dataQuery = supabase
     .from("admin_user_overview")
     .select(
-      "id, email, full_name, role, blocked, access_expires_at, projects_count, last_seen_at, route"
+      "id, email, full_name, role, status, blocked, access_expires_at, projects_count, last_seen_at, route"
     )
     .order("created_at", { ascending: false });
 
@@ -70,6 +70,11 @@ export default async function AdminUsersPage({
   if (status === "blocked") {
     countQuery = countQuery.eq("blocked", true);
     dataQuery = dataQuery.eq("blocked", true);
+  }
+
+  if (status === "inactive") {
+    countQuery = countQuery.eq("status", "inactive");
+    dataQuery = dataQuery.eq("status", "inactive");
   }
 
   if (status === "expired") {
@@ -135,6 +140,7 @@ export default async function AdminUsersPage({
         >
           <option value="">Status (todos)</option>
           <option value="blocked">Bloqueados</option>
+          <option value="inactive">Inativos</option>
           <option value="expired">Expirados</option>
         </select>
         <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-white/5 text-sm text-gray-700 dark:text-gray-200">
@@ -240,6 +246,7 @@ export default async function AdminUsersPage({
                     email: string | null;
                     full_name: string | null;
                     role: string | null;
+                    status: string | null;
                     blocked: boolean | null;
                     access_expires_at: string | null;
                     projects_count: number | null;
@@ -299,7 +306,9 @@ export default async function AdminUsersPage({
                           userId={user.id}
                           currentUserId={currentUserId}
                           role={user.role}
+                          status={user.status}
                           blocked={Boolean(user.blocked)}
+                          accessExpiresAt={user.access_expires_at}
                         />
                       </td>
                     </tr>

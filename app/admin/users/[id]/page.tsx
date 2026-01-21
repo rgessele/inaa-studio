@@ -40,7 +40,7 @@ export default async function AdminUserDetailPage({
   const { data: user, error } = await supabase
     .from("admin_user_overview")
     .select(
-      "id, email, full_name, role, blocked, blocked_reason, blocked_at, access_expires_at, projects_count, last_seen_at, route"
+      "id, email, full_name, role, status, blocked, blocked_reason, blocked_at, access_expires_at, projects_count, last_seen_at, route"
     )
     .eq("id", id)
     .single();
@@ -153,7 +153,11 @@ export default async function AdminUserDetailPage({
               <div>
                 <p className="text-gray-600 dark:text-gray-400">Status</p>
                 <p className="font-semibold text-gray-900 dark:text-gray-100">
-                  {user.blocked ? "Bloqueado (ban)" : "Ativo"}
+                  {user.blocked
+                    ? "Bloqueado (ban)"
+                    : user.status === "inactive"
+                      ? "Inativo"
+                      : "Ativo"}
                 </p>
                 {user.blocked_reason ? (
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -179,6 +183,7 @@ export default async function AdminUserDetailPage({
                 currentUserId={currentUserId}
                 email={user.email}
                 role={user.role}
+                status={user.status}
                 blocked={Boolean(user.blocked)}
                 accessExpiresAt={user.access_expires_at}
               />

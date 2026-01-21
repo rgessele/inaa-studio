@@ -12,7 +12,9 @@ export function UserRowActions(props: {
   userId: string;
   currentUserId: string;
   role: string | null;
+  status: string | null;
   blocked: boolean;
+  accessExpiresAt: string | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -20,19 +22,34 @@ export function UserRowActions(props: {
 
   const isSelf = props.userId === props.currentUserId;
 
+  const isExpired = useMemo(() => {
+    if (!props.accessExpiresAt) return false;
+    const t = new Date(props.accessExpiresAt).getTime();
+    if (!Number.isFinite(t)) return false;
+    return t <= Date.now();
+  }, [props.accessExpiresAt]);
+
   const statusLabel = useMemo(() => {
     if (props.blocked) return "Bloqueado";
+    if (props.status === "inactive") return "Inativo";
+    if (isExpired) return "Expirado";
     return "Ativo";
-  }, [props.blocked]);
+  }, [isExpired, props.blocked, props.status]);
+
+  const statusClassName = useMemo(() => {
+    if (props.blocked) {
+      return "text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-200 border border-red-200 dark:border-red-900/30";
+    }
+    if (props.status === "inactive" || isExpired) {
+      return "text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-50 dark:bg-yellow-950/20 text-yellow-800 dark:text-yellow-200 border border-yellow-200 dark:border-yellow-900/30";
+    }
+    return "text-[10px] px-1.5 py-0.5 rounded-full bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-200 border border-green-200 dark:border-green-900/30";
+  }, [isExpired, props.blocked, props.status]);
 
   return (
     <div className="flex items-center justify-end gap-1.5">
       <span
-        className={
-          props.blocked
-            ? "text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-200 border border-red-200 dark:border-red-900/30"
-            : "text-[10px] px-1.5 py-0.5 rounded-full bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-200 border border-green-200 dark:border-green-900/30"
-        }
+        className={statusClassName}
       >
         {statusLabel}
       </span>

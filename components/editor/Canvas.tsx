@@ -193,7 +193,7 @@ function quantizeEdgeHoverByChordLengthFloor(
     };
   }
 
-  const pts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 1 : 60);
+  const pts = edgeLocalPoints(figure, edge, 60);
   if (pts.length < 2) return hover;
 
   let bestIndex = 0;

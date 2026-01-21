@@ -5,6 +5,8 @@ import {
   adminBanUser,
   adminSetUserAccessExpiresAt,
   adminSetUserRole,
+  adminSetUserStatus,
+  adminGeneratePasswordRecoveryLink,
   adminTransferProjects,
   adminUnbanUser,
   adminUpdateUserEmail,
@@ -31,6 +33,7 @@ export function UserDetailActions(props: {
   currentUserId: string;
   email: string | null;
   role: string | null;
+  status: string | null;
   blocked: boolean;
   accessExpiresAt: string | null;
 }) {
@@ -39,12 +42,14 @@ export function UserDetailActions(props: {
 
   const isSelf = props.userId === props.currentUserId;
   const [roleDraft, setRoleDraft] = useState(props.role ?? "assinante");
+  const [statusDraft, setStatusDraft] = useState(props.status ?? "active");
 
   const [expiresDraft, setExpiresDraft] = useState(
     toInputDateTimeLocal(props.accessExpiresAt)
   );
   const [emailDraft, setEmailDraft] = useState(props.email ?? "");
   const [transferEmailDraft, setTransferEmailDraft] = useState("");
+  const [recoveryLink, setRecoveryLink] = useState<string | null>(null);
 
   return (
     <div className="space-y-6">
@@ -87,6 +92,42 @@ export function UserDetailActions(props: {
             >
               <option value="admin">Admin</option>
               <option value="assinante">Assinante</option>
+            </select>
+          </label>
+
+          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+            <span className="text-xs text-gray-600 dark:text-gray-400">Status</span>
+            <select
+              value={statusDraft}
+              disabled={pending || isSelf}
+              className="text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-white/5 hover:bg-white/80 dark:hover:bg-white/10 transition-colors disabled:opacity-50"
+              title={
+                isSelf
+                  ? "Você não pode inativar a si mesmo"
+                  : "Ativar/Inativar usuário"
+              }
+              onChange={(e) => {
+                const nextStatus = e.target.value;
+                const prevStatus = statusDraft;
+                if (nextStatus === prevStatus) return;
+
+                setError(null);
+                setStatusDraft(nextStatus);
+                startTransition(async () => {
+                  try {
+                    await adminSetUserStatus(
+                      props.userId,
+                      nextStatus === "inactive" ? "inactive" : "active"
+                    );
+                  } catch (e) {
+                    setStatusDraft(prevStatus);
+                    setError(e instanceof Error ? e.message : "Erro");
+                  }
+                });
+              }}
+            >
+              <option value="active">Ativo</option>
+              <option value="inactive">Inativo</option>
             </select>
           </label>
 
@@ -262,6 +303,72 @@ export function UserDetailActions(props: {
             Atualizar email
           </button>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-white/5 p-4">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+          Senha
+        </h3>
+
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          Se o email de redefinição não estiver chegando (SMTP/deliverability), gere um link
+          manual e envie por um canal seguro.
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={pending || !props.email}
+            className="px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-white/5 hover:bg-white/80 dark:hover:bg-white/10 text-sm transition-colors disabled:opacity-50"
+            onClick={() => {
+              const email = props.email;
+              if (!email) return;
+              setError(null);
+              setRecoveryLink(null);
+              startTransition(async () => {
+                try {
+                  const res = await adminGeneratePasswordRecoveryLink(email);
+                  setRecoveryLink(res.link);
+
+                  try {
+                    await navigator.clipboard.writeText(res.link);
+                  } catch {
+                    // ignore
+                  }
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "Erro");
+                }
+              });
+            }}
+          >
+            Gerar link de redefinição
+          </button>
+
+          {recoveryLink ? (
+            <a
+              href={recoveryLink}
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-2 rounded-md bg-primary hover:bg-primary-hover text-white text-sm font-medium transition-colors"
+            >
+              Abrir link
+            </a>
+          ) : null}
+        </div>
+
+        {recoveryLink ? (
+          <div className="mt-3">
+            <label className="text-xs text-gray-600 dark:text-gray-400">
+              Link (copiado para a área de transferência)
+            </label>
+            <input
+              readOnly
+              value={recoveryLink}
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-white/5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400/30 dark:focus:ring-white/10"
+              onFocus={(e) => e.currentTarget.select()}
+            />
+          </div>
+        ) : null}
       </div>
 
       <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-white/5 p-4">
