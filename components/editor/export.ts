@@ -990,12 +990,29 @@ export async function generateTiledPDF(
         // Seam figures already get a dedicated "Margem de Costura" label (below).
         const isSeam = figure.kind === "seam";
 
+        // Darts/Pences: when A and B are directly connected by an edge, the generic
+        // per-edge label will match the dart's AB width label, causing a duplicated
+        // value in the exported PDF. Prefer the dedicated dart AB label and suppress
+        // only the matching base edge label.
+        const dartBaseEdgeIdsToSkip = new Set<string>();
+        if (resolved.toolFilter.dart !== false) {
+          for (const dart of figure.darts ?? []) {
+            const baseEdge = figure.edges.find(
+              (edge) =>
+                (edge.from === dart.aNodeId && edge.to === dart.bNodeId) ||
+                (edge.from === dart.bNodeId && edge.to === dart.aNodeId)
+            );
+            if (baseEdge) dartBaseEdgeIdsToSkip.add(baseEdge.id);
+          }
+        }
+
         if (!isSeam) {
           // Edge length labels (matches MeasureOverlay intent; no hover/selection UI)
           const fontSize = 11;
           const textWidth = 120;
 
           for (const edge of figure.edges) {
+            if (dartBaseEdgeIdsToSkip.has(edge.id)) continue;
             const layout = computeEdgeMeasureLayoutWorld(figure, edge.id);
             if (!layout) continue;
 
