@@ -22,7 +22,10 @@ export default async function LoginPage({
     <div className="relative overflow-hidden isolate bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 transition-colors min-h-screen flex items-center justify-center px-4 before:content-[''] before:fixed before:inset-0 before:bg-[url('/dashboard-bg.png')] before:bg-right before:bg-no-repeat before:bg-[length:80%] before:opacity-10 before:pointer-events-none before:select-none before:z-0">
       <div className="relative z-10 w-full max-w-md">
         <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-surface-light dark:bg-surface-dark p-8 shadow-subtle">
-          <LoginToasts reason={reason || undefined} error={error || undefined} />
+          <LoginToasts
+            reason={reason || undefined}
+            error={error || undefined}
+          />
           <div className="text-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img

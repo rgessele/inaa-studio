@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   adminBanUser,
@@ -19,15 +19,32 @@ export function UserRowActions(props: {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [roleDraft, setRoleDraft] = useState(props.role ?? "assinante");
+  const [now, setNow] = useState<number | null>(null);
 
   const isSelf = props.userId === props.currentUserId;
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setNow(Date.now());
+    }, 0);
+
+    const intervalId = window.setInterval(() => {
+      setNow(Date.now());
+    }, 60_000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   const isExpired = useMemo(() => {
     if (!props.accessExpiresAt) return false;
+    if (now === null) return false;
     const t = new Date(props.accessExpiresAt).getTime();
     if (!Number.isFinite(t)) return false;
-    return t <= Date.now();
-  }, [props.accessExpiresAt]);
+    return t <= now;
+  }, [now, props.accessExpiresAt]);
 
   const statusLabel = useMemo(() => {
     if (props.blocked) return "Bloqueado";
@@ -48,11 +65,7 @@ export function UserRowActions(props: {
 
   return (
     <div className="flex items-center justify-end gap-1.5">
-      <span
-        className={statusClassName}
-      >
-        {statusLabel}
-      </span>
+      <span className={statusClassName}>{statusLabel}</span>
 
       <select
         value={roleDraft}
@@ -118,10 +131,7 @@ export function UserRowActions(props: {
           disabled={pending}
           className="text-[11px] px-2 py-1 rounded-md bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50"
           onClick={() => {
-            const reason = window.prompt(
-              "Motivo do bloqueio (opcional):",
-              ""
-            );
+            const reason = window.prompt("Motivo do bloqueio (opcional):", "");
             if (reason === null) return;
             setError(null);
             startTransition(async () => {

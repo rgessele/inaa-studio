@@ -49,4 +49,3 @@ Quando `printOnly=1` e o editor está em `readOnly`:
 
 - A visualização admin de projetos de terceiros usa um client privilegiado no servidor.
 - A UI esconde ações de edição, e o contexto do editor força `readOnly` nesse cenário.
-

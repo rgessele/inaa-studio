@@ -51,7 +51,10 @@ export default async function AdminUserDetailPage({
         <p className="text-sm text-red-700 dark:text-red-200">
           Erro ao carregar usuário.
         </p>
-        <Link href="/admin/users" className="text-sm text-primary hover:underline">
+        <Link
+          href="/admin/users"
+          className="text-sm text-primary hover:underline"
+        >
           Voltar
         </Link>
       </div>
@@ -241,7 +244,10 @@ export default async function AdminUserDetailPage({
                     </tr>
                   ) : (
                     (projects ?? []).map((p) => (
-                      <tr key={p.id} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.04]">
+                      <tr
+                        key={p.id}
+                        className="hover:bg-black/[0.02] dark:hover:bg-white/[0.04]"
+                      >
                         <td className="px-3 py-2 font-medium text-gray-900 dark:text-gray-100">
                           {p.name}
                         </td>

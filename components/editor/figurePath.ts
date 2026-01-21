@@ -140,10 +140,10 @@ export function figureCentroidLocal(figure: Figure): Vec2 {
   const usedNodes = figure.nodes.filter((n) => usedIds.has(n.id));
   const nodes = usedNodes.length ? usedNodes : figure.nodes;
 
-  const sum = nodes.reduce(
-    (acc, n) => ({ x: acc.x + n.x, y: acc.y + n.y }),
-    { x: 0, y: 0 }
-  );
+  const sum = nodes.reduce((acc, n) => ({ x: acc.x + n.x, y: acc.y + n.y }), {
+    x: 0,
+    y: 0,
+  });
   return { x: sum.x / nodes.length, y: sum.y / nodes.length };
 }
 

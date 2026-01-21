@@ -624,7 +624,11 @@ function splitPolylineAtPoint(
   };
 }
 
-function slicePolylineByArcLength(points: Vec2[], s0Px: number, s1Px: number): Vec2[] {
+function slicePolylineByArcLength(
+  points: Vec2[],
+  s0Px: number,
+  s1Px: number
+): Vec2[] {
   if (points.length < 2) return points;
 
   const segLens: number[] = [];
@@ -634,7 +638,8 @@ function slicePolylineByArcLength(points: Vec2[], s0Px: number, s1Px: number): V
     segLens.push(l);
     total += l;
   }
-  if (!Number.isFinite(total) || total < 1e-6) return [points[0], points[points.length - 1]];
+  if (!Number.isFinite(total) || total < 1e-6)
+    return [points[0], points[points.length - 1]];
 
   const s0 = clamp(s0Px, 0, total);
   const s1 = clamp(s1Px, 0, total);
@@ -699,7 +704,11 @@ function pickActiveSegmentS(
   sCursorPx: number
 ): { s0: number; s1: number } {
   if (breakpointsS.length < 2) return { s0: 0, s1: 0 };
-  const s = clamp(sCursorPx, breakpointsS[0], breakpointsS[breakpointsS.length - 1]);
+  const s = clamp(
+    sCursorPx,
+    breakpointsS[0],
+    breakpointsS[breakpointsS.length - 1]
+  );
 
   for (let i = 0; i < breakpointsS.length - 1; i++) {
     const a = breakpointsS[i];
@@ -1192,22 +1201,28 @@ function resolveDartApexLocal(
   const abLen = len(ab);
   if (!Number.isFinite(abLen) || abLen < 1e-6) return rawApexLocal;
   const nUnit = norm(perp(ab));
-  if (!Number.isFinite(nUnit.x) || !Number.isFinite(nUnit.y)) return rawApexLocal;
+  if (!Number.isFinite(nUnit.x) || !Number.isFinite(nUnit.y))
+    return rawApexLocal;
   if (len(nUnit) < 1e-6) return rawApexLocal;
 
   const ap = sub(rawApexLocal, a);
   const crossZ = ab.x * ap.y - ab.y * ap.x;
   const signedHeight = crossZ / abLen;
   const heightRaw = Math.abs(signedHeight);
-  const height =
-    precisionSnap ? Math.floor(heightRaw / PX_PER_MM) * PX_PER_MM : heightRaw;
+  const height = precisionSnap
+    ? Math.floor(heightRaw / PX_PER_MM) * PX_PER_MM
+    : heightRaw;
   const orientedN = signedHeight >= 0 ? nUnit : mul(nUnit, -1);
 
   const snapped = add(mid, mul(orientedN, height));
   return isFiniteVec2(snapped) ? snapped : rawApexLocal;
 }
 
-function mirrorVec2AcrossLine(p: Vec2, axisPoint: Vec2, axisDirUnit: Vec2): Vec2 {
+function mirrorVec2AcrossLine(
+  p: Vec2,
+  axisPoint: Vec2,
+  axisDirUnit: Vec2
+): Vec2 {
   const u = axisDirUnit;
   const v = sub(p, axisPoint);
   const projLen = v.x * u.x + v.y * u.y;
@@ -1350,7 +1365,10 @@ function mirrorFigureAcrossLineAnchored(
   const mirAnchor = mirrored.nodes.find((n) => n.id === anchorNodeId) ?? null;
   if (!origAnchor || !mirAnchor) return mirrored;
 
-  const origWorld = figureLocalToWorld(figure, { x: origAnchor.x, y: origAnchor.y });
+  const origWorld = figureLocalToWorld(figure, {
+    x: origAnchor.x,
+    y: origAnchor.y,
+  });
   const mirWorld = { x: mirAnchor.x, y: mirAnchor.y };
   const delta = { x: origWorld.x - mirWorld.x, y: origWorld.y - mirWorld.y };
   return translateFigureGeometryWorld(mirrored, delta);
@@ -2888,7 +2906,10 @@ export default function Canvas() {
         node.scaleX(1);
         node.scaleY(1);
         transformer.getLayer()?.batchDraw();
-        toast("Espelho sincronizado está bloqueado. Desligue a sincronização para editar.", "error");
+        toast(
+          "Espelho sincronizado está bloqueado. Desligue a sincronização para editar.",
+          "error"
+        );
         return;
       }
     }
@@ -4244,13 +4265,13 @@ export default function Canvas() {
       // Prefer the hovered edge; fallback to a direct hit-test.
       let hitEdge = hoveredEdge;
       let fig: Figure | null = hitEdge
-        ? figures.find((f) => f.id === hitEdge!.figureId) ?? null
+        ? (figures.find((f) => f.id === hitEdge!.figureId) ?? null)
         : null;
 
       if (!hitEdge || !fig) {
         const thresholdWorld = 10 / scale;
         const figId = findHoveredFigureId(figures, world, thresholdWorld);
-        fig = figId ? figures.find((f) => f.id === figId) ?? null : null;
+        fig = figId ? (figures.find((f) => f.id === figId) ?? null) : null;
         if (!fig || fig.kind === "seam") return;
         const local = worldToFigureLocal(fig, world);
         const hit = findNearestEdge(fig, local);
@@ -4347,7 +4368,9 @@ export default function Canvas() {
         if (!hitEdge) {
           const thresholdWorld = 10 / scale;
           const figId = findHoveredFigureId(figures, world, thresholdWorld);
-          const fig = figId ? figures.find((f) => f.id === figId) ?? null : null;
+          const fig = figId
+            ? (figures.find((f) => f.id === figId) ?? null)
+            : null;
           if (!fig || fig.kind === "seam") return;
 
           const local = worldToFigureLocal(fig, world);
@@ -4356,8 +4379,11 @@ export default function Canvas() {
           hitEdge = hit.best;
 
           if (precisionSnap) {
-            const edge = fig.edges.find((ed) => ed.id === hitEdge!.edgeId) ?? null;
-            const fromNode = edge ? getNodeById(fig.nodes, edge.from) : undefined;
+            const edge =
+              fig.edges.find((ed) => ed.id === hitEdge!.edgeId) ?? null;
+            const fromNode = edge
+              ? getNodeById(fig.nodes, edge.from)
+              : undefined;
             if (fromNode) {
               if (!hitEdge) return;
               hitEdge = quantizeEdgeHoverByChordLengthFloor(
@@ -4377,11 +4403,7 @@ export default function Canvas() {
         if (!targetFigure) return;
         if (targetFigure.kind === "seam") return;
 
-        const splitA = splitFigureEdge(
-          targetFigure,
-          hitEdge.edgeId,
-          hitEdge.t
-        );
+        const splitA = splitFigureEdge(targetFigure, hitEdge.edgeId, hitEdge.t);
         if (!splitA.newNodeId) return;
 
         setFigures((prev) =>
@@ -4553,7 +4575,12 @@ export default function Canvas() {
       const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
       const placedWorld =
         !resolvedDown.snap.isSnapped && precisionSnap && last
-          ? snapPointAlongDirFloor(worldForTool, last, sub(worldForTool, last), PX_PER_MM)
+          ? snapPointAlongDirFloor(
+              worldForTool,
+              last,
+              sub(worldForTool, last),
+              PX_PER_MM
+            )
           : !resolvedDown.snap.isSnapped && precisionSnap
             ? snapWorldToStepPxFloor(worldForTool, PX_PER_MM)
             : worldForTool;
@@ -4633,9 +4660,18 @@ export default function Canvas() {
       if (!resolvedDown.snap.isSnapped && precisionSnap && last) {
         if (e.evt.shiftKey) {
           const dir = sub(placedWorld, last);
-          placedWorld = snapPointAlongDirFloor(placedWorld, last, dir, PX_PER_MM);
+          placedWorld = snapPointAlongDirFloor(
+            placedWorld,
+            last,
+            dir,
+            PX_PER_MM
+          );
         } else {
-          placedWorld = snapWorldRelativeToRefFloor(placedWorld, last, PX_PER_MM);
+          placedWorld = snapWorldRelativeToRefFloor(
+            placedWorld,
+            last,
+            PX_PER_MM
+          );
         }
       }
 
@@ -4897,10 +4933,12 @@ export default function Canvas() {
     if (tool === "dart") {
       const thresholdWorld = 10 / scale;
       const targetFigure = dartDraft
-        ? figures.find((f) => f.id === dartDraft.figureId) ?? null
+        ? (figures.find((f) => f.id === dartDraft.figureId) ?? null)
         : (() => {
             const figId = findHoveredFigureId(figures, world, thresholdWorld);
-            const fig = figId ? figures.find((f) => f.id === figId) ?? null : null;
+            const fig = figId
+              ? (figures.find((f) => f.id === figId) ?? null)
+              : null;
             if (!fig || fig.kind === "seam") return null;
             return fig;
           })();
@@ -4991,9 +5029,17 @@ export default function Canvas() {
       const edgeThresholdWorld = 10 / scale;
       const piqueThresholdWorld = 8 / scale;
 
-      const pk = findHoveredPique(figures, worldForToolRaw, piqueThresholdWorld);
+      const pk = findHoveredPique(
+        figures,
+        worldForToolRaw,
+        piqueThresholdWorld
+      );
       if (pk) {
-        if (!hoveredPique || hoveredPique.figureId !== pk.figureId || hoveredPique.piqueId !== pk.piqueId) {
+        if (
+          !hoveredPique ||
+          hoveredPique.figureId !== pk.figureId ||
+          hoveredPique.piqueId !== pk.piqueId
+        ) {
           setHoveredPique(pk);
         }
         if (hoveredEdge) setHoveredEdge(null);
@@ -5083,7 +5129,9 @@ export default function Canvas() {
         ? null
         : findHoveredClosedFigureOrSeamBaseId(figures, world, 60);
       const baseId = hitId ?? insideId;
-      const fig = baseId ? (figures.find((f) => f.id === baseId) ?? null) : null;
+      const fig = baseId
+        ? (figures.find((f) => f.id === baseId) ?? null)
+        : null;
 
       const nextId = fig?.mirrorLink ? fig.id : null;
       setHoveredMirrorLinkFigureId((prev) => (prev === nextId ? prev : nextId));
@@ -5218,8 +5266,16 @@ export default function Canvas() {
 
     const mods: DraftMods = { shift: e.evt.shiftKey, alt: e.evt.altKey };
     let bWorld = worldForTool;
-    if (!resolvedMove.snap.isSnapped && precisionSnap && draft.tool === "rectangle") {
-      bWorld = snapWorldRelativeToRefFloor(worldForTool, draft.startWorld, PX_PER_MM);
+    if (
+      !resolvedMove.snap.isSnapped &&
+      precisionSnap &&
+      draft.tool === "rectangle"
+    ) {
+      bWorld = snapWorldRelativeToRefFloor(
+        worldForTool,
+        draft.startWorld,
+        PX_PER_MM
+      );
     }
     let effective = { a: draft.startWorld, b: bWorld };
     if (draft.tool === "rectangle" || draft.tool === "circle") {
@@ -5227,7 +5283,11 @@ export default function Canvas() {
     }
 
     // Circle tool: apply high precision to the radii (rx/ry) instead of snapping the cursor.
-    if (draft.tool === "circle" && !resolvedMove.snap.isSnapped && precisionSnap) {
+    if (
+      draft.tool === "circle" &&
+      !resolvedMove.snap.isSnapped &&
+      precisionSnap
+    ) {
       const center: Vec2 = {
         x: (effective.a.x + effective.b.x) / 2,
         y: (effective.a.y + effective.b.y) / 2,
@@ -5288,7 +5348,7 @@ export default function Canvas() {
               )
             : !resolved.snap.isSnapped && precisionSnap
               ? snapWorldToStepPxFloor(resolved.world, PX_PER_MM)
-            : resolved.world;
+              : resolved.world;
         return { ...prev, currentWorld: nextWorld };
       });
     },
@@ -6081,8 +6141,7 @@ export default function Canvas() {
                   // Shift: lock movement direction in 15° increments (relative to drag start).
                   const shiftKey =
                     ((ev.evt as unknown as { shiftKey?: boolean } | undefined)
-                      ?.shiftKey ??
-                      false) === true;
+                      ?.shiftKey ?? false) === true;
                   if (shiftKey) {
                     const dx0 = nx - ref.startNode.x;
                     const dy0 = ny - ref.startNode.y;
@@ -6310,8 +6369,7 @@ export default function Canvas() {
                     // Shift: lock handle angle in 15° increments around the node.
                     const shiftKey =
                       ((ev.evt as unknown as { shiftKey?: boolean } | undefined)
-                        ?.shiftKey ??
-                        false) === true;
+                        ?.shiftKey ?? false) === true;
                     if (shiftKey) {
                       const dx0 = nx - n.x;
                       const dy0 = ny - n.y;
@@ -6394,8 +6452,7 @@ export default function Canvas() {
                     // Shift: lock handle angle in 15° increments around the node.
                     const shiftKey =
                       ((ev.evt as unknown as { shiftKey?: boolean } | undefined)
-                        ?.shiftKey ??
-                        false) === true;
+                        ?.shiftKey ?? false) === true;
                     if (shiftKey) {
                       const dx0 = nx - n.x;
                       const dy0 = ny - n.y;
@@ -6676,8 +6733,12 @@ export default function Canvas() {
     const segPts = slicePolylineByArcLength(pts, s0, s1);
     const cutPoint = hoveredEdge.pointLocal;
     const split = splitPolylineAtPoint(segPts, cutPoint);
-    const leftPts = split ? split.left : slicePolylineByArcLength(pts, s0, sSnap);
-    const rightPts = split ? split.right : slicePolylineByArcLength(pts, sSnap, s1);
+    const leftPts = split
+      ? split.left
+      : slicePolylineByArcLength(pts, s0, sSnap);
+    const rightPts = split
+      ? split.right
+      : slicePolylineByArcLength(pts, sSnap, s1);
 
     const fontSize = 11 / scale;
     const textWidth = 120 / scale;
@@ -6688,7 +6749,12 @@ export default function Canvas() {
 
     if (!fig.closed) {
       return (
-        <Group x={fig.x} y={fig.y} rotation={fig.rotation || 0} listening={false}>
+        <Group
+          x={fig.x}
+          y={fig.y}
+          rotation={fig.rotation || 0}
+          listening={false}
+        >
           <Text
             x={cutPoint.x}
             y={cutPoint.y - 18 / scale}
@@ -6861,8 +6927,7 @@ export default function Canvas() {
       const normal = norm(perp(tangent));
       const offset = 12 / scale;
       const p = add(mid, mul(normal, offset));
-      const rawAngleDeg =
-        (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
+      const rawAngleDeg = (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
       const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
       const label = formatCm(pxToCm(dPx), 2);
 
@@ -6888,12 +6953,7 @@ export default function Canvas() {
     };
 
     return (
-      <Group
-        x={fig.x}
-        y={fig.y}
-        rotation={fig.rotation || 0}
-        listening={false}
-      >
+      <Group x={fig.x} y={fig.y} rotation={fig.rotation || 0} listening={false}>
         <Circle x={pFrom.x} y={pFrom.y} radius={3.5 / scale} fill={stroke} />
         <Circle x={pTo.x} y={pTo.y} radius={3.5 / scale} fill={stroke} />
         <Circle x={aLocal.x} y={aLocal.y} radius={4 / scale} fill={stroke} />
@@ -6915,7 +6975,12 @@ export default function Canvas() {
           listening={false}
         />
 
-        {renderHalfLabel(`dart:a:from:${fig.id}:${edge.id}`, pFrom, aLocal, dFromPx)}
+        {renderHalfLabel(
+          `dart:a:from:${fig.id}:${edge.id}`,
+          pFrom,
+          aLocal,
+          dFromPx
+        )}
         {renderHalfLabel(`dart:a:to:${fig.id}:${edge.id}`, aLocal, pTo, dToPx)}
       </Group>
     );
@@ -6932,7 +6997,10 @@ export default function Canvas() {
     if (!edge) return null;
 
     const hoverWorld = figureLocalToWorld(fig, hoveredEdge.pointLocal);
-    const side = pickMirrorSideByScreenBBox(fig, hoverWorld, { position, scale });
+    const side = pickMirrorSideByScreenBBox(fig, hoverWorld, {
+      position,
+      scale,
+    });
     const axisDirUnit = axisDirForSide(side);
     const anchorNodeId = pickAnchorNodeIdForEdgeSide(fig, edge, side, {
       position,
@@ -6973,7 +7041,12 @@ export default function Canvas() {
           lineCap="round"
         />
 
-        <Group x={fig.x} y={fig.y} rotation={fig.rotation || 0} listening={false}>
+        <Group
+          x={fig.x}
+          y={fig.y}
+          rotation={fig.rotation || 0}
+          listening={false}
+        >
           <Line
             points={edgeFlat}
             stroke={previewStroke}
@@ -7006,7 +7079,17 @@ export default function Canvas() {
         />
       </>
     );
-  }, [figures, hoveredEdge, position, previewDash, previewStroke, scale, size.height, size.width, tool]);
+  }, [
+    figures,
+    hoveredEdge,
+    position,
+    previewDash,
+    previewStroke,
+    scale,
+    size.height,
+    size.width,
+    tool,
+  ]);
 
   const unmirrorPreviewOverlay = useMemo(() => {
     if (tool !== "unfold") return null;
@@ -7070,7 +7153,17 @@ export default function Canvas() {
         />
       </>
     );
-  }, [figures, hoveredMirrorLinkFigureId, previewDash, previewRemoveStroke, previewStroke, scale, size.height, size.width, tool]);
+  }, [
+    figures,
+    hoveredMirrorLinkFigureId,
+    previewDash,
+    previewRemoveStroke,
+    previewStroke,
+    scale,
+    size.height,
+    size.width,
+    tool,
+  ]);
 
   const dartOverlay = useMemo(() => {
     if (tool !== "dart" || !selectedFigure || !dartDraft) return null;
@@ -7122,49 +7215,49 @@ export default function Canvas() {
           <Circle x={b.x} y={b.y} radius={4 / scale} fill={previewStroke} />
         ) : null}
 
-        {a && b && dartDraft.step === "pickB" ? (
-          (() => {
-            const lengthPx = dist(a, b);
-            const mid = lerp(a, b, 0.5);
-            const tangent = sub(b, a);
-            const normal = norm(perp(tangent));
-            const offset = 12 / scale;
-            const p = add(mid, mul(normal, offset));
-            const rawAngleDeg =
-              (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
-            const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
-            const fontSize = 11 / scale;
-            const textWidth = 120 / scale;
-            const label = formatCm(pxToCm(lengthPx), 2);
+        {a && b && dartDraft.step === "pickB"
+          ? (() => {
+              const lengthPx = dist(a, b);
+              const mid = lerp(a, b, 0.5);
+              const tangent = sub(b, a);
+              const normal = norm(perp(tangent));
+              const offset = 12 / scale;
+              const p = add(mid, mul(normal, offset));
+              const rawAngleDeg =
+                (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
+              const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
+              const fontSize = 11 / scale;
+              const textWidth = 120 / scale;
+              const label = formatCm(pxToCm(lengthPx), 2);
 
-            return (
-              <>
-                <Line
-                  points={[a.x, a.y, b.x, b.y]}
-                  stroke={stroke}
-                  strokeWidth={1 / scale}
-                  dash={dash}
-                />
-                <Text
-                  x={p.x}
-                  y={p.y}
-                  offsetX={textWidth / 2}
-                  offsetY={fontSize / 2}
-                  rotation={angleDeg}
-                  width={textWidth}
-                  align="center"
-                  text={label}
-                  fontSize={fontSize}
-                  fill={previewStroke}
-                  opacity={0.95}
-                  fontStyle="bold"
-                  listening={false}
-                  name="inaa-dart-preview-ab"
-                />
-              </>
-            );
-          })()
-        ) : null}
+              return (
+                <>
+                  <Line
+                    points={[a.x, a.y, b.x, b.y]}
+                    stroke={stroke}
+                    strokeWidth={1 / scale}
+                    dash={dash}
+                  />
+                  <Text
+                    x={p.x}
+                    y={p.y}
+                    offsetX={textWidth / 2}
+                    offsetY={fontSize / 2}
+                    rotation={angleDeg}
+                    width={textWidth}
+                    align="center"
+                    text={label}
+                    fontSize={fontSize}
+                    fill={previewStroke}
+                    opacity={0.95}
+                    fontStyle="bold"
+                    listening={false}
+                    name="inaa-dart-preview-ab"
+                  />
+                </>
+              );
+            })()
+          : null}
 
         {a && b && dartDraft.step === "pickApex" ? (
           <>
@@ -7324,7 +7417,9 @@ export default function Canvas() {
             ) : null}
 
             {(() => {
-              const fig = figures.find((f) => f.id === edgeContextMenu.figureId);
+              const fig = figures.find(
+                (f) => f.id === edgeContextMenu.figureId
+              );
               if (!fig?.mirrorLink) return null;
               return (
                 <>
@@ -7789,7 +7884,9 @@ export default function Canvas() {
                   hoveredEdge={hoveredMeasureEdge}
                   hoveredSelectEdge={hoveredSelectEdge}
                   hoveredPiqueId={
-                    hoveredPique?.figureId === fig.id ? hoveredPique.piqueId : null
+                    hoveredPique?.figureId === fig.id
+                      ? hoveredPique.piqueId
+                      : null
                   }
                   showNameHandle={
                     tool === "select" &&
@@ -7956,16 +8053,28 @@ export default function Canvas() {
                         null;
                       if (!edge) return;
 
-                      const hoverWorld = figureLocalToWorld(base, hit.best.pointLocal);
-                      const side = pickMirrorSideByScreenBBox(base, hoverWorld, {
-                        position,
-                        scale,
-                      });
+                      const hoverWorld = figureLocalToWorld(
+                        base,
+                        hit.best.pointLocal
+                      );
+                      const side = pickMirrorSideByScreenBBox(
+                        base,
+                        hoverWorld,
+                        {
+                          position,
+                          scale,
+                        }
+                      );
 
-                      const anchorNodeId = pickAnchorNodeIdForEdgeSide(base, edge, side, {
-                        position,
-                        scale,
-                      });
+                      const anchorNodeId = pickAnchorNodeIdForEdgeSide(
+                        base,
+                        edge,
+                        side,
+                        {
+                          position,
+                          scale,
+                        }
+                      );
 
                       const anchorNode =
                         base.nodes.find((n) => n.id === anchorNodeId) ?? null;
@@ -8047,7 +8156,8 @@ export default function Canvas() {
 
                       const originalId =
                         link.role === "mirror" ? other.id : base.id;
-                      const mirrorId = link.role === "mirror" ? base.id : other.id;
+                      const mirrorId =
+                        link.role === "mirror" ? base.id : other.id;
 
                       setFigures((prev) =>
                         prev

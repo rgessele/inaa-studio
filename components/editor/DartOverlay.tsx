@@ -88,8 +88,11 @@ function edgeIdsToPolyline(figure: Figure, edgeIds: string[]): Vec2[] {
   return concatPolylineSegments(segments);
 }
 
-function computeBasePathPolyline(figure: Figure, aNodeId: string, bNodeId: string)
-  : Vec2[] | null {
+function computeBasePathPolyline(
+  figure: Figure,
+  aNodeId: string,
+  bNodeId: string
+): Vec2[] | null {
   if (!figure.closed) return null;
 
   const pathAB = walkLoopEdgeIds(figure, aNodeId, bNodeId);
@@ -176,7 +179,11 @@ export function DartOverlay(props: {
         const mid = lerp(a, b, 0.5);
         const heightPx = dist(mid, c);
 
-        const basePoly = computeBasePathPolyline(figure, dart.aNodeId, dart.bNodeId);
+        const basePoly = computeBasePathPolyline(
+          figure,
+          dart.aNodeId,
+          dart.bNodeId
+        );
         const baseFlat = basePoly
           ? basePoly.flatMap((p) => [p.x, p.y])
           : [a.x, a.y, b.x, b.y];

@@ -447,8 +447,7 @@ const FigureRenderer = ({
             const p0 = at.point;
             const p1 = add(p0, mul(n, lengthPx * side));
 
-            const isHover =
-              hoveredPiqueId === p.id;
+            const isHover = hoveredPiqueId === p.id;
 
             return (
               <Line

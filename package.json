@@ -3,16 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "format": "prettier --write .",
-    "test:e2e": "playwright test --reporter=list",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:debug": "playwright test --debug",
-    "test:e2e:report": "playwright show-report"
+    "dev": "node node_modules/next/dist/bin/next dev",
+    "build": "node node_modules/next/dist/bin/next build",
+    "start": "node node_modules/next/dist/bin/next start",
+    "lint": "node node_modules/eslint/bin/eslint.js .",
+    "lint:fix": "node node_modules/eslint/bin/eslint.js . --fix",
+    "format": "node node_modules/prettier/bin/prettier.cjs --write .",
+    "test:e2e": "node node_modules/@playwright/test/cli.js test --reporter=list",
+    "test:e2e:ui": "node node_modules/@playwright/test/cli.js test --ui",
+    "test:e2e:debug": "node node_modules/@playwright/test/cli.js test --debug",
+    "test:e2e:report": "node node_modules/@playwright/test/cli.js show-report"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",

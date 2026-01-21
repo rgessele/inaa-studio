@@ -148,7 +148,10 @@ async function audit(params: {
   });
 }
 
-export async function adminUpdateUserFullName(userId: string, fullNameRaw: string) {
+export async function adminUpdateUserFullName(
+  userId: string,
+  fullNameRaw: string
+) {
   const { user } = await requireAdmin();
 
   const fullName = fullNameRaw.trim();
@@ -229,10 +232,11 @@ export async function adminCreateUser(params: {
     createdUserId = data.user?.id ?? null;
 
     if (createdUserId) {
-      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-        type: "recovery",
-        email,
-      });
+      const { data: linkData, error: linkErr } =
+        await admin.auth.admin.generateLink({
+          type: "recovery",
+          email,
+        });
       if (linkErr) throw new Error(linkErr.message);
       recoveryLink = linkData.properties?.action_link ?? null;
     }
@@ -246,7 +250,8 @@ export async function adminCreateUser(params: {
     status,
   };
   if (fullName) update.full_name = fullName;
-  if (accessExpiresAtIso !== null) update.access_expires_at = accessExpiresAtIso;
+  if (accessExpiresAtIso !== null)
+    update.access_expires_at = accessExpiresAtIso;
 
   const { error: updErr } = await admin
     .from("profiles")
@@ -258,7 +263,13 @@ export async function adminCreateUser(params: {
     actorUserId: user.id,
     targetUserId: createdUserId,
     action: "create_user",
-    payload: { email, role, status, access_expires_at: accessExpiresAtIso, sendInvite },
+    payload: {
+      email,
+      role,
+      status,
+      access_expires_at: accessExpiresAtIso,
+      sendInvite,
+    },
   });
 
   revalidatePath("/admin/users");
@@ -323,9 +334,7 @@ async function getProfileAdminState(
   };
 }
 
-async function assertNotLastActiveAdminRemoving(
-  targetUserId: string
-) {
+async function assertNotLastActiveAdminRemoving(targetUserId: string) {
   const admin = createAdminClient();
   const { count, error } = await admin
     .from("profiles")
@@ -333,7 +342,9 @@ async function assertNotLastActiveAdminRemoving(
     .eq("role", "admin")
     .eq("status", "active")
     .eq("blocked", false)
-    .or(`access_expires_at.is.null,access_expires_at.gt.${new Date().toISOString()}`)
+    .or(
+      `access_expires_at.is.null,access_expires_at.gt.${new Date().toISOString()}`
+    )
     .neq("id", targetUserId);
 
   if (error) {
@@ -418,7 +429,11 @@ export async function adminBanUser(userId: string, reason: string | null) {
   const admin = createAdminClient();
   const { error: profileError } = await admin
     .from("profiles")
-    .update({ blocked: true, blocked_at: new Date().toISOString(), blocked_reason: reason })
+    .update({
+      blocked: true,
+      blocked_at: new Date().toISOString(),
+      blocked_reason: reason,
+    })
     .eq("id", userId);
 
   if (profileError) throw new Error(profileError.message);
@@ -490,12 +505,17 @@ export async function adminSetUserStatus(userId: string, status: Status) {
   const admin = createAdminClient();
   const current = await getProfileAdminState(admin, userId);
   const isRemovingActiveAdmin =
-    current.role === "admin" && current.status === "active" && status !== "active";
+    current.role === "admin" &&
+    current.status === "active" &&
+    status !== "active";
   if (isRemovingActiveAdmin) {
     await assertNotLastActiveAdminRemoving(userId);
   }
 
-  const { error } = await admin.from("profiles").update({ status }).eq("id", userId);
+  const { error } = await admin
+    .from("profiles")
+    .update({ status })
+    .eq("id", userId);
   if (error) throw new Error(error.message);
 
   if (status !== "active") {
@@ -689,7 +709,11 @@ export async function adminImportUsersCsv(formData: FormData) {
     }
 
     const desiredRole: Role | null =
-      roleRaw === "admin" ? "admin" : roleRaw === "assinante" ? "assinante" : null;
+      roleRaw === "admin"
+        ? "admin"
+        : roleRaw === "assinante"
+          ? "assinante"
+          : null;
 
     const desiredStatus: Status | null =
       statusRaw === "inactive" || statusRaw === "inativo"
@@ -714,13 +738,17 @@ export async function adminImportUsersCsv(formData: FormData) {
         .ilike("email", email)
         .maybeSingle();
 
-      let targetUserId: string | null = (existing?.id as string | undefined) ?? null;
+      let targetUserId: string | null =
+        (existing?.id as string | undefined) ?? null;
 
       if (!targetUserId) {
         if (sendInvites) {
-          const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-            data: fullName ? { full_name: fullName } : undefined,
-          });
+          const { data, error } = await admin.auth.admin.inviteUserByEmail(
+            email,
+            {
+              data: fullName ? { full_name: fullName } : undefined,
+            }
+          );
           if (error) throw new Error(error.message);
           targetUserId = data.user?.id ?? null;
           invited++;
@@ -744,7 +772,8 @@ export async function adminImportUsersCsv(formData: FormData) {
       const update: Record<string, unknown> = {};
       if (desiredRole) update.role = desiredRole;
       if (desiredStatus) update.status = desiredStatus;
-      if (desiredExpiresIso !== null) update.access_expires_at = desiredExpiresIso;
+      if (desiredExpiresIso !== null)
+        update.access_expires_at = desiredExpiresIso;
 
       if (desiredRole && desiredRole !== "admin" && targetUserId === user.id) {
         throw new Error("Você não pode rebaixar a si mesmo");
@@ -757,7 +786,11 @@ export async function adminImportUsersCsv(formData: FormData) {
         }
       }
 
-      if (targetUserId && desiredExpiresIso !== null && isExpired(desiredExpiresIso)) {
+      if (
+        targetUserId &&
+        desiredExpiresIso !== null &&
+        isExpired(desiredExpiresIso)
+      ) {
         const current = await getProfileAdminState(admin, targetUserId);
         if (isActiveAdmin(current)) {
           await assertNotLastActiveAdminRemoving(targetUserId);
@@ -816,7 +849,10 @@ export async function adminImportUsersCsv(formData: FormData) {
         row_number: rowNumber,
         email,
         status: "ok",
-        message: targetUserId === (existing?.id as string | undefined) ? "Atualizado" : "Convidado",
+        message:
+          targetUserId === (existing?.id as string | undefined)
+            ? "Atualizado"
+            : "Convidado",
         payload: {
           desiredRole,
           desiredStatus,
@@ -854,7 +890,14 @@ export async function adminImportUsersCsv(formData: FormData) {
   await audit({
     actorUserId: user.id,
     action: "import_users_csv",
-    payload: { job_id: job.id, total: parsed.length, ok, failed, invited, updated },
+    payload: {
+      job_id: job.id,
+      total: parsed.length,
+      ok,
+      failed,
+      invited,
+      updated,
+    },
   });
 
   revalidatePath("/admin/import");

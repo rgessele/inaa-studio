@@ -80,8 +80,8 @@ test("pique: espelho inverte a direção (side)", async ({ page }) => {
   await expect
     .poll(async () => {
       return await page.evaluate(() => {
-        const figs =
-          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
+          []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         return list.length;
       });
@@ -91,8 +91,8 @@ test("pique: espelho inverte a direção (side)", async ({ page }) => {
   await expect
     .poll(async () => {
       return await page.evaluate(() => {
-        const figs =
-          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
+          []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
         const other = list.find((f) => f.id !== "fig_base") ?? null;

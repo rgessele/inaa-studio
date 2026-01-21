@@ -133,8 +133,8 @@ test("pence: Cmd alta precisão não quebra preview/commit durante posicionament
   await expect
     .poll(async () => {
       return await page.evaluate(() => {
-        const figs =
-          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
+          []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
         const dart = base?.darts?.[0] ?? null;
@@ -161,8 +161,8 @@ test("pence: Cmd alta precisão não quebra preview/commit durante posicionament
   await expect
     .poll(async () => {
       return await page.evaluate(() => {
-        const figs =
-          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
+          []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
         const dart = base?.darts?.[0] ?? null;

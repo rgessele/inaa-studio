@@ -67,12 +67,9 @@ export default async function AdminOverviewPage() {
       .gt("last_seen_at", fiveMinAgo),
     supabase
       .from("admin_user_overview")
-      .select(
-        "id, email, full_name, last_seen_at, route",
-        {
-          count: "exact",
-        }
-      )
+      .select("id, email, full_name, last_seen_at, route", {
+        count: "exact",
+      })
       .gt("last_seen_at", fiveMinAgo)
       .order("last_seen_at", { ascending: false })
       .limit(12),
@@ -160,7 +157,10 @@ export default async function AdminOverviewPage() {
               </p>
             ) : (
               online.map((u) => (
-                <div key={u.id} className="py-3 flex items-center justify-between">
+                <div
+                  key={u.id}
+                  className="py-3 flex items-center justify-between"
+                >
                   <div>
                     <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
                       {u.full_name || u.email || u.id}

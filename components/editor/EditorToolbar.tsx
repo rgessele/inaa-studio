@@ -474,7 +474,9 @@ export function EditorToolbar() {
 
     setIsExportingPdf(true);
     // Let React paint the loading state before the heavy PDF work.
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve())
+    );
 
     const resolvedSettings: ExportSettings = {
       ...exportSettings,

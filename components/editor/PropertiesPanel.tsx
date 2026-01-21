@@ -2826,7 +2826,8 @@ export function PropertiesPanel() {
                       </p>
                       {!selectedMirrorSyncEnabled ? (
                         <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                          Ao ligar novamente, o espelho será recalculado e suas edições serão substituídas.
+                          Ao ligar novamente, o espelho será recalculado e suas
+                          edições serão substituídas.
                         </p>
                       ) : null}
 
@@ -3392,8 +3393,8 @@ export function PropertiesPanel() {
               {tool === "unfold" && (
                 <div>
                   <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-                    Clique em uma forma espelhada para remover a cópia e desfazer
-                    o vínculo (funciona no original ou na cópia).
+                    Clique em uma forma espelhada para remover a cópia e
+                    desfazer o vínculo (funciona no original ou na cópia).
                   </p>
                 </div>
               )}

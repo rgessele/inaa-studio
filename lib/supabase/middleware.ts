@@ -118,7 +118,9 @@ export async function updateSession(request: NextRequest) {
     const accessExpiresAt = profile?.access_expires_at
       ? new Date(profile.access_expires_at)
       : null;
-    const isExpired = accessExpiresAt ? accessExpiresAt.getTime() <= Date.now() : false;
+    const isExpired = accessExpiresAt
+      ? accessExpiresAt.getTime() <= Date.now()
+      : false;
     const isInactive = status !== "active";
 
     if ((blocked || isExpired || isInactive) && !isPublic) {

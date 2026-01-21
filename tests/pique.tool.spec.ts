@@ -78,7 +78,10 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
   await page.getByRole("button", { name: "Pique" }).click();
   await expect
     .poll(async () => {
-      return (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ?? null;
+      return (
+        (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ??
+        null
+      );
     })
     .toBe("pique");
 
@@ -101,8 +104,16 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
 
   // Second insertion with Alt, but cursor stays in the top subsegment: snaps to midpoint of [0..0.5] => ~0.25.
   const pTopAgain = { x: 320, y: 215 };
-  const xTopAgain = clamp(box.x + pTopAgain.x, box.x + 2, box.x + box.width - 2);
-  const yTopAgain = clamp(box.y + pTopAgain.y, box.y + 2, box.y + box.height - 2);
+  const xTopAgain = clamp(
+    box.x + pTopAgain.x,
+    box.x + 2,
+    box.x + box.width - 2
+  );
+  const yTopAgain = clamp(
+    box.y + pTopAgain.y,
+    box.y + 2,
+    box.y + box.height - 2
+  );
 
   await page.keyboard.down("Alt");
   await page.mouse.move(xTopAgain, yTopAgain);
@@ -112,8 +123,8 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
   await expect
     .poll(async () => {
       return await page.evaluate(() => {
-        const figs =
-          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
+          []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
         const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
@@ -125,8 +136,8 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
   await expect
     .poll(async () => {
       return await page.evaluate(() => {
-        const figs =
-          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
+          []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
         const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
@@ -138,8 +149,8 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
   await expect
     .poll(async () => {
       return await page.evaluate(() => {
-        const figs =
-          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
+          []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
         const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
@@ -151,8 +162,8 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
   await expect
     .poll(async () => {
       return await page.evaluate(() => {
-        const figs =
-          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
+          []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
         const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
@@ -164,8 +175,8 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
   await expect
     .poll(async () => {
       return await page.evaluate(() => {
-        const figs =
-          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
+          []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
         const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
@@ -188,8 +199,8 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
   await expect
     .poll(async () => {
       return await page.evaluate(() => {
-        const figs =
-          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
+          []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
         return base?.piques?.length ?? 0;

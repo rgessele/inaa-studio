@@ -12,7 +12,11 @@ test("circle: editar raio/raios e circunferência no painel", async ({
   // Draw an ellipse (non-perfect circle) with the Circle tool.
   await page.getByRole("button", { name: "Círculo" }).click();
   await expect
-    .poll(async () => (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ?? null)
+    .poll(
+      async () =>
+        (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ??
+        null
+    )
     .toBe("circle");
 
   const box = await stage.boundingBox();
@@ -31,7 +35,11 @@ test("circle: editar raio/raios e circunferência no painel", async ({
   // Select it.
   await page.getByRole("button", { name: "Selecionar" }).click();
   await expect
-    .poll(async () => (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ?? null)
+    .poll(
+      async () =>
+        (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ??
+        null
+    )
     .toBe("select");
 
   const canvas = stage.locator("canvas").last();

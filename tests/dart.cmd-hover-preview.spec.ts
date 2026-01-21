@@ -166,8 +166,8 @@ test("pence: Cmd alta precisão não deve esconder preview do ponto A", async ({
   await expect
     .poll(async () => {
       return await page.evaluate(() => {
-        const figs =
-          (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
+          []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
         return base ? base.nodes.length : 0;

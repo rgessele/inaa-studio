@@ -31,7 +31,11 @@ import { add, len, mul, sub } from "./figureGeometry";
 import type { Figure } from "./types";
 import type { Vec2 } from "./figureGeometry";
 
-function mirrorVec2AcrossLine(p: Vec2, axisPoint: Vec2, axisDirUnit: Vec2): Vec2 {
+function mirrorVec2AcrossLine(
+  p: Vec2,
+  axisPoint: Vec2,
+  axisDirUnit: Vec2
+): Vec2 {
   const u = axisDirUnit;
   const v = sub(p, axisPoint);
   const projLen = v.x * u.x + v.y * u.y;
@@ -675,22 +679,30 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           // Also re-sync if axis data changed while staying linked.
           const axisChanged = (() => {
             if (!prevLink) return false;
-            if (prevLink.axisPointWorld.x !== link.axisPointWorld.x) return true;
-            if (prevLink.axisPointWorld.y !== link.axisPointWorld.y) return true;
+            if (prevLink.axisPointWorld.x !== link.axisPointWorld.x)
+              return true;
+            if (prevLink.axisPointWorld.y !== link.axisPointWorld.y)
+              return true;
             if (prevLink.axisDirWorld.x !== link.axisDirWorld.x) return true;
             if (prevLink.axisDirWorld.y !== link.axisDirWorld.y) return true;
             return false;
           })();
 
           // Recompute whenever the original changes, the mirror is mutated, or sync was just enabled.
-          if (!originalChanged && !mirrorChanged && !syncJustEnabled && !axisChanged) {
+          if (
+            !originalChanged &&
+            !mirrorChanged &&
+            !syncJustEnabled &&
+            !axisChanged
+          ) {
             continue;
           }
 
           const anchorNodeId = link.anchorNodeId ?? mirrorLink.anchorNodeId;
           const axisPointFromAnchor = (() => {
             if (!anchorNodeId) return null;
-            const node = original.nodes.find((n) => n.id === anchorNodeId) ?? null;
+            const node =
+              original.nodes.find((n) => n.id === anchorNodeId) ?? null;
             if (!node) return null;
             return figureLocalToWorld(original, { x: node.x, y: node.y });
           })();
@@ -740,18 +752,16 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         return nextFigs.map((f) => replacements.get(f.id) ?? f);
       };
 
-      const computeAll = (figs: Figure[]) => figs.map(withComputedFigureMeasures);
+      const computeAll = (figs: Figure[]) =>
+        figs.map(withComputedFigureMeasures);
 
       if (typeof next === "function") {
-        setFiguresState(
-          (prev) => {
-            const prevSafe = (prev || []) as Figure[];
-            const raw = ((next(prevSafe) as Figure[]) || []) as Figure[];
-            const synced = applyMirrorSync(prevSafe, raw);
-            return computeAll(synced);
-          },
-          saveHistory
-        );
+        setFiguresState((prev) => {
+          const prevSafe = (prev || []) as Figure[];
+          const raw = ((next(prevSafe) as Figure[]) || []) as Figure[];
+          const synced = applyMirrorSync(prevSafe, raw);
+          return computeAll(synced);
+        }, saveHistory);
       } else {
         setFiguresState((prev) => {
           const prevSafe = (prev || []) as Figure[];

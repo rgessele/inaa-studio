@@ -129,8 +129,12 @@ function computeDartBaseWorldPolyline(
     ];
   }
 
-  const polyAB = pathAB.ok ? edgeIdsToWorldPolyline(figure, pathAB.edgeIds) : [];
-  const polyBA = pathBA.ok ? edgeIdsToWorldPolyline(figure, pathBA.edgeIds) : [];
+  const polyAB = pathAB.ok
+    ? edgeIdsToWorldPolyline(figure, pathAB.edgeIds)
+    : [];
+  const polyBA = pathBA.ok
+    ? edgeIdsToWorldPolyline(figure, pathBA.edgeIds)
+    : [];
   if (!polyAB.length && !polyBA.length) return null;
   if (!polyBA.length) return polyAB;
   if (!polyAB.length) return polyBA;
@@ -197,7 +201,11 @@ function computePiqueSegmentWorld(
   const edge = figure.edges.find((e) => e.id === pique.edgeId) ?? null;
   if (!edge) return null;
 
-  const ptsLocal = edgeLocalPoints(figure, edge, edge.kind === "line" ? 2 : 120);
+  const ptsLocal = edgeLocalPoints(
+    figure,
+    edge,
+    edge.kind === "line" ? 2 : 120
+  );
   if (ptsLocal.length < 2) return null;
 
   const at = pointAndTangentAtT01(ptsLocal, pique.t01);
@@ -273,7 +281,10 @@ function escapeXml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function computeEdgeMeasureLayoutWorld(fig: Figure, edgeId: string): {
+function computeEdgeMeasureLayoutWorld(
+  fig: Figure,
+  edgeId: string
+): {
   midWorld: Vec2;
   posWorld: Vec2;
   angleDeg: number;
@@ -564,7 +575,12 @@ export async function generateTiledPDF(
   const iy0 = Math.floor((y0 - marginPx) / paperHeightPx);
   const iy1 = Math.floor((y1 - marginPx) / paperHeightPx);
 
-  const tiles: Array<{ tileX: number; tileY: number; row: number; col: number }> = [];
+  const tiles: Array<{
+    tileX: number;
+    tileY: number;
+    row: number;
+    col: number;
+  }> = [];
   for (let iy = iy0; iy <= iy1; iy++) {
     for (let ix = ix0; ix <= ix1; ix++) {
       const tileX = ix * paperWidthPx + marginPx;
@@ -762,9 +778,11 @@ export async function generateTiledPDF(
           const bWorld = figureLocalToWorld(figure, { x: bNode.x, y: bNode.y });
           const cWorld = figureLocalToWorld(figure, { x: cNode.x, y: cNode.y });
 
-          const baseWorld =
-            computeDartBaseWorldPolyline(figure, dart.aNodeId, dart.bNodeId) ??
-            [aWorld, bWorld];
+          const baseWorld = computeDartBaseWorldPolyline(
+            figure,
+            dart.aNodeId,
+            dart.bNodeId
+          ) ?? [aWorld, bWorld];
           const baseShifted: number[] = [];
           for (const p of baseWorld) baseShifted.push(p.x - tileX, p.y - tileY);
 
@@ -1076,7 +1094,11 @@ export async function generateTiledPDF(
             figureCentroidLocal(figure)
           );
 
-          const addSeamLabel = (posWorld: Vec2, angleDeg: number, text: string) => {
+          const addSeamLabel = (
+            posWorld: Vec2,
+            angleDeg: number,
+            text: string
+          ) => {
             tileLayer.add(
               new Konva.Text({
                 x: posWorld.x - tileX,
@@ -1098,7 +1120,10 @@ export async function generateTiledPDF(
 
           const OFFSET_PX = 10;
 
-          if (typeof figure.offsetCm === "number" && Number.isFinite(figure.offsetCm)) {
+          if (
+            typeof figure.offsetCm === "number" &&
+            Number.isFinite(figure.offsetCm)
+          ) {
             // Place label near longest segment (or topmost tangent for circles).
             const flat = figureWorldPolyline(figure, 60);
             const pts: Vec2[] = [];
@@ -1130,8 +1155,10 @@ export async function generateTiledPDF(
 
                 const p1 = add(mid, mul(n, OFFSET_PX));
                 const p2 = add(mid, mul(n, -OFFSET_PX));
-                const p = dist(p1, centroidWorld) >= dist(p2, centroidWorld) ? p1 : p2;
-                const rawAngleDeg = (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
+                const p =
+                  dist(p1, centroidWorld) >= dist(p2, centroidWorld) ? p1 : p2;
+                const rawAngleDeg =
+                  (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
                 const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
 
                 addSeamLabel(p, angleDeg, label);
@@ -1143,7 +1170,10 @@ export async function generateTiledPDF(
                   const n = norm(perp(tangent));
                   const p1 = add(mid, mul(n, OFFSET_PX));
                   const p2 = add(mid, mul(n, -OFFSET_PX));
-                  const p = dist(p1, centroidWorld) >= dist(p2, centroidWorld) ? p1 : p2;
+                  const p =
+                    dist(p1, centroidWorld) >= dist(p2, centroidWorld)
+                      ? p1
+                      : p2;
                   const rawAngleDeg =
                     (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
                   const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
@@ -1182,7 +1212,8 @@ export async function generateTiledPDF(
               const n = norm(perp(tangent));
               const p1 = add(mid, mul(n, OFFSET_PX));
               const p2 = add(mid, mul(n, -OFFSET_PX));
-              const p = dist(p1, centroidWorld) >= dist(p2, centroidWorld) ? p1 : p2;
+              const p =
+                dist(p1, centroidWorld) >= dist(p2, centroidWorld) ? p1 : p2;
               const rawAngleDeg =
                 (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
               const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
@@ -1284,7 +1315,10 @@ export async function generateTiledPDF(
     tileStage.destroy();
 
     if (pageNum > 1) {
-      pdf.addPage([pageFormatWidthCm, pageFormatHeightCm], resolved.orientation);
+      pdf.addPage(
+        [pageFormatWidthCm, pageFormatHeightCm],
+        resolved.orientation
+      );
     }
 
     // Page guide lines (paper border + margin rectangle)
@@ -1496,9 +1530,11 @@ export function generateSVG(
         const bWorld = figureLocalToWorld(fig, { x: bNode.x, y: bNode.y });
         const cWorld = figureLocalToWorld(fig, { x: cNode.x, y: cNode.y });
 
-        const baseWorld =
-          computeDartBaseWorldPolyline(fig, dart.aNodeId, dart.bNodeId) ??
-          [aWorld, bWorld];
+        const baseWorld = computeDartBaseWorldPolyline(
+          fig,
+          dart.aNodeId,
+          dart.bNodeId
+        ) ?? [aWorld, bWorld];
         const baseFlat: number[] = [];
         for (const p of baseWorld) baseFlat.push(p.x, p.y);
         const baseD = polylineToSvgPath(baseFlat, false);
@@ -1703,9 +1739,7 @@ export function generateSVG(
                 const p1 = add(mid, mul(n, OFFSET_PX));
                 const p2 = add(mid, mul(n, -OFFSET_PX));
                 const p =
-                  dist(p1, centroidWorld) >= dist(p2, centroidWorld)
-                    ? p1
-                    : p2;
+                  dist(p1, centroidWorld) >= dist(p2, centroidWorld) ? p1 : p2;
                 const rawAngleDeg =
                   (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
                 const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
@@ -1753,7 +1787,6 @@ export function generateSVG(
             addSeamLabel(p, angleDeg, label);
           }
         }
-
       }
     }
 

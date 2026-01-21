@@ -813,7 +813,9 @@ export function EditorHeader() {
               className="group relative bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-4 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={isSaving}
             >
-              <span className="material-symbols-outlined text-[16px]">save</span>
+              <span className="material-symbols-outlined text-[16px]">
+                save
+              </span>
               {isSaving ? "Salvando..." : "Salvar"}
               <HeaderTooltip
                 title="Salvar Projeto"
@@ -934,7 +936,9 @@ export function EditorHeader() {
                       className="w-full h-9 rounded-md bg-primary hover:bg-primary-hover text-white text-xs font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       role="menuitem"
                     >
-                      {isAvatarBusy ? "Processando..." : "Adicionar/alterar foto"}
+                      {isAvatarBusy
+                        ? "Processando..."
+                        : "Adicionar/alterar foto"}
                     </button>
                     <button
                       type="button"

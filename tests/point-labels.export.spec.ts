@@ -279,7 +279,7 @@ test("point labels: PDF export toggles inclusion (size sanity)", async ({
     .toBe("numGlobal");
 
   // Export PDF with labels included.
-  await page.getByRole("button", { name: "Exportar" }).click();
+  await page.getByRole("button", { name: "Exportar", exact: true }).click();
   await page.getByRole("switch", { name: "Rótulos de pontos" }).click();
 
   const downloadWithLabels = await Promise.all([
@@ -290,7 +290,7 @@ test("point labels: PDF export toggles inclusion (size sanity)", async ({
   expect(pdfPathWithLabels).toBeTruthy();
 
   // Export PDF without labels.
-  await page.getByRole("button", { name: "Exportar" }).click();
+  await page.getByRole("button", { name: "Exportar", exact: true }).click();
   await page.getByRole("switch", { name: "Rótulos de pontos" }).click();
 
   const downloadWithoutLabels = await Promise.all([

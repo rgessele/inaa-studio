@@ -189,12 +189,12 @@ export default async function AdminUsersPage({
         >
           Importar CSV
         </Link>
-          <Link
-            href="/admin/users/new"
-            className="px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-white font-medium transition-colors"
-          >
-            Novo usuário
-          </Link>
+        <Link
+          href="/admin/users/new"
+          className="px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-white font-medium transition-colors"
+        >
+          Novo usuário
+        </Link>
       </div>
 
       {filters}
@@ -268,10 +268,15 @@ export default async function AdminUsersPage({
                   const primaryLabel =
                     user.full_name?.trim() || user.email || user.id;
                   const secondaryEmail =
-                    user.email && user.email !== primaryLabel ? user.email : null;
+                    user.email && user.email !== primaryLabel
+                      ? user.email
+                      : null;
 
                   return (
-                    <tr key={user.id} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.04]">
+                    <tr
+                      key={user.id}
+                      className="hover:bg-black/[0.02] dark:hover:bg-white/[0.04]"
+                    >
                       <td className="px-3 py-2">
                         <div className="flex items-baseline gap-2">
                           <p className="font-semibold text-gray-900 dark:text-gray-100 truncate max-w-[22rem]">
@@ -301,7 +306,9 @@ export default async function AdminUsersPage({
                             </span>
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">—</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            —
+                          </span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-gray-700 dark:text-gray-200">

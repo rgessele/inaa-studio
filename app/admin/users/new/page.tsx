@@ -86,7 +86,10 @@ export default function AdminNewUserPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="access_expires_at">
+              <label
+                className="text-sm font-medium"
+                htmlFor="access_expires_at"
+              >
                 Acesso expira em
               </label>
               <input

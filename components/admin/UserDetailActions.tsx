@@ -368,8 +368,8 @@ export function UserDetailActions(props: {
         </h3>
 
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          Se o email de redefinição não estiver chegando (SMTP/deliverability), gere um link
-          manual e envie por um canal seguro.
+          Se o email de redefinição não estiver chegando (SMTP/deliverability),
+          gere um link manual e envie por um canal seguro.
         </p>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">

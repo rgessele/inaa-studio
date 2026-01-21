@@ -35,15 +35,13 @@ export default async function AdminImportPage({
         .limit(500)
     : null;
 
-  const summary = (job?.data?.summary ?? null) as
-    | {
-        total?: number;
-        ok?: number;
-        failed?: number;
-        invited?: number;
-        updated?: number;
-      }
-    | null;
+  const summary = (job?.data?.summary ?? null) as {
+    total?: number;
+    ok?: number;
+    failed?: number;
+    invited?: number;
+    updated?: number;
+  } | null;
 
   return (
     <div className="space-y-8">
@@ -70,7 +68,8 @@ export default async function AdminImportPage({
               className="mt-2 block w-full text-sm text-gray-700 dark:text-gray-200 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-white hover:file:bg-primary-hover file:cursor-pointer"
             />
             <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-              Colunas aceitas: <span className="font-mono">email</span> (obrigatório),
+              Colunas aceitas: <span className="font-mono">email</span>{" "}
+              (obrigatório),
               <span className="font-mono"> full_name</span>,
               <span className="font-mono"> role</span>,
               <span className="font-mono"> status</span>,
@@ -121,7 +120,9 @@ export default async function AdminImportPage({
             {summary ? (
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-3">
                 <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-white/5 p-3">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Total</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Total
+                  </p>
                   <p className="text-xl font-bold text-gray-900 dark:text-accent-gold">
                     {summary.total ?? 0}
                   </p>
@@ -133,19 +134,25 @@ export default async function AdminImportPage({
                   </p>
                 </div>
                 <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-white/5 p-3">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Falhas</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Falhas
+                  </p>
                   <p className="text-xl font-bold text-gray-900 dark:text-accent-gold">
                     {summary.failed ?? 0}
                   </p>
                 </div>
                 <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-white/5 p-3">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Convidados</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Convidados
+                  </p>
                   <p className="text-xl font-bold text-gray-900 dark:text-accent-gold">
                     {summary.invited ?? 0}
                   </p>
                 </div>
                 <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-white/5 p-3">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Atualizados</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Atualizados
+                  </p>
                   <p className="text-xl font-bold text-gray-900 dark:text-accent-gold">
                     {summary.updated ?? 0}
                   </p>

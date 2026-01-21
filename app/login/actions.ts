@@ -37,9 +37,14 @@ export async function loginWithPassword(formData: FormData) {
     const role = (profile?.role as string | null) ?? null;
     const status = (profile?.status as string | null) ?? "active";
     const blocked = Boolean(profile?.blocked);
-    const accessExpiresAtRaw = (profile?.access_expires_at as string | null) ?? null;
-    const accessExpiresAt = accessExpiresAtRaw ? new Date(accessExpiresAtRaw) : null;
-    const isExpired = accessExpiresAt ? accessExpiresAt.getTime() <= Date.now() : false;
+    const accessExpiresAtRaw =
+      (profile?.access_expires_at as string | null) ?? null;
+    const accessExpiresAt = accessExpiresAtRaw
+      ? new Date(accessExpiresAtRaw)
+      : null;
+    const isExpired = accessExpiresAt
+      ? accessExpiresAt.getTime() <= Date.now()
+      : false;
 
     if (blocked || isExpired || status !== "active") {
       try {
@@ -48,7 +53,11 @@ export async function loginWithPassword(formData: FormData) {
         // Ignore; redirect anyway.
       }
 
-      const reason = blocked ? "blocked" : status !== "active" ? "inactive" : "expired";
+      const reason = blocked
+        ? "blocked"
+        : status !== "active"
+          ? "inactive"
+          : "expired";
       redirect(`/login?reason=${encodeURIComponent(reason)}`);
     }
 
