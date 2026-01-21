@@ -822,7 +822,16 @@ export function EditorHeader() {
               />
             </button>
           )}
-          <div className="flex items-center mr-2">
+          <button
+            onClick={handleBackToDashboard}
+            className="bg-primary hover:bg-primary-hover text-white text-xs font-medium px-3 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-[16px]">
+              dashboard
+            </span>
+            Dashboard
+          </button>
+          <div className="flex items-center">
             <ThemeToggleButton
               onMouseEnter={themeTooltip.onMouseEnter}
               onMouseLeave={themeTooltip.onMouseLeave}
@@ -836,15 +845,6 @@ export function EditorHeader() {
               />
             </ThemeToggleButton>
           </div>
-          <button
-            onClick={handleBackToDashboard}
-            className="bg-primary hover:bg-primary-hover text-white text-xs font-medium px-3 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2"
-          >
-            <span className="material-symbols-outlined text-[16px]">
-              dashboard
-            </span>
-            Dashboard
-          </button>
           <div className="h-5 w-px bg-gray-300 dark:bg-gray-700 mx-1"></div>
           <div className="flex items-center gap-3 pl-2">
             <div className="text-right hidden sm:block">
