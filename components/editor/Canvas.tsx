@@ -1436,6 +1436,29 @@ function clampHandle(anchor: Vec2, handle: Vec2, maxLen: number): Vec2 {
   return add(anchor, mul(v, s));
 }
 
+function dedupeConsecutivePoints(points: Vec2[], tol = 0.5): Vec2[] {
+  if (points.length <= 1) return points;
+  const out: Vec2[] = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const prev = out[out.length - 1];
+    const next = points[i];
+    if (dist(prev, next) > tol) {
+      out.push(next);
+    }
+  }
+  return out;
+}
+
+function buildDraftPreviewPoints(
+  fixed: Vec2[],
+  live: Vec2,
+  tol = 0.5
+): Vec2[] {
+  if (!fixed.length) return [live];
+  const last = fixed[fixed.length - 1];
+  return dist(last, live) <= tol ? fixed : [...fixed, live];
+}
+
 function makePolylineLineFigure(
   points: Vec2[],
   closed: boolean,
@@ -5005,7 +5028,7 @@ export default function Canvas() {
       // is clicking on THEIR OWN starting point, not trying to join another figure.
       const canClose = pts.length >= 3;
       const isCloseClick =
-        canClose && dist(worldForTool, first) <= closeTolWorld;
+        canClose && dist(placedWorld, first) <= closeTolWorld;
 
       if (isCloseClick) {
         const finalized = makeCurveFromPoints(pts, true, "aci7");
@@ -5082,26 +5105,6 @@ export default function Canvas() {
 
       const pts = current.pointsWorld;
       const first = pts[0];
-      // Allow closing even with magnetJoin enabled when clicking on the first point
-      // of the current figure (self-close). This makes sense UX-wise because the user
-      // is clicking on THEIR OWN starting point, not trying to join another figure.
-      const canClose = pts.length >= 3;
-      const isCloseClick =
-        canClose && dist(worldForTool, first) <= closeTolWorld;
-
-      if (isCloseClick) {
-        const closedFig = makePolylineLineFigure(pts, true, "aci7");
-        if (closedFig) {
-          const hits = current.joinHits.filter(
-            (h): h is JoinHit => !!h
-          );
-          addFigureWithOptionalMerge(closedFig, hits);
-        }
-        lineDraftRef.current = null;
-        setLineDraft(null);
-        return;
-      }
-
       const last = pts[pts.length - 1];
       let placedWorld =
         !resolvedDown.snap.isSnapped && e.evt.shiftKey && last
@@ -5125,6 +5128,26 @@ export default function Canvas() {
             PX_PER_MM
           );
         }
+      }
+
+      // Allow closing even with magnetJoin enabled when clicking on the first point
+      // of the current figure (self-close). This makes sense UX-wise because the user
+      // is clicking on THEIR OWN starting point, not trying to join another figure.
+      const canClose = pts.length >= 3;
+      const isCloseClick =
+        canClose && dist(placedWorld, first) <= closeTolWorld;
+
+      if (isCloseClick) {
+        const closedFig = makePolylineLineFigure(pts, true, "aci7");
+        if (closedFig) {
+          const hits = current.joinHits.filter(
+            (h): h is JoinHit => !!h
+          );
+          addFigureWithOptionalMerge(closedFig, hits);
+        }
+        lineDraftRef.current = null;
+        setLineDraft(null);
+        return;
       }
 
       if (!resolvedDown.snap.isSnapped && e.evt.altKey && pts.length === 1) {
@@ -6020,7 +6043,9 @@ export default function Canvas() {
       if (tool === "line" && currentLineDraft) {
         if (evt.key === "Enter") {
           evt.preventDefault();
-          let pts = currentLineDraft.pointsWorld;
+          let pts = dedupeConsecutivePoints(
+            currentLineDraft.pointsWorld
+          );
           if (magnetJoinEnabled && pts.length >= 2) {
             const first = pts[0];
             const last = pts[pts.length - 1];
@@ -6072,7 +6097,7 @@ export default function Canvas() {
       if (tool === "curve" && curveDraft) {
         if (evt.key === "Enter") {
           evt.preventDefault();
-          let pts = curveDraft.pointsWorld;
+          let pts = dedupeConsecutivePoints(curveDraft.pointsWorld);
           if (magnetJoinEnabled && pts.length >= 2) {
             const first = pts[0];
             const last = pts[pts.length - 1];
@@ -6286,7 +6311,7 @@ export default function Canvas() {
           const b = add(center, v);
           return [a, b];
         })()
-      : [...fixed, live];
+      : buildDraftPreviewPoints(fixed, live);
     if (pts.length === 0) return null;
 
     const flat: number[] = [];
@@ -6373,7 +6398,7 @@ export default function Canvas() {
     const first = fixed[0];
     const isCloseHover = canClose && dist(live, first) <= closeTolWorld;
 
-    const pts = [...fixed, live];
+    const pts = buildDraftPreviewPoints(fixed, live);
     if (pts.length < 2) return null;
 
     const fig = makeCurveFromPoints(pts, false, "aci7");
@@ -6466,7 +6491,10 @@ export default function Canvas() {
     }
 
     if (curveDraft) {
-      const pts = [...curveDraft.pointsWorld, curveDraft.currentWorld];
+      const pts = buildDraftPreviewPoints(
+        curveDraft.pointsWorld,
+        curveDraft.currentWorld
+      );
       const temp = makeCurveFromPoints(pts, false, "aci7");
       if (temp) {
         const fig = withComputedFigureMeasures(temp);
@@ -6491,7 +6519,10 @@ export default function Canvas() {
     }
 
     if (lineDraft) {
-      const pts = [...lineDraft.pointsWorld, lineDraft.currentWorld];
+      const pts = buildDraftPreviewPoints(
+        lineDraft.pointsWorld,
+        lineDraft.currentWorld
+      );
       const temp = makePolylineLineFigure(pts, false, "aci7");
       if (temp) {
         const fig = withComputedFigureMeasures(temp);

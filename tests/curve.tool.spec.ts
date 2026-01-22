@@ -132,3 +132,86 @@ test("curva: fecha ao clicar no primeiro nó", async ({ page }) => {
   expect(last!.nodes.length).toBe(3);
   expect(last!.edges.length).toBe(3);
 });
+
+test("curva: Enter com 2 pontos não duplica nós", async ({ page }) => {
+  await gotoEditor(page);
+
+  await page.getByRole("button", { name: "Curva" }).click();
+  await expect
+    .poll(
+      async () =>
+        (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ??
+        null
+    )
+    .toBe("curve");
+
+  const beforeCount = await page.evaluate(
+    () => window.__INAA_DEBUG__?.getFiguresSnapshot?.().length ?? 0
+  );
+
+  const box = await getStageBox(page);
+  const p1 = { x: 220, y: 200 };
+  const p2 = { x: 320, y: 220 };
+
+  const p1X = clamp(box.x + p1.x, box.x + 1, box.x + box.width - 2);
+  const p1Y = clamp(box.y + p1.y, box.y + 1, box.y + box.height - 2);
+  const p2X = clamp(box.x + p2.x, box.x + 1, box.x + box.width - 2);
+  const p2Y = clamp(box.y + p2.y, box.y + 1, box.y + box.height - 2);
+
+  await page.mouse.click(p1X, p1Y);
+  await page.mouse.click(p2X, p2Y);
+  await page.keyboard.press("Enter");
+
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => {
+        const figs = window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? [];
+        return figs.length;
+      });
+    })
+    .toBe(beforeCount + 1);
+
+  const last = await page.evaluate(() => {
+    const figs = window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? [];
+    return figs[figs.length - 1] ?? null;
+  });
+
+  expect(last).toBeTruthy();
+  expect(last!.tool).toBe("curve");
+  expect(last!.closed).toBe(false);
+  expect(last!.nodes.length).toBe(2);
+});
+
+test("visual: curva não duplica ponto no preview", async ({ page }) => {
+  await gotoEditor(page);
+
+  await page.getByRole("button", { name: "Curva" }).click();
+  await expect
+    .poll(
+      async () =>
+        (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ??
+        null
+    )
+    .toBe("curve");
+
+  const box = await getStageBox(page);
+  const p1 = { x: 220, y: 200 };
+  const p2 = { x: 320, y: 240 };
+
+  const p1X = clamp(box.x + p1.x, box.x + 1, box.x + box.width - 2);
+  const p1Y = clamp(box.y + p1.y, box.y + 1, box.y + box.height - 2);
+  const p2X = clamp(box.x + p2.x, box.x + 1, box.x + box.width - 2);
+  const p2Y = clamp(box.y + p2.y, box.y + 1, box.y + box.height - 2);
+
+  await page.mouse.click(p1X, p1Y);
+  await page.waitForTimeout(150);
+  await page.screenshot({
+    path: "test-results/curve-preview-1-first-click.png",
+  });
+
+  await page.mouse.move(p2X, p2Y);
+  await page.waitForTimeout(150);
+  await page.screenshot({
+    path: "test-results/curve-preview-2-after-move.png",
+  });
+});
