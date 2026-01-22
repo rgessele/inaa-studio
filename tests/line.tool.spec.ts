@@ -216,6 +216,48 @@ test("visual: linha não duplica ponto no preview", async ({ page }) => {
   });
 });
 
+test("visual: guia de ângulo aparece em 90/180", async ({ page }) => {
+  await gotoEditor(page);
+
+  await page.getByRole("button", { name: "Linha" }).click();
+  await expect
+    .poll(
+      async () =>
+        (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ??
+        null
+    )
+    .toBe("line");
+
+  const box = await getStageBox(page);
+  const p1 = { x: 220, y: 200 };
+  const pHoriz = { x: 380, y: 200 };
+  const pVert = { x: 220, y: 360 };
+
+  const p1X = clamp(box.x + p1.x, box.x + 1, box.x + box.width - 2);
+  const p1Y = clamp(box.y + p1.y, box.y + 1, box.y + box.height - 2);
+  const pHX = clamp(box.x + pHoriz.x, box.x + 1, box.x + box.width - 2);
+  const pHY = clamp(box.y + pHoriz.y, box.y + 1, box.y + box.height - 2);
+  const pVX = clamp(box.x + pVert.x, box.x + 1, box.x + box.width - 2);
+  const pVY = clamp(box.y + pVert.y, box.y + 1, box.y + box.height - 2);
+
+  await page.mouse.click(p1X, p1Y);
+  await page.waitForTimeout(100);
+
+  await page.keyboard.down("Shift");
+  await page.mouse.move(pHX, pHY);
+  await page.waitForTimeout(150);
+  await page.screenshot({
+    path: "test-results/line-angle-guide-horizontal.png",
+  });
+
+  await page.mouse.move(pVX, pVY);
+  await page.waitForTimeout(150);
+  await page.screenshot({
+    path: "test-results/line-angle-guide-vertical.png",
+  });
+  await page.keyboard.up("Shift");
+});
+
 test("com magnetJoin ativo, clicar no primeiro ponto FECHA a figura", async ({
   page,
 }) => {

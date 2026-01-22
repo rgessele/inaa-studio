@@ -2324,6 +2324,11 @@ export default function Canvas() {
     fromNodeId: string;
     toNodeId: string;
   } | null>(null);
+  const [nodeAngleGuide, setNodeAngleGuide] = useState<{
+    figureId: string;
+    startLocal: Vec2;
+    currentLocal: Vec2;
+  } | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<EdgeHover>(null);
   const [hoveredPique, setHoveredPique] = useState<HoveredPique>(null);
   const [hoveredMirrorLinkFigureId, setHoveredMirrorLinkFigureId] = useState<
@@ -3088,6 +3093,7 @@ export default function Canvas() {
       setNodeSelection(null);
       setHoveredEdge(null);
       setHoveredNodeId(null);
+      setNodeAngleGuide(null);
     }
 
     // When leaving curve tool, clear unfinished multi-click curve.
@@ -6443,6 +6449,87 @@ export default function Canvas() {
     );
   }, [curveDraft, previewDash, previewStroke, scale]);
 
+  const angleLockGuideOverlay = useMemo(() => {
+    if (!modifierKeys.shift) return null;
+
+    let startWorld: Vec2 | null = null;
+    let currentWorld: Vec2 | null = null;
+
+    if (tool === "line" && lineDraft) {
+      const fixed = lineDraft.pointsWorld;
+      const live = lineDraft.currentWorld;
+      if (fixed.length && live) {
+        startWorld = fixed[fixed.length - 1];
+        currentWorld = live;
+      }
+    } else if (tool === "node" && nodeAngleGuide) {
+      const fig = figures.find((f) => f.id === nodeAngleGuide.figureId) ?? null;
+      if (fig) {
+        startWorld = figureLocalToWorld(fig, nodeAngleGuide.startLocal);
+        currentWorld = figureLocalToWorld(fig, nodeAngleGuide.currentLocal);
+      }
+    }
+
+    if (!startWorld || !currentWorld) return null;
+
+    const dx = currentWorld.x - startWorld.x;
+    const dy = currentWorld.y - startWorld.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-6) return null;
+
+    const deg = (Math.atan2(dy, dx) * 180) / Math.PI;
+    const norm = (deg + 360) % 360;
+    const GUIDE_TOL_DEG = 2.5;
+
+    const isHorizontal =
+      Math.abs(norm - 0) <= GUIDE_TOL_DEG ||
+      Math.abs(norm - 180) <= GUIDE_TOL_DEG ||
+      Math.abs(norm - 360) <= GUIDE_TOL_DEG;
+    const isVertical =
+      Math.abs(norm - 90) <= GUIDE_TOL_DEG ||
+      Math.abs(norm - 270) <= GUIDE_TOL_DEG;
+
+    if (!isHorizontal && !isVertical) return null;
+
+    const pad = 40 / scale;
+    const x0 = viewportWorld.x0 - pad;
+    const x1 = viewportWorld.x1 + pad;
+    const y0 = viewportWorld.y0 - pad;
+    const y1 = viewportWorld.y1 + pad;
+
+    const stroke = "#22c55e";
+    const dash = [6 / scale, 6 / scale];
+    const strokeWidth = 1 / scale;
+    const opacity = 0.4;
+
+    return (
+      <Line
+        points={
+          isHorizontal
+            ? [x0, startWorld.y, x1, startWorld.y]
+            : [startWorld.x, y0, startWorld.x, y1]
+        }
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        dash={dash}
+        opacity={opacity}
+        listening={false}
+        lineCap="round"
+      />
+    );
+  }, [
+    figures,
+    lineDraft,
+    modifierKeys.shift,
+    nodeAngleGuide,
+    scale,
+    tool,
+    viewportWorld.x0,
+    viewportWorld.x1,
+    viewportWorld.y0,
+    viewportWorld.y1,
+  ]);
+
   const draftMeasuresOverlay = useMemo(() => {
     if (measureDisplayMode === "never") return null;
 
@@ -6636,6 +6723,11 @@ export default function Canvas() {
                     snappedToNodeId: null,
                   };
                   setNodeMergePreview(null);
+                  setNodeAngleGuide({
+                    figureId: selectedFigure.id,
+                    startLocal: { x: n.x, y: n.y },
+                    currentLocal: { x: n.x, y: n.y },
+                  });
                   setNodeSelection({
                     figureId: selectedFigure.id,
                     nodeId: n.id,
@@ -6727,6 +6819,12 @@ export default function Canvas() {
                   const dx = nx - ref.startNode.x;
                   const dy = ny - ref.startNode.y;
 
+                  setNodeAngleGuide({
+                    figureId: ref.figureId,
+                    startLocal: ref.startNode,
+                    currentLocal: { x: nx, y: ny },
+                  });
+
                   setFigures((prev) =>
                     prev.map((f) => {
                       if (f.id !== ref.figureId) return f;
@@ -6758,6 +6856,7 @@ export default function Canvas() {
                 onDragEnd={() => {
                   const ref = dragNodeRef.current;
                   dragNodeRef.current = null;
+                  setNodeAngleGuide(null);
                   if (!ref) return;
 
                   setNodeMergePreview(null);
@@ -8971,6 +9070,8 @@ export default function Canvas() {
             ) : null}
 
             {draftPreview}
+
+            {angleLockGuideOverlay}
 
             {lineDraftPreview}
 
