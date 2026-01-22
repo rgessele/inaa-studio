@@ -132,3 +132,83 @@ test("linha: fecha ao clicar no primeiro nó", async ({ page }) => {
   expect(last!.nodes.length).toBe(3);
   expect(last!.edges.length).toBe(3);
 });
+
+test("com magnetJoin ativo, clicar no primeiro ponto FECHA a figura", async ({
+  page,
+}) => {
+  await gotoEditor(page);
+
+  // ATIVAR MAGNET JOIN
+  const magnetJoinToggle = page.getByTestId("magnet-join-toggle-button");
+  await magnetJoinToggle.click();
+  await page.waitForTimeout(100);
+
+  const magnetJoinEnabled = await page.evaluate(() => {
+    return window.__INAA_DEBUG__?.getState()?.magnetJoinEnabled;
+  });
+  console.log("magnetJoinEnabled:", magnetJoinEnabled);
+  expect(magnetJoinEnabled).toBe(true);
+
+  await page.getByRole("button", { name: "Linha" }).click();
+  await expect
+    .poll(
+      async () =>
+        (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ??
+        null
+    )
+    .toBe("line");
+
+  const beforeCount = await page.evaluate(
+    () => window.__INAA_DEBUG__?.getFiguresSnapshot?.().length ?? 0
+  );
+
+  const box = await getStageBox(page);
+  const cx = box.width / 2;
+  const cy = box.height / 2;
+
+  const p1 = { x: cx, y: cy - 100 };
+  const p2 = { x: cx + 100, y: cy + 80 };
+  const p3 = { x: cx - 100, y: cy + 80 };
+
+  // Desenhar triângulo: 3 pontos
+  await page.mouse.click(box.x + p1.x, box.y + p1.y);
+  await page.waitForTimeout(50);
+  await page.mouse.click(box.x + p2.x, box.y + p2.y);
+  await page.waitForTimeout(50);
+  await page.mouse.click(box.x + p3.x, box.y + p3.y);
+  await page.waitForTimeout(50);
+
+  // Hover no primeiro ponto
+  await page.mouse.move(box.x + p1.x, box.y + p1.y);
+  await page.waitForTimeout(100);
+
+  // Clicar no primeiro ponto - DEVE fechar a figura mesmo com magnetJoin ativo
+  await page.mouse.click(box.x + p1.x, box.y + p1.y);
+  await page.waitForTimeout(100);
+
+  // Verificar se lineDraft foi limpo (figura fechada)
+  const lineDraft = await page.evaluate(() => {
+    return window.__INAA_DEBUG__?.getState()?.lineDraft;
+  });
+
+  console.log(
+    "lineDraft após clicar no P1:",
+    lineDraft ? `ATIVO com ${lineDraft.pointsWorld?.length} pontos` : "NULL/UNDEFINED"
+  );
+
+  // Com a correção, lineDraft deve ser falsy (null ou undefined = figura fechou)
+  expect(lineDraft).toBeFalsy();
+
+  // Verificar que a figura foi criada e está fechada
+  const figures = await page.evaluate(() => {
+    const figs = window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? [];
+    return figs;
+  });
+
+  expect(figures.length).toBe(beforeCount + 1);
+  const lastFig = figures[figures.length - 1];
+  expect(lastFig.closed).toBe(true);
+  expect(lastFig.nodes.length).toBe(3);
+  expect(lastFig.edges.length).toBe(3);
+  console.log("Figura criada: closed=", lastFig.closed, "nodes=", lastFig.nodes.length);
+});

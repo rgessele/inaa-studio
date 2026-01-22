@@ -48,6 +48,8 @@ export function EditorToolbar() {
     setPointLabelsMode,
     magnetEnabled,
     setMagnetEnabled,
+    magnetJoinEnabled,
+    setMagnetJoinEnabled,
     selectedFigureId,
     deleteSelected,
     canCopy,
@@ -997,6 +999,20 @@ export function EditorToolbar() {
               ]}
               customIcon={magnetIcon}
               dataTestId="magnet-toggle-button"
+            />
+
+            <ToolButton
+              active={magnetJoinEnabled}
+              onClick={() => setMagnetJoinEnabled(!magnetJoinEnabled)}
+              icon="link"
+              isMac={isMac}
+              title={`Modo Magnético (${magnetJoinEnabled ? "Ligado" : "Desligado"})`}
+              details={[
+                "Desenhe adicionando arestas em figuras existentes.",
+                "Cria nós nas interseções e une múltiplas figuras.",
+                "Força o snap mesmo com o Imã desligado.",
+              ]}
+              dataTestId="magnet-join-toggle-button"
             />
 
             <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>

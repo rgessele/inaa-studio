@@ -306,6 +306,35 @@ Reference implementations:
 - When adding tests, follow existing patterns in `tests/` directory
 - Consider testing authentication flows, canvas interactions, and database operations
 
+### Visual Validation Strategy for Canvas/Rendering Bugs
+
+When debugging canvas rendering issues where data is correct but visual output is wrong, use **screenshot-based visual validation**:
+
+1. **Capture screenshots at key moments**: Use `page.screenshot({ path: "test-results/descriptive-name.png" })` before and after operations
+2. **Log data alongside screenshots**: Print node positions, edge connections, and relevant state to correlate data with visual output
+3. **Name screenshots descriptively**: Use patterns like `test-name-step-description.png` (e.g., `comp-rect-after-enter.png`)
+4. **Verify rendering vs data**: When measurements/overlays appear correct but strokes are wrong, the bug is in rendering logic, not data logic
+
+Example pattern from magnet-join tests:
+```typescript
+// Before the action
+await page.screenshot({ path: "test-results/comp-rect-before-enter.png" });
+
+// Perform action
+await page.keyboard.press("Enter");
+
+// After the action - capture and log
+await page.screenshot({ path: "test-results/comp-rect-after-enter.png" });
+console.log("Nodes:", fig.nodes.map(n => `(${Math.round(n.x)}, ${Math.round(n.y)})`));
+console.log("Edges:", fig.edges.map(e => `${e.from} -> ${e.to}`));
+```
+
+This strategy is especially valuable for:
+- Merge/join operations where multiple figures combine
+- Coordinate transformation bugs
+- Polyline traversal issues in complex figure topologies
+- Any bug where "the data looks correct but the visual is wrong"
+
 ## Environment Variables
 
 - Copy `.env.local.example` to `.env.local`

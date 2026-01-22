@@ -223,6 +223,9 @@ interface EditorContextType {
   magnetEnabled: boolean;
   setMagnetEnabled: (enabled: boolean) => void;
 
+  magnetJoinEnabled: boolean;
+  setMagnetJoinEnabled: (enabled: boolean) => void;
+
   showMinimap: boolean;
   setShowMinimap: (show: boolean) => void;
 
@@ -376,6 +379,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     useState<PointLabelsMode>("off");
 
   const [magnetEnabled, setMagnetEnabledState] = useState(false);
+  const [magnetJoinEnabled, setMagnetJoinEnabledState] = useState(false);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -477,6 +481,27 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setMagnetEnabledState(enabled);
     try {
       localStorage.setItem("inaa:magnetEnabled", enabled ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("inaa:magnetJoinEnabled");
+      if (raw == null) return;
+      const normalized = raw.trim().toLowerCase();
+      const parsed = normalized === "1" || normalized === "true";
+      setMagnetJoinEnabledState(parsed);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setMagnetJoinEnabled = useCallback((enabled: boolean) => {
+    setMagnetJoinEnabledState(enabled);
+    try {
+      localStorage.setItem("inaa:magnetJoinEnabled", enabled ? "1" : "0");
     } catch {
       // ignore
     }
@@ -1070,6 +1095,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         nodesDisplayMode,
         pointLabelsMode,
         magnetEnabled,
+        magnetJoinEnabled,
         guidesCount: guides.length,
         projectId,
         projectName,
@@ -1163,6 +1189,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     figures,
     gridContrast,
     magnetEnabled,
+    magnetJoinEnabled,
     measureDisplayMode,
     nodesDisplayMode,
     pointLabelsMode,
@@ -1213,6 +1240,16 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     // Tool state cleanup
     setOffsetTargetId((prev) => (prev && idsToDelete.has(prev) ? null : prev));
   }, [selectedFigureIds, setFigures, setOffsetTargetId]);
+
+  // Expose editor state for E2E tests
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      (window as unknown as { __EDITOR_STATE__?: unknown }).__EDITOR_STATE__ = {
+        figures: figures || [],
+        magnetJoinEnabled,
+      };
+    }
+  }, [figures, magnetJoinEnabled]);
 
   return (
     <EditorContext.Provider
@@ -1281,6 +1318,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
         magnetEnabled,
         setMagnetEnabled,
+
+        magnetJoinEnabled,
+        setMagnetJoinEnabled,
 
         showMinimap,
         setShowMinimap,

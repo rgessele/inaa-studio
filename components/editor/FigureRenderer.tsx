@@ -178,14 +178,42 @@ const FigureRenderer = ({
 }: FigureRendererProps) => {
   const isTextFigure = figure.tool === "text";
 
-  // Memoize the polyline calculation so it doesn't run on every render
-  // unless the figure geometry changes.
-  // Note: figureLocalPolyline depends on figure.nodes and figure.closed.
-  // We assume 'figure' prop reference changes when these change.
-  const pts = React.useMemo(
-    () => (isTextFigure ? [] : figureLocalPolyline(figure, 60)),
-    [figure, isTextFigure]
-  );
+  // Compute polyline data. For figures with branches (e.g., merged figures
+  // with a line coming off an edge), we need to render edge-by-edge instead
+  // of a single polyline.
+  const { pts, isSimpleContour, edgeSegments } = React.useMemo(() => {
+    if (isTextFigure) {
+      return { pts: [], isSimpleContour: true, edgeSegments: [] };
+    }
+    const polyPts = figureLocalPolyline(figure, 60);
+
+    // Check if any node has degree > 2 (branching). If so, the standard
+    // polyline traversal will fail, so we render edge-by-edge instead.
+    const degree = new Map<string, number>();
+    for (const e of figure.edges) {
+      degree.set(e.from, (degree.get(e.from) ?? 0) + 1);
+      degree.set(e.to, (degree.get(e.to) ?? 0) + 1);
+    }
+    const hasBranch = Array.from(degree.values()).some((d) => d > 2);
+
+    if (!hasBranch) {
+      return { pts: polyPts, isSimpleContour: true, edgeSegments: [] };
+    }
+
+    // Figure has branches - render each edge separately
+    const segments: number[][] = [];
+    for (const edge of figure.edges) {
+      const edgePts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 2 : 60);
+      if (edgePts.length >= 2) {
+        const flat: number[] = [];
+        for (const p of edgePts) {
+          flat.push(p.x, p.y);
+        }
+        segments.push(flat);
+      }
+    }
+    return { pts: [], isSimpleContour: false, edgeSegments: segments };
+  }, [figure, isTextFigure]);
 
   const pointLabelFill = resolveAci7(isDark);
   const pointLabelOpacity = 0.35;
@@ -470,6 +498,26 @@ const FigureRenderer = ({
         figure.seamSegments.map((segment, idx) => (
           <Line
             key={`seam-seg:${figure.id}:${idx}`}
+            points={segment}
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            fill={"transparent"}
+            fillEnabled={false}
+            closed={false}
+            dash={dash}
+            lineCap="round"
+            lineJoin="round"
+            hitStrokeWidth={hitStrokeWidth}
+            perfectDrawEnabled={false}
+            shadowForStrokeEnabled={false}
+            listening={listening}
+          />
+        ))
+      ) : !isSimpleContour && edgeSegments.length > 0 ? (
+        // Render edge-by-edge for branched figures
+        edgeSegments.map((segment, idx) => (
+          <Line
+            key={`edge-seg:${figure.id}:${idx}`}
             points={segment}
             stroke={stroke}
             strokeWidth={strokeWidth}

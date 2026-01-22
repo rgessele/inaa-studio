@@ -1631,11 +1631,13 @@ type Draft = {
 type CurveDraft = {
   pointsWorld: Vec2[];
   currentWorld: Vec2;
+  joinHits: Array<JoinHit | null>;
 } | null;
 
 type LineDraft = {
   pointsWorld: Vec2[];
   currentWorld: Vec2;
+  joinHits: Array<JoinHit | null>;
 } | null;
 
 function makeCurveFromPoints(
@@ -1753,6 +1755,348 @@ function makeCurveFromPoints(
   };
 }
 
+type JoinHit = {
+  figureId: string;
+  pointWorld: Vec2;
+  pointIndex: number;
+  kind: "node" | "edge";
+};
+
+type JoinNodeResult = {
+  figure: Figure;
+  nodeId: string;
+} | null;
+
+function findJoinTarget(
+  figure: Figure,
+  pointWorld: Vec2,
+  thresholdWorld: number
+): {
+  kind: "node" | "edge";
+  nodeId?: string;
+  edgeId?: string;
+  t?: number;
+  dist: number;
+} | null {
+  if (!Number.isFinite(thresholdWorld) || thresholdWorld <= 0) return null;
+
+  let bestNodeId: string | null = null;
+  let bestNodeDist = Number.POSITIVE_INFINITY;
+  for (const n of figure.nodes) {
+    const nw = figureLocalToWorld(figure, { x: n.x, y: n.y });
+    const d = dist(pointWorld, nw);
+    if (d < bestNodeDist) {
+      bestNodeDist = d;
+      bestNodeId = n.id;
+    }
+  }
+
+  const local = worldToFigureLocal(figure, pointWorld);
+  const hit = findNearestEdge(figure, local);
+  const bestEdge = hit.best;
+  const bestEdgeDist = hit.bestDist;
+
+  if (bestNodeId && bestNodeDist <= thresholdWorld) {
+    return { kind: "node", nodeId: bestNodeId, dist: bestNodeDist };
+  }
+
+  if (bestEdge && bestEdgeDist <= thresholdWorld) {
+    return {
+      kind: "edge",
+      edgeId: bestEdge.edgeId,
+      t: bestEdge.t,
+      dist: bestEdgeDist,
+    };
+  }
+
+  return null;
+}
+
+function ensureJoinNodeFromHit(
+  figure: Figure,
+  hit: JoinHit,
+  thresholdWorld: number
+): JoinNodeResult {
+  if (hit.kind === "node") {
+    let bestId: string | null = null;
+    let bestD = Number.POSITIVE_INFINITY;
+    for (const n of figure.nodes) {
+      const nw = figureLocalToWorld(figure, { x: n.x, y: n.y });
+      const d = dist(hit.pointWorld, nw);
+      if (d < bestD) {
+        bestD = d;
+        bestId = n.id;
+      }
+    }
+    if (bestId && bestD <= thresholdWorld) {
+      return { figure, nodeId: bestId };
+    }
+    return null;
+  }
+
+  const local = worldToFigureLocal(figure, hit.pointWorld);
+  const edgeHit = findNearestEdge(figure, local);
+  if (!edgeHit.best || edgeHit.bestDist > thresholdWorld) return null;
+  const split = splitFigureEdge(figure, edgeHit.best.edgeId, edgeHit.best.t);
+  if (!split.newNodeId) return null;
+  return { figure: split.figure, nodeId: split.newNodeId };
+}
+
+function cloneFigureToWorldWithMap(figure: Figure): {
+  nodes: FigureNode[];
+  edges: FigureEdge[];
+  nodeIdMap: Map<string, string>;
+} {
+  const nodeIdMap = new Map<string, string>();
+  const nodes: FigureNode[] = figure.nodes.map((n) => {
+    const world = figureLocalToWorld(figure, { x: n.x, y: n.y });
+    const idNext = id("n");
+    nodeIdMap.set(n.id, idNext);
+    return {
+      id: idNext,
+      x: world.x,
+      y: world.y,
+      mode: n.mode,
+      inHandle: n.inHandle
+        ? figureLocalToWorld(figure, { x: n.inHandle.x, y: n.inHandle.y })
+        : undefined,
+      outHandle: n.outHandle
+        ? figureLocalToWorld(figure, { x: n.outHandle.x, y: n.outHandle.y })
+        : undefined,
+    };
+  });
+
+  const edges: FigureEdge[] = figure.edges.map((e) => ({
+    id: id("e"),
+    from: nodeIdMap.get(e.from) ?? e.from,
+    to: nodeIdMap.get(e.to) ?? e.to,
+    kind: e.kind,
+  }));
+
+  return { nodes, edges, nodeIdMap };
+}
+
+function cloneFigureToWorld(figure: Figure): {
+  nodes: FigureNode[];
+  edges: FigureEdge[];
+} {
+  const { nodes, edges } = cloneFigureToWorldWithMap(figure);
+  return { nodes, edges };
+}
+
+function mergeFiguresWithNewFigure(
+  figures: Figure[],
+  newFigure: Figure,
+  thresholdWorld: number,
+  joinHits?: JoinHit[]
+): Figure[] {
+  const candidates = figures.filter(
+    (f) => f.kind !== "seam" && f.tool !== "text"
+  );
+  if (candidates.length === 0) {
+    return [...figures, newFigure];
+  }
+
+  const candidateIds = new Set(candidates.map((f) => f.id));
+
+  // Determine working hits: either from explicit joinHits or by proximity detection
+  let workingHits: JoinHit[] = [];
+
+  if (joinHits && joinHits.length > 0) {
+    // Use explicit joinHits (filtered to valid candidates)
+    workingHits = joinHits.filter((h) => candidateIds.has(h.figureId));
+  } else {
+    // Detect join points by proximity (for rect/circle/etc)
+    const newWorldNodes = cloneFigureToWorld(newFigure).nodes;
+    for (let i = 0; i < newWorldNodes.length; i++) {
+      const nw = newWorldNodes[i];
+      const p = { x: nw.x, y: nw.y };
+      
+      for (const fig of candidates) {
+        const target = findJoinTarget(fig, p, thresholdWorld);
+        if (target) {
+          workingHits.push({
+            figureId: fig.id,
+            pointWorld: p,
+            pointIndex: i,
+            kind: target.kind,
+          });
+          break; // Only one hit per point
+        }
+      }
+    }
+  }
+
+  if (workingHits.length === 0) {
+    return [...figures, newFigure];
+  }
+
+  // Group hits by figureId
+  const hitsByFigure = new Map<string, JoinHit[]>();
+  for (const hit of workingHits) {
+    const existing = hitsByFigure.get(hit.figureId) ?? [];
+    existing.push(hit);
+    hitsByFigure.set(hit.figureId, existing);
+  }
+
+  const touchedIds = new Set(hitsByFigure.keys());
+
+  // Process each target figure: split edges as needed and record node mappings
+  const joinMappings: Array<{
+    figureId: string;
+    pointIndex: number;
+    targetNodeId: string;
+  }> = [];
+
+  const updatedById = new Map<string, Figure>();
+  for (const fig of figures) {
+    updatedById.set(fig.id, fig);
+  }
+
+  for (const [figureId, hits] of hitsByFigure) {
+    let currentFig = updatedById.get(figureId);
+    if (!currentFig) continue;
+
+    for (const hit of hits) {
+      const res = ensureJoinNodeFromHit(currentFig, hit, thresholdWorld);
+      if (!res) continue;
+      currentFig = res.figure;
+      joinMappings.push({
+        figureId,
+        pointIndex: hit.pointIndex,
+        targetNodeId: res.nodeId,
+      });
+    }
+
+    updatedById.set(figureId, currentFig);
+  }
+
+  if (joinMappings.length === 0) {
+    return [...figures, newFigure];
+  }
+
+  // Get updated figures (with split edges)
+  const updatedFigures: Figure[] = figures.map((fig) =>
+    updatedById.get(fig.id) ?? fig
+  );
+
+  // Clone target figures to world coordinates
+  const targetClones: Array<{
+    figureId: string;
+    nodes: FigureNode[];
+    edges: FigureEdge[];
+    nodeIdMap: Map<string, string>;
+  }> = [];
+
+  for (const figureId of touchedIds) {
+    const fig = updatedById.get(figureId);
+    if (!fig) continue;
+    const clone = cloneFigureToWorldWithMap(fig);
+    targetClones.push({
+      figureId,
+      nodes: clone.nodes,
+      edges: clone.edges,
+      nodeIdMap: clone.nodeIdMap,
+    });
+  }
+
+  // Clone new figure
+  const { nodes: clonedNewNodes, edges: clonedNewEdges, nodeIdMap: newNodeIdMap } =
+    cloneFigureToWorldWithMap(newFigure);
+
+  // Build node mapping: cloned new node ID -> cloned target node ID
+  const nodeMapping = new Map<string, string>();
+
+  for (const mapping of joinMappings) {
+    const originalNewNode = newFigure.nodes[mapping.pointIndex];
+    if (!originalNewNode) continue;
+
+    const clonedNewNodeId = newNodeIdMap.get(originalNewNode.id);
+    if (!clonedNewNodeId) continue;
+
+    const targetClone = targetClones.find((t) => t.figureId === mapping.figureId);
+    if (!targetClone) continue;
+
+    const clonedTargetNodeId = targetClone.nodeIdMap.get(mapping.targetNodeId);
+    if (!clonedTargetNodeId) continue;
+
+    nodeMapping.set(clonedNewNodeId, clonedTargetNodeId);
+  }
+
+  // Build merged nodes
+  const mergedNodes: FigureNode[] = [];
+  const addedNodeIds = new Set<string>();
+
+  for (const target of targetClones) {
+    for (const n of target.nodes) {
+      if (!addedNodeIds.has(n.id)) {
+        mergedNodes.push(n);
+        addedNodeIds.add(n.id);
+      }
+    }
+  }
+
+  for (const n of clonedNewNodes) {
+    if (nodeMapping.has(n.id)) continue; // Skip mapped nodes
+    if (!addedNodeIds.has(n.id)) {
+      mergedNodes.push(n);
+      addedNodeIds.add(n.id);
+    }
+  }
+
+  // Build merged edges
+  const mergedEdges: FigureEdge[] = [];
+  const addedEdgeKeys = new Set<string>();
+
+  for (const target of targetClones) {
+    for (const e of target.edges) {
+      const key = `${e.from}-${e.to}`;
+      if (!addedEdgeKeys.has(key)) {
+        mergedEdges.push(e);
+        addedEdgeKeys.add(key);
+      }
+    }
+  }
+
+  for (const e of clonedNewEdges) {
+    const from = nodeMapping.get(e.from) ?? e.from;
+    const to = nodeMapping.get(e.to) ?? e.to;
+    if (from === to) continue;
+
+    const key = `${from}-${to}`;
+    const reverseKey = `${to}-${from}`;
+    if (addedEdgeKeys.has(key) || addedEdgeKeys.has(reverseKey)) continue;
+
+    mergedEdges.push({ ...e, from, to });
+    addedEdgeKeys.add(key);
+  }
+
+  const mergedFigure: Figure = {
+    id: id("fig"),
+    tool: newFigure.tool || "line",
+    x: 0,
+    y: 0,
+    rotation: 0,
+    closed: newFigure.closed ?? false,
+    nodes: mergedNodes,
+    edges: mergedEdges,
+    stroke: newFigure.stroke,
+    strokeWidth: newFigure.strokeWidth,
+    fill: newFigure.fill ?? "transparent",
+    opacity: newFigure.opacity ?? 1,
+  };
+
+  return [
+    ...updatedFigures.filter((f) => {
+      if (touchedIds.has(f.id)) return false;
+      if (f.kind === "seam" && f.parentId && touchedIds.has(f.parentId))
+        return false;
+      return true;
+    }),
+    mergedFigure,
+  ];
+}
+
 export default function Canvas() {
   const {
     tool,
@@ -1775,6 +2119,7 @@ export default function Canvas() {
     nodesDisplayMode,
     pointLabelsMode,
     magnetEnabled,
+    magnetJoinEnabled,
     showRulers,
     guides,
     updateGuide,
@@ -2788,6 +3133,34 @@ export default function Canvas() {
     return new Set<string>(selectedFigureIds);
   }, [selectedFigureIds]);
 
+  const addFigureWithOptionalMerge = useCallback(
+    (fig: Figure, joinHits?: JoinHit[]) => {
+      if (!fig) return;
+      const thresholdWorld = Math.max(12, measureSnapStrengthPx) / scale;
+      let nextSelectedId = fig.id;
+      setFigures((prev) => {
+        if (!magnetJoinEnabled) return [...prev, fig];
+        const merged = mergeFiguresWithNewFigure(
+          prev,
+          fig,
+          thresholdWorld,
+          joinHits
+        );
+        const mergedId = merged[merged.length - 1]?.id ?? fig.id;
+        nextSelectedId = mergedId;
+        return merged;
+      });
+      setSelectedFigureId(nextSelectedId);
+    },
+    [
+      magnetJoinEnabled,
+      measureSnapStrengthPx,
+      scale,
+      setFigures,
+      setSelectedFigureId,
+    ]
+  );
+
   const transformTargetIds = useMemo(() => {
     if (tool !== "select") return [];
     if (!selectedFigureIds.length) return [];
@@ -3021,7 +3394,8 @@ export default function Canvas() {
         tool === "dart";
       const isMeasure = tool === "measure";
 
-      const shouldSnap = (magnetEnabled && isDrawingTool) || isMeasure;
+      const shouldSnap =
+        ((magnetEnabled || magnetJoinEnabled) && isDrawingTool) || isMeasure;
       if (!shouldSnap) return { world: worldRaw, snap: { isSnapped: false } };
 
       const thresholdWorld = Math.max(12, measureSnapStrengthPx) / scale;
@@ -3039,7 +3413,15 @@ export default function Canvas() {
 
       return { world: snap.isSnapped ? snap.pointWorld : worldRaw, snap };
     },
-    [figures, guides, magnetEnabled, measureSnapStrengthPx, scale, tool]
+    [
+      figures,
+      guides,
+      magnetEnabled,
+      magnetJoinEnabled,
+      measureSnapStrengthPx,
+      scale,
+      tool,
+    ]
   );
 
   const snapSelectionDeltaToGuides = useCallback(
@@ -4194,7 +4576,11 @@ export default function Canvas() {
 
     const resolvedDown = getSnappedWorldForTool(world, "down");
     const worldForTool = resolvedDown.world;
-    if (resolvedDown.snap.isSnapped && magnetEnabled && tool !== "measure") {
+    if (
+      resolvedDown.snap.isSnapped &&
+      (magnetEnabled || magnetJoinEnabled) &&
+      tool !== "measure"
+    ) {
       setMagnetSnap({
         pointWorld: resolvedDown.snap.pointWorld,
         kind: resolvedDown.snap.kind,
@@ -4211,8 +4597,9 @@ export default function Canvas() {
       setCurveDraft((prev) => {
         if (!prev) return prev;
         const nextPoints = prev.pointsWorld.slice(0, -1);
+        const nextHits = prev.joinHits.slice(0, -1);
         if (nextPoints.length === 0) return null;
-        return { pointsWorld: nextPoints, currentWorld: world };
+        return { pointsWorld: nextPoints, currentWorld: world, joinHits: nextHits };
       });
       return;
     }
@@ -4224,10 +4611,15 @@ export default function Canvas() {
       if (!current) return;
 
       const nextPoints = current.pointsWorld.slice(0, -1);
+      const nextHits = current.joinHits.slice(0, -1);
       const nextDraft =
         nextPoints.length === 0
           ? null
-          : { pointsWorld: nextPoints, currentWorld: worldForTool };
+          : {
+              pointsWorld: nextPoints,
+              currentWorld: worldForTool,
+              joinHits: nextHits,
+            };
       lineDraftRef.current = nextDraft;
       setLineDraft(nextDraft);
       return;
@@ -4560,10 +4952,33 @@ export default function Canvas() {
       const CLOSE_TOL_PX = 10;
       const closeTolWorld = CLOSE_TOL_PX / scale;
 
+      const joinIndex = curveDraft ? curveDraft.pointsWorld.length : 0;
+
+      const joinTolWorld =
+        Math.max(6, Math.max(12, measureSnapStrengthPx) * 0.5) / scale;
+      const snapKind = resolvedDown.snap.isSnapped ? resolvedDown.snap.kind : null;
+      const joinKind =
+        snapKind === "node" || snapKind === "edge" ? snapKind : null;
+      const joinHit =
+        magnetJoinEnabled &&
+        resolvedDown.snap.isSnapped &&
+        resolvedDown.snap.figureId &&
+        joinKind &&
+        dist(world, resolvedDown.snap.pointWorld) <= joinTolWorld
+          ? {
+              figureId: resolvedDown.snap.figureId,
+              // Use the actual snap point on the target figure, not the tool point
+              pointWorld: resolvedDown.snap.pointWorld,
+              pointIndex: joinIndex,
+              kind: joinKind,
+            }
+          : null;
+
       if (!curveDraft) {
         setCurveDraft({
           pointsWorld: [worldForTool],
           currentWorld: worldForTool,
+          joinHits: [joinHit],
         });
         return;
       }
@@ -4585,6 +5000,9 @@ export default function Canvas() {
             ? snapWorldToStepPxFloor(worldForTool, PX_PER_MM)
             : worldForTool;
 
+      // Allow closing even with magnetJoin enabled when clicking on the first point
+      // of the current figure (self-close). This makes sense UX-wise because the user
+      // is clicking on THEIR OWN starting point, not trying to join another figure.
       const canClose = pts.length >= 3;
       const isCloseClick =
         canClose && dist(worldForTool, first) <= closeTolWorld;
@@ -4592,8 +5010,10 @@ export default function Canvas() {
       if (isCloseClick) {
         const finalized = makeCurveFromPoints(pts, true, "aci7");
         if (finalized) {
-          setFigures((prev) => [...prev, finalized]);
-          setSelectedFigureId(finalized.id);
+          const hits = curveDraft.joinHits.filter(
+            (h): h is JoinHit => !!h
+          );
+          addFigureWithOptionalMerge(finalized, hits);
         }
         setCurveDraft(null);
         return;
@@ -4612,8 +5032,13 @@ export default function Canvas() {
           ? {
               pointsWorld: [...prev.pointsWorld, placedWorld],
               currentWorld: placedWorld,
+              joinHits: [...prev.joinHits, joinHit],
             }
-          : { pointsWorld: [placedWorld], currentWorld: placedWorld }
+          : {
+              pointsWorld: [placedWorld],
+              currentWorld: placedWorld,
+              joinHits: [joinHit],
+            }
       );
       return;
     }
@@ -4621,12 +5046,34 @@ export default function Canvas() {
     if (tool === "line") {
       const CLOSE_TOL_PX = 10;
       const closeTolWorld = CLOSE_TOL_PX / scale;
-
       const current = lineDraftRef.current;
+      const joinIndex = current ? current.pointsWorld.length : 0;
+
+      const joinTolWorld =
+        Math.max(6, Math.max(12, measureSnapStrengthPx) * 0.5) / scale;
+      const snapKind = resolvedDown.snap.isSnapped ? resolvedDown.snap.kind : null;
+      const joinKind =
+        snapKind === "node" || snapKind === "edge" ? snapKind : null;
+      const joinHit =
+        magnetJoinEnabled &&
+        resolvedDown.snap.isSnapped &&
+        resolvedDown.snap.figureId &&
+        joinKind &&
+        dist(world, resolvedDown.snap.pointWorld) <= joinTolWorld
+          ? {
+              figureId: resolvedDown.snap.figureId,
+              // Use the actual snap point on the target figure, not the tool point
+              pointWorld: resolvedDown.snap.pointWorld,
+              pointIndex: joinIndex,
+              kind: joinKind,
+            }
+          : null;
+
       if (!current) {
         const nextDraft = {
           pointsWorld: [worldForTool],
           currentWorld: worldForTool,
+          joinHits: [joinHit],
         };
         lineDraftRef.current = nextDraft;
         setLineDraft(nextDraft);
@@ -4635,6 +5082,9 @@ export default function Canvas() {
 
       const pts = current.pointsWorld;
       const first = pts[0];
+      // Allow closing even with magnetJoin enabled when clicking on the first point
+      // of the current figure (self-close). This makes sense UX-wise because the user
+      // is clicking on THEIR OWN starting point, not trying to join another figure.
       const canClose = pts.length >= 3;
       const isCloseClick =
         canClose && dist(worldForTool, first) <= closeTolWorld;
@@ -4642,8 +5092,10 @@ export default function Canvas() {
       if (isCloseClick) {
         const closedFig = makePolylineLineFigure(pts, true, "aci7");
         if (closedFig) {
-          setFigures((prev) => [...prev, closedFig]);
-          setSelectedFigureId(closedFig.id);
+          const hits = current.joinHits.filter(
+            (h): h is JoinHit => !!h
+          );
+          addFigureWithOptionalMerge(closedFig, hits);
         }
         lineDraftRef.current = null;
         setLineDraft(null);
@@ -4689,7 +5141,11 @@ export default function Canvas() {
 
         const a = sub(center, v);
         const b = add(center, v);
-        const nextDraft = { pointsWorld: [a, b], currentWorld: b };
+        const nextDraft = {
+          pointsWorld: [a, b],
+          currentWorld: b,
+          joinHits: [current.joinHits[0] ?? null, joinHit],
+        };
         lineDraftRef.current = nextDraft;
         setLineDraft(nextDraft);
         return;
@@ -4706,6 +5162,7 @@ export default function Canvas() {
       const nextDraft = {
         pointsWorld: [...pts, placedWorld],
         currentWorld: placedWorld,
+        joinHits: [...current.joinHits, joinHit],
       };
       lineDraftRef.current = nextDraft;
       setLineDraft(nextDraft);
@@ -4900,7 +5357,7 @@ export default function Canvas() {
     if (tool !== "measure") {
       if (
         resolvedMove.snap.isSnapped &&
-        magnetEnabled &&
+        (magnetEnabled || magnetJoinEnabled) &&
         (tool === "line" ||
           tool === "rectangle" ||
           tool === "circle" ||
@@ -5464,17 +5921,15 @@ export default function Canvas() {
       return;
     }
 
-    setFigures((prev) => {
-      const next = [...prev];
-      if (draft.tool === "rectangle") next.push(makeRectFigure(a, b, "aci7"));
-      if (draft.tool === "circle") {
-        const center: Vec2 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-        const rx = Math.abs(b.x - a.x) / 2;
-        const ry = Math.abs(b.y - a.y) / 2;
-        next.push(makeEllipseFigure(center, rx, ry, "aci7"));
-      }
-      return next;
-    });
+    if (draft.tool === "rectangle") {
+      addFigureWithOptionalMerge(makeRectFigure(a, b, "aci7"));
+    }
+    if (draft.tool === "circle") {
+      const center: Vec2 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const rx = Math.abs(b.x - a.x) / 2;
+      const ry = Math.abs(b.y - a.y) / 2;
+      addFigureWithOptionalMerge(makeEllipseFigure(center, rx, ry, "aci7"));
+    }
 
     setDraft(null);
   };
@@ -5526,7 +5981,7 @@ export default function Canvas() {
   }, [measureDraft, scale, tool]);
 
   const magnetOverlay = useMemo(() => {
-    if (!magnetEnabled) return null;
+    if (!magnetEnabled && !magnetJoinEnabled) return null;
     if (!magnetSnap) return null;
     if (
       tool !== "line" &&
@@ -5548,7 +6003,7 @@ export default function Canvas() {
         listening={false}
       />
     );
-  }, [magnetEnabled, magnetSnap, previewStroke, scale, tool]);
+  }, [magnetEnabled, magnetJoinEnabled, magnetSnap, previewStroke, scale, tool]);
 
   useEffect(() => {
     const onKeyDown = (evt: KeyboardEvent) => {
@@ -5565,7 +6020,15 @@ export default function Canvas() {
       if (tool === "line" && currentLineDraft) {
         if (evt.key === "Enter") {
           evt.preventDefault();
-          const pts = currentLineDraft.pointsWorld;
+          let pts = currentLineDraft.pointsWorld;
+          if (magnetJoinEnabled && pts.length >= 2) {
+            const first = pts[0];
+            const last = pts[pts.length - 1];
+            const closeTolWorld = 10 / scale;
+            if (dist(first, last) <= closeTolWorld) {
+              pts = pts.slice(0, -1);
+            }
+          }
           if (pts.length < 2) {
             lineDraftRef.current = null;
             setLineDraft(null);
@@ -5574,8 +6037,10 @@ export default function Canvas() {
 
           const finalized = makePolylineLineFigure(pts, false, "aci7");
           if (finalized) {
-            setFigures((prev) => [...prev, finalized]);
-            setSelectedFigureId(finalized.id);
+            const hits = currentLineDraft.joinHits.filter(
+              (h): h is JoinHit => !!h
+            );
+            addFigureWithOptionalMerge(finalized, hits);
           }
           lineDraftRef.current = null;
           setLineDraft(null);
@@ -5589,12 +6054,14 @@ export default function Canvas() {
           evt.preventDefault();
           evt.stopPropagation();
           const nextPoints = currentLineDraft.pointsWorld.slice(0, -1);
+          const nextHits = currentLineDraft.joinHits.slice(0, -1);
           const nextDraft =
             nextPoints.length === 0
               ? null
               : {
                   pointsWorld: nextPoints,
                   currentWorld: currentLineDraft.currentWorld,
+                  joinHits: nextHits,
                 };
           lineDraftRef.current = nextDraft;
           setLineDraft(nextDraft);
@@ -5605,7 +6072,15 @@ export default function Canvas() {
       if (tool === "curve" && curveDraft) {
         if (evt.key === "Enter") {
           evt.preventDefault();
-          const pts = curveDraft.pointsWorld;
+          let pts = curveDraft.pointsWorld;
+          if (magnetJoinEnabled && pts.length >= 2) {
+            const first = pts[0];
+            const last = pts[pts.length - 1];
+            const closeTolWorld = 10 / scale;
+            if (dist(first, last) <= closeTolWorld) {
+              pts = pts.slice(0, -1);
+            }
+          }
           if (pts.length < 2) {
             setCurveDraft(null);
             return;
@@ -5613,8 +6088,10 @@ export default function Canvas() {
 
           const finalized = makeCurveFromPoints(pts, false, "aci7");
           if (finalized) {
-            setFigures((prev) => [...prev, finalized]);
-            setSelectedFigureId(finalized.id);
+            const hits = curveDraft.joinHits.filter(
+              (h): h is JoinHit => !!h
+            );
+            addFigureWithOptionalMerge(finalized, hits);
           }
           setCurveDraft(null);
           return;
@@ -5629,10 +6106,12 @@ export default function Canvas() {
           setCurveDraft((prev) => {
             if (!prev) return prev;
             const nextPoints = prev.pointsWorld.slice(0, -1);
+            const nextHits = prev.joinHits.slice(0, -1);
             if (nextPoints.length === 0) return null;
             return {
               pointsWorld: nextPoints,
               currentWorld: prev.currentWorld,
+              joinHits: nextHits,
             };
           });
           return;
@@ -5642,7 +6121,13 @@ export default function Canvas() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [curveDraft, setFigures, setSelectedFigureId, tool]);
+  }, [
+    addFigureWithOptionalMerge,
+    curveDraft,
+    magnetJoinEnabled,
+    scale,
+    tool,
+  ]);
 
   const pageGuides = useMemo(() => {
     if (!showPageGuides) return null;
