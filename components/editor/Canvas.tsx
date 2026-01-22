@@ -1436,25 +1436,13 @@ function clampHandle(anchor: Vec2, handle: Vec2, maxLen: number): Vec2 {
   return add(anchor, mul(v, s));
 }
 
-function dedupeConsecutivePoints(points: Vec2[], tol = 0.5): Vec2[] {
-  if (points.length <= 1) return points;
-  const out: Vec2[] = [points[0]];
-  for (let i = 1; i < points.length; i++) {
-    const prev = out[out.length - 1];
-    const next = points[i];
-    if (dist(prev, next) > tol) {
-      out.push(next);
-    }
-  }
-  return out;
-}
-
 function buildDraftPreviewPoints(
   fixed: Vec2[],
-  live: Vec2,
+  live: Vec2 | null,
   tol = 0.5
 ): Vec2[] {
-  if (!fixed.length) return [live];
+  if (!fixed.length) return live ? [live] : [];
+  if (!live) return fixed;
   const last = fixed[fixed.length - 1];
   return dist(last, live) <= tol ? fixed : [...fixed, live];
 }
@@ -1653,13 +1641,13 @@ type Draft = {
 
 type CurveDraft = {
   pointsWorld: Vec2[];
-  currentWorld: Vec2;
+  currentWorld: Vec2 | null;
   joinHits: Array<JoinHit | null>;
 } | null;
 
 type LineDraft = {
   pointsWorld: Vec2[];
-  currentWorld: Vec2;
+  currentWorld: Vec2 | null;
   joinHits: Array<JoinHit | null>;
 } | null;
 
@@ -5000,7 +4988,7 @@ export default function Canvas() {
       if (!curveDraft) {
         setCurveDraft({
           pointsWorld: [worldForTool],
-          currentWorld: worldForTool,
+          currentWorld: null,
           joinHits: [joinHit],
         });
         return;
@@ -5095,7 +5083,7 @@ export default function Canvas() {
       if (!current) {
         const nextDraft = {
           pointsWorld: [worldForTool],
-          currentWorld: worldForTool,
+          currentWorld: null,
           joinHits: [joinHit],
         };
         lineDraftRef.current = nextDraft;
@@ -6043,9 +6031,7 @@ export default function Canvas() {
       if (tool === "line" && currentLineDraft) {
         if (evt.key === "Enter") {
           evt.preventDefault();
-          let pts = dedupeConsecutivePoints(
-            currentLineDraft.pointsWorld
-          );
+          let pts = currentLineDraft.pointsWorld;
           if (magnetJoinEnabled && pts.length >= 2) {
             const first = pts[0];
             const last = pts[pts.length - 1];
@@ -6080,12 +6066,18 @@ export default function Canvas() {
           evt.stopPropagation();
           const nextPoints = currentLineDraft.pointsWorld.slice(0, -1);
           const nextHits = currentLineDraft.joinHits.slice(0, -1);
+          const fallbackWorld =
+            currentLineDraft.currentWorld ??
+            currentLineDraft.pointsWorld[
+              currentLineDraft.pointsWorld.length - 1
+            ] ??
+            null;
           const nextDraft =
             nextPoints.length === 0
               ? null
               : {
                   pointsWorld: nextPoints,
-                  currentWorld: currentLineDraft.currentWorld,
+                  currentWorld: fallbackWorld,
                   joinHits: nextHits,
                 };
           lineDraftRef.current = nextDraft;
@@ -6097,7 +6089,7 @@ export default function Canvas() {
       if (tool === "curve" && curveDraft) {
         if (evt.key === "Enter") {
           evt.preventDefault();
-          let pts = dedupeConsecutivePoints(curveDraft.pointsWorld);
+          let pts = curveDraft.pointsWorld;
           if (magnetJoinEnabled && pts.length >= 2) {
             const first = pts[0];
             const last = pts[pts.length - 1];
@@ -6302,7 +6294,7 @@ export default function Canvas() {
 
     const fixed = lineDraft.pointsWorld;
     const live = lineDraft.currentWorld;
-    const isAltCenter = modifierKeys.alt && fixed.length === 1;
+    const isAltCenter = modifierKeys.alt && fixed.length === 1 && !!live;
     const pts = isAltCenter
       ? (() => {
           const center = fixed[0];
@@ -6323,7 +6315,7 @@ export default function Canvas() {
     const first = fixed[0];
     const closeTolWorld = 10 / scale;
     const isCloseHover =
-      !!first && canClose && dist(live, first) <= closeTolWorld;
+      !!first && !!live && canClose && dist(live, first) <= closeTolWorld;
 
     return (
       <>
@@ -6396,25 +6388,27 @@ export default function Canvas() {
 
     const canClose = fixed.length >= 3;
     const first = fixed[0];
-    const isCloseHover = canClose && dist(live, first) <= closeTolWorld;
+    const isCloseHover =
+      !!live && canClose && dist(live, first) <= closeTolWorld;
 
     const pts = buildDraftPreviewPoints(fixed, live);
-    if (pts.length < 2) return null;
+    const hasLine = pts.length >= 2;
 
-    const fig = makeCurveFromPoints(pts, false, "aci7");
-    if (!fig) return null;
-    const poly = figureLocalPolyline(fig, 60);
+    const fig = hasLine ? makeCurveFromPoints(pts, false, "aci7") : null;
+    const poly = fig ? figureLocalPolyline(fig, 60) : null;
     return (
       <>
-        <Line
-          points={poly}
-          stroke={previewStroke}
-          strokeWidth={1 / scale}
-          dash={previewDash}
-          listening={false}
-          lineCap="round"
-          lineJoin="round"
-        />
+        {poly ? (
+          <Line
+            points={poly}
+            stroke={previewStroke}
+            strokeWidth={1 / scale}
+            dash={previewDash}
+            listening={false}
+            lineCap="round"
+            lineJoin="round"
+          />
+        ) : null}
 
         {isCloseHover ? (
           <Line
