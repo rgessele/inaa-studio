@@ -1793,6 +1793,93 @@ function buildDraftPreviewPoints(
   return dist(last, live) <= tol ? fixed : [...fixed, live];
 }
 
+function dedupeByDistance(points: Vec2[], minDist: number): Vec2[] {
+  if (points.length <= 1) return points;
+  const out: Vec2[] = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    if (dist(out[out.length - 1], points[i]) >= minDist) {
+      out.push(points[i]);
+    }
+  }
+  return out;
+}
+
+function smoothPolyline(points: Vec2[]): Vec2[] {
+  if (points.length <= 2) return points;
+  const out: Vec2[] = [];
+  out.push(points[0]);
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1];
+    const cur = points[i];
+    const next = points[i + 1];
+    out.push({
+      x: prev.x * 0.2 + cur.x * 0.6 + next.x * 0.2,
+      y: prev.y * 0.2 + cur.y * 0.6 + next.y * 0.2,
+    });
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
+
+function simplifyPolylineRdp(points: Vec2[], tolerance: number): Vec2[] {
+  if (points.length <= 2) return points;
+  if (!Number.isFinite(tolerance) || tolerance <= 0) return points;
+
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+
+  const stack: Array<[number, number]> = [[0, points.length - 1]];
+  while (stack.length) {
+    const range = stack.pop();
+    if (!range) continue;
+    const [start, end] = range;
+    if (end - start <= 1) continue;
+
+    const a = points[start];
+    const b = points[end];
+    let bestIdx = -1;
+    let bestDist = 0;
+
+    for (let i = start + 1; i < end; i++) {
+      const d = pointToSegmentDistance(points[i], a, b).d;
+      if (d > bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+
+    if (bestIdx >= 0 && bestDist > tolerance) {
+      keep[bestIdx] = 1;
+      stack.push([start, bestIdx], [bestIdx, end]);
+    }
+  }
+
+  const out: Vec2[] = [];
+  for (let i = 0; i < points.length; i++) {
+    if (keep[i]) out.push(points[i]);
+  }
+  return out.length >= 2 ? out : [points[0], points[points.length - 1]];
+}
+
+function finalizePenStrokePoints(
+  points: Vec2[],
+  opts: {
+    scale: number;
+    highPrecision: boolean;
+  }
+): Vec2[] {
+  if (points.length <= 1) return points;
+
+  const minSampleWorld = (opts.highPrecision ? 0.8 : 1.6) / opts.scale;
+  const toleranceWorld = (opts.highPrecision ? 0.6 : 1.2) / opts.scale;
+
+  const deduped = dedupeByDistance(points, minSampleWorld);
+  const smoothed = smoothPolyline(deduped);
+  const simplified = simplifyPolylineRdp(smoothed, toleranceWorld);
+  return dedupeByDistance(simplified, minSampleWorld * 0.5);
+}
+
 function makePolylineLineFigure(
   points: Vec2[],
   closed: boolean,
@@ -1995,6 +2082,12 @@ type LineDraft = {
   pointsWorld: Vec2[];
   currentWorld: Vec2 | null;
   joinHits: Array<JoinHit | null>;
+} | null;
+
+type PenDraft = {
+  pointsWorld: Vec2[];
+  currentWorld: Vec2 | null;
+  highPrecision: boolean;
 } | null;
 
 function makeCurveFromPoints(
@@ -2691,6 +2784,8 @@ export default function Canvas() {
   const [curveDraft, setCurveDraft] = useState<CurveDraft>(null);
   const [lineDraft, setLineDraft] = useState<LineDraft>(null);
   const lineDraftRef = useRef<LineDraft>(null);
+  const [penDraft, setPenDraft] = useState<PenDraft>(null);
+  const penDraftRef = useRef<PenDraft>(null);
   const [nodeSelection, setNodeSelection] = useState<NodeSelection>(null);
   const [nodeMergePreview, setNodeMergePreview] = useState<{
     figureId: string;
@@ -3012,6 +3107,9 @@ export default function Canvas() {
   useEffect(() => {
     lineDraftRef.current = lineDraft;
   }, [lineDraft]);
+  useEffect(() => {
+    penDraftRef.current = penDraft;
+  }, [penDraft]);
   const [isPanning, setIsPanning] = useState(false);
   const lastPointerRef = useRef<Vec2 | null>(null);
   const lastPanClientRef = useRef<{ x: number; y: number } | null>(null);
@@ -5138,6 +5236,24 @@ export default function Canvas() {
       return;
     }
 
+    if (tool === "pen") {
+      if (e.evt.button !== 0) return;
+      e.evt.preventDefault();
+      const highPrecision =
+        !!e.evt.metaKey ||
+        !!e.evt.ctrlKey ||
+        modifierKeys.meta ||
+        modifierKeys.ctrl;
+      const nextDraft = {
+        pointsWorld: [worldForTool],
+        currentWorld: worldForTool,
+        highPrecision,
+      };
+      penDraftRef.current = nextDraft;
+      setPenDraft(nextDraft);
+      return;
+    }
+
     if (tool === "measure") {
       setMeasureDraft({
         startWorld: worldForTool,
@@ -6624,6 +6740,28 @@ export default function Canvas() {
       return;
     }
 
+    if (tool === "pen" && penDraftRef.current && isPointerDownRef.current) {
+      const current = penDraftRef.current;
+      const last = current.pointsWorld[current.pointsWorld.length - 1] ?? null;
+      const nextWorld = worldForTool;
+      const minSampleWorld =
+        (current.highPrecision ? 1 : 2) / Math.max(0.1, scale);
+
+      let nextPoints = current.pointsWorld;
+      if (!last || dist(last, nextWorld) >= minSampleWorld) {
+        nextPoints = [...current.pointsWorld, nextWorld];
+      }
+
+      const nextDraft = {
+        ...current,
+        pointsWorld: nextPoints,
+        currentWorld: nextWorld,
+      };
+      penDraftRef.current = nextDraft;
+      setPenDraft(nextDraft);
+      return;
+    }
+
     if (!draft) return;
 
     const mods: DraftMods = { shift: e.evt.shiftKey, alt: e.evt.altKey };
@@ -6725,7 +6863,12 @@ export default function Canvas() {
     ]
   );
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (
+    e?: Konva.KonvaEventObject<PointerEvent | MouseEvent>
+  ) => {
+    if (e?.evt && stageRef.current) {
+      stageRef.current.setPointersPositions(e.evt);
+    }
     isPointerDownRef.current = false;
 
     if (tool === "select") {
@@ -6812,6 +6955,55 @@ export default function Canvas() {
 
     if (tool === "measure") {
       setMeasureDraft(null);
+      return;
+    }
+
+    if (tool === "pen") {
+      const current = penDraftRef.current;
+      if (!current) return;
+
+      let rawPoints = current.pointsWorld;
+      const stage = stageRef.current;
+      const pos = stage?.getPointerPosition();
+      if (pos) {
+        const upWorld = {
+          x: (pos.x - position.x) / scale,
+          y: (pos.y - position.y) / scale,
+        };
+        const last = rawPoints[rawPoints.length - 1] ?? null;
+        if (!last || dist(last, upWorld) >= 0.5 / Math.max(0.1, scale)) {
+          rawPoints = [...rawPoints, upWorld];
+        }
+      }
+
+      const closeTolWorld = 10 / Math.max(0.1, scale);
+      const shouldClose =
+        rawPoints.length >= 3 &&
+        dist(rawPoints[0], rawPoints[rawPoints.length - 1]) <= closeTolWorld;
+
+      let finalizedPoints = finalizePenStrokePoints(rawPoints, {
+        scale,
+        highPrecision: current.highPrecision,
+      });
+      if (shouldClose && finalizedPoints.length >= 3) {
+        const first = finalizedPoints[0];
+        const last = finalizedPoints[finalizedPoints.length - 1];
+        if (dist(first, last) <= closeTolWorld * 1.25) {
+          finalizedPoints = finalizedPoints.slice(0, -1);
+        }
+      }
+
+      if (finalizedPoints.length >= 2) {
+        const fig = makePolylineLineFigure(
+          finalizedPoints,
+          shouldClose,
+          "aci7"
+        );
+        if (fig) addFigureWithOptionalMerge(fig, []);
+      }
+
+      penDraftRef.current = null;
+      setPenDraft(null);
       return;
     }
 
@@ -6917,6 +7109,8 @@ export default function Canvas() {
         setCurveDraft(null);
         lineDraftRef.current = null;
         setLineDraft(null);
+        penDraftRef.current = null;
+        setPenDraft(null);
         dragNodeRef.current = null;
         dragHandleRef.current = null;
       }
@@ -7297,6 +7491,62 @@ export default function Canvas() {
       </>
     );
   }, [lineDraft, modifierKeys.alt, previewDash, previewStroke, scale]);
+
+  const penDraftPreview = useMemo(() => {
+    if (!penDraft) return null;
+
+    const pts = buildDraftPreviewPoints(
+      penDraft.pointsWorld,
+      penDraft.currentWorld,
+      0.25
+    );
+    if (pts.length === 0) return null;
+
+    const flat: number[] = [];
+    for (const p of pts) {
+      flat.push(p.x, p.y);
+    }
+
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const closeTolWorld = 10 / Math.max(0.1, scale);
+    const canClose = pts.length >= 3;
+    const isClosePreview = canClose && dist(first, last) <= closeTolWorld;
+
+    return (
+      <>
+        {pts.length >= 2 ? (
+          <Line
+            points={flat}
+            stroke={previewStroke}
+            strokeWidth={1.25 / scale}
+            listening={false}
+            lineCap="round"
+            lineJoin="round"
+          />
+        ) : null}
+        <Circle
+          x={first.x}
+          y={first.y}
+          radius={3.5 / scale}
+          fill={isClosePreview ? "#16a34a" : previewStroke}
+          opacity={0.95}
+          listening={false}
+        />
+        {isClosePreview ? (
+          <Circle
+            x={first.x}
+            y={first.y}
+            radius={6 / scale}
+            stroke="#16a34a"
+            strokeWidth={1 / scale}
+            fill="transparent"
+            listening={false}
+          />
+        ) : null}
+      </>
+    );
+  }, [penDraft, previewStroke, scale]);
 
   const curveDraftPreview = useMemo(() => {
     if (!curveDraft) return null;
@@ -9444,6 +9694,7 @@ export default function Canvas() {
 
                     const allowStageForDrawing =
                       tool === "line" ||
+                      tool === "pen" ||
                       tool === "curve" ||
                       tool === "rectangle" ||
                       tool === "circle" ||
@@ -9988,6 +10239,8 @@ export default function Canvas() {
             {angleLockGuideOverlay}
 
             {lineDraftPreview}
+
+            {penDraftPreview}
 
             {curveDraftPreview}
 

@@ -105,6 +105,13 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
       descriptionPtBr: "Alta precisão (1mm)",
     },
   ],
+  pen: [
+    {
+      key: "cmdOrCtrl",
+      label: { mac: "⌘", win: "Ctrl" },
+      descriptionPtBr: "Alta precisão (menos simplificação)",
+    },
+  ],
   curve: [
     {
       key: "cmdOrCtrl",

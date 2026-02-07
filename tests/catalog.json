@@ -77,6 +77,13 @@
       "notes": "Desenho básico no canvas + validação por snapshot de estado."
     },
     {
+      "id": "tool.pen",
+      "title": "Ferramenta Caneta (mão livre)",
+      "risk": "medium",
+      "e2e": ["tests/pen.tool.spec.ts"],
+      "notes": "Criação de traço livre aberto e fechamento ao retornar ao início."
+    },
+    {
       "id": "tool.node",
       "title": "Ferramenta Nó (editar nós): arrasto sem split acidental",
       "risk": "medium",

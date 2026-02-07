@@ -871,12 +871,19 @@ export function EditorToolbar() {
               customIcon={getToolIcon("curve", "toolbar")}
             />
 
-            <StaticToolbarButton
-              icon="edit"
-              ariaLabel="Caneta"
+            <ToolButton
+              active={tool === "pen"}
+              onClick={() => handleToolChange("pen")}
+              icon="draw"
               isMac={isMac}
-              tooltipTitle="Caneta"
-              tooltipDetails={["Em breve."]}
+              title="Caneta"
+              shortcuts={[{ key: "B" }]}
+              details={[
+                "Desenho à mão livre: clique e arraste para traçar.",
+                "Ao soltar, o traço é suavizado e simplificado.",
+                "Feche o traço voltando ao ponto inicial.",
+              ]}
+              customIcon={getToolIcon("pen", "toolbar")}
             />
 
             <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
@@ -1549,44 +1556,6 @@ function ToolButton({
         title={title}
         shortcuts={shortcuts}
         details={details}
-        expanded={tooltip.expanded}
-      />
-    </button>
-  );
-}
-
-function StaticToolbarButton({
-  icon,
-  ariaLabel,
-  isMac,
-  tooltipTitle,
-  tooltipShortcuts,
-  tooltipDetails,
-}: {
-  icon: string;
-  ariaLabel: string;
-  isMac: boolean;
-  tooltipTitle: string;
-  tooltipShortcuts?: ToolbarShortcut[];
-  tooltipDetails?: string[];
-}) {
-  const tooltip = useDelayedTooltip(
-    Boolean(tooltipDetails && tooltipDetails.length > 0)
-  );
-
-  return (
-    <button
-      onMouseEnter={tooltip.onMouseEnter}
-      onMouseLeave={tooltip.onMouseLeave}
-      className="group relative w-full aspect-square flex items-center justify-center rounded bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white transition-all"
-      aria-label={ariaLabel}
-    >
-      <span className="material-symbols-outlined text-[22px]">{icon}</span>
-      <ToolbarTooltip
-        isMac={isMac}
-        title={tooltipTitle}
-        shortcuts={tooltipShortcuts}
-        details={tooltipDetails}
         expanded={tooltip.expanded}
       />
     </button>

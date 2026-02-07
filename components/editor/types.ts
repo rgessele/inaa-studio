@@ -7,6 +7,7 @@ export type DrawingTool =
   | "text";
 export type Tool =
   | DrawingTool
+  | "pen"
   | "select"
   | "pan"
   | "node"

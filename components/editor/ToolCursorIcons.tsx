@@ -7,6 +7,7 @@ type ToolName =
   | "rectangle"
   | "circle"
   | "line"
+  | "pen"
   | "curve"
   | "text"
   | "measure"
@@ -86,6 +87,13 @@ function getToolIconInternal(
           <path d="M6 18L18 6" />
           <circle cx="6" cy="18" r="1.2" fill="currentColor" stroke="none" />
           <circle cx="18" cy="6" r="1.2" fill="currentColor" stroke="none" />
+        </Svg>
+      );
+    case "pen":
+      return (
+        <Svg className={className} strokeWidth={strokeWidth}>
+          <path d="M6.5 16.5L12 6l5.5 10.5L12 21z" />
+          <path d="M10 12h4" />
         </Svg>
       );
     case "curve":
@@ -214,6 +222,7 @@ export function isToolCursorOverlayEnabled(tool: string): boolean {
     tool === "rectangle" ||
     tool === "circle" ||
     tool === "line" ||
+    tool === "pen" ||
     tool === "curve" ||
     tool === "text" ||
     tool === "measure" ||
