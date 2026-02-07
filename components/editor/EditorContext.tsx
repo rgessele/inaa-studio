@@ -25,6 +25,8 @@ import { createDefaultExportSettings } from "./exportSettings";
 import { withComputedFigureMeasures } from "./figureMeasures";
 import { figureWorldBoundingBox } from "./figurePath";
 import { figureLocalToWorld } from "./figurePath";
+import { hasClosedLoop } from "./seamFigure";
+import { sendDebugLog } from "@/utils/debugLog";
 
 import { add, len, mul, sub } from "./figureGeometry";
 
@@ -983,7 +985,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       const effectivePageGuideSettings =
         nextPageGuideSettings ?? pageGuideSettingsRef.current;
 
-      setFigures(figures, false); // Load without saving to history
+      const normalizedFigures = figures.map((fig) => {
+        if (fig.closed) return fig;
+        return hasClosedLoop(fig) ? { ...fig, closed: true } : fig;
+      });
+
+      setFigures(normalizedFigures, false); // Load without saving to history
       setProjectId(projectId);
       setProjectName(projectName);
       setProjectMeta(meta);
@@ -995,7 +1002,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
       setLastSavedSnapshot(
         JSON.stringify({
-          figures,
+          figures: normalizedFigures,
           pageGuideSettings: effectivePageGuideSettings,
           guides: Array.isArray(nextGuides) ? nextGuides : [],
         })
@@ -1030,7 +1037,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   );
 
   React.useEffect(() => {
-    if (process.env.NEXT_PUBLIC_E2E_TESTS !== "1") return;
+    const isE2E = process.env.NEXT_PUBLIC_E2E_TESTS === "1";
+    if (!isE2E && process.env.NODE_ENV === "production") return;
 
     const addTestRectangle = () => {
       const figId = makeId("fig");
@@ -1080,6 +1088,60 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       );
     };
 
+    const serializeFigure = (f: Figure) => ({
+      id: f.id,
+      tool: f.tool,
+      kind: f.kind,
+      parentId: f.parentId,
+      x: f.x,
+      y: f.y,
+      rotation: f.rotation || 0,
+      closed: f.closed,
+      offsetCm: f.offsetCm,
+      seamSegments: f.seamSegments,
+      seamSegmentEdgeIds: f.seamSegmentEdgeIds,
+      darts: (f.darts ?? []).map((d) => ({
+        id: d.id,
+        aNodeId: d.aNodeId,
+        bNodeId: d.bNodeId,
+        cNodeId: d.cNodeId,
+      })),
+      piques: (f.piques ?? []).map((p) => ({
+        id: p.id,
+        edgeId: p.edgeId,
+        t01: p.t01,
+        lengthCm: p.lengthCm,
+        side: p.side,
+      })),
+      textValue: f.textValue,
+      textFontFamily: f.textFontFamily,
+      textFontSizePx: f.textFontSizePx,
+      textFill: f.textFill,
+      textAlign: f.textAlign,
+      textLineHeight: f.textLineHeight,
+      textLetterSpacing: f.textLetterSpacing,
+      textWidthPx: f.textWidthPx,
+      textWrap: f.textWrap,
+      textPaddingPx: f.textPaddingPx,
+      textBackgroundEnabled: f.textBackgroundEnabled,
+      textBackgroundFill: f.textBackgroundFill,
+      textBackgroundOpacity: f.textBackgroundOpacity,
+      nodes: f.nodes.map((n) => ({
+        id: n.id,
+        x: n.x,
+        y: n.y,
+        mode: n.mode,
+        inHandle: n.inHandle ? { x: n.inHandle.x, y: n.inHandle.y } : null,
+        outHandle: n.outHandle ? { x: n.outHandle.x, y: n.outHandle.y } : null,
+      })),
+      edges: f.edges.map((e) => ({
+        id: e.id,
+        from: e.from,
+        to: e.to,
+        kind: e.kind,
+      })),
+    });
+
     (window as unknown as { __INAA_DEBUG__?: unknown }).__INAA_DEBUG__ = {
       getState: () => ({
         tool,
@@ -1100,59 +1162,27 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         projectId,
         projectName,
       }),
-      getFiguresSnapshot: () => {
-        return (figures || []).map((f) => ({
-          id: f.id,
-          tool: f.tool,
-          kind: f.kind,
-          parentId: f.parentId,
-          x: f.x,
-          y: f.y,
-          rotation: f.rotation || 0,
-          closed: f.closed,
-          darts: (f.darts ?? []).map((d) => ({
-            id: d.id,
-            aNodeId: d.aNodeId,
-            bNodeId: d.bNodeId,
-            cNodeId: d.cNodeId,
-          })),
-          piques: (f.piques ?? []).map((p) => ({
-            id: p.id,
-            edgeId: p.edgeId,
-            t01: p.t01,
-            lengthCm: p.lengthCm,
-            side: p.side,
-          })),
-          textValue: f.textValue,
-          textFontFamily: f.textFontFamily,
-          textFontSizePx: f.textFontSizePx,
-          textFill: f.textFill,
-          textAlign: f.textAlign,
-          textLineHeight: f.textLineHeight,
-          textLetterSpacing: f.textLetterSpacing,
-          textWidthPx: f.textWidthPx,
-          textWrap: f.textWrap,
-          textPaddingPx: f.textPaddingPx,
-          textBackgroundEnabled: f.textBackgroundEnabled,
-          textBackgroundFill: f.textBackgroundFill,
-          textBackgroundOpacity: f.textBackgroundOpacity,
-          nodes: f.nodes.map((n) => ({
-            id: n.id,
-            x: n.x,
-            y: n.y,
-            mode: n.mode,
-            inHandle: n.inHandle ? { x: n.inHandle.x, y: n.inHandle.y } : null,
-            outHandle: n.outHandle
-              ? { x: n.outHandle.x, y: n.outHandle.y }
-              : null,
-          })),
-          edges: f.edges.map((e) => ({
-            id: e.id,
-            from: e.from,
-            to: e.to,
-            kind: e.kind,
-          })),
-        }));
+      getPosition: () => position,
+      getScale: () => scale,
+      getFiguresSnapshot: () => (figures || []).map(serializeFigure),
+      getSelectedFigureSnapshot: () => {
+        const id = selectedFigureId;
+        if (!id) return null;
+        const fig = (figures || []).find((f) => f.id === id);
+        return fig ? serializeFigure(fig) : null;
+      },
+      copySelectedFigureJson: async () => {
+        const fig = (figures || []).find((f) => f.id === selectedFigureId);
+        if (!fig) return null;
+        const json = JSON.stringify(serializeFigure(fig), null, 2);
+        try {
+          if (typeof navigator !== "undefined" && navigator.clipboard) {
+            await navigator.clipboard.writeText(json);
+          }
+        } catch {
+          // ignore clipboard errors
+        }
+        return json;
       },
       getSelectedFigureStats: () => {
         const id = selectedFigureId;
@@ -1182,8 +1212,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           return [];
         }
       },
-      addTestRectangle,
-      loadTestProject,
+      ...(isE2E
+        ? {
+            addTestRectangle,
+            loadTestProject,
+          }
+        : {}),
     };
   }, [
     figures,
@@ -1195,8 +1229,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     pointLabelsMode,
     measureSnapStrengthPx,
     pageGuideSettings,
+    position,
     projectId,
     projectName,
+    scale,
     selectedFigureId,
     selectedFigureIds,
     showGrid,
@@ -1247,9 +1283,63 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       (window as unknown as { __EDITOR_STATE__?: unknown }).__EDITOR_STATE__ = {
         figures: figures || [],
         magnetJoinEnabled,
+        selectedFigureId,
+        selectedFigureIds,
       };
     }
-  }, [figures, magnetJoinEnabled]);
+  }, [figures, magnetJoinEnabled, selectedFigureId, selectedFigureIds]);
+
+  React.useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (!selectedFigureId) return;
+    const fig = (figures || []).find((f) => f.id === selectedFigureId);
+    if (!fig) return;
+    const payload = {
+      id: fig.id,
+      tool: fig.tool,
+      kind: fig.kind,
+      parentId: fig.parentId,
+      x: fig.x,
+      y: fig.y,
+      rotation: fig.rotation || 0,
+      closed: fig.closed,
+      offsetCm: fig.offsetCm,
+      seamSegments: fig.seamSegments,
+      seamSegmentEdgeIds: fig.seamSegmentEdgeIds,
+      darts: (fig.darts ?? []).map((d) => ({
+        id: d.id,
+        aNodeId: d.aNodeId,
+        bNodeId: d.bNodeId,
+        cNodeId: d.cNodeId,
+      })),
+      piques: (fig.piques ?? []).map((p) => ({
+        id: p.id,
+        edgeId: p.edgeId,
+        t01: p.t01,
+        lengthCm: p.lengthCm,
+        side: p.side,
+      })),
+      nodes: fig.nodes.map((n) => ({
+        id: n.id,
+        x: n.x,
+        y: n.y,
+        mode: n.mode,
+        inHandle: n.inHandle ? { x: n.inHandle.x, y: n.inHandle.y } : null,
+        outHandle: n.outHandle ? { x: n.outHandle.x, y: n.outHandle.y } : null,
+      })),
+      edges: fig.edges.map((e) => ({
+        id: e.id,
+        from: e.from,
+        to: e.to,
+        kind: e.kind,
+      })),
+    };
+    console.log("[selected-figure-json]", JSON.stringify(payload, null, 2));
+    sendDebugLog({
+      type: "select-figure",
+      payload,
+    });
+  }, [figures, selectedFigureId]);
 
   return (
     <EditorContext.Provider

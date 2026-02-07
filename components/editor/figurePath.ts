@@ -8,6 +8,12 @@ import {
   type Vec2,
 } from "./figureGeometry";
 
+function normalizeVec(v: Vec2): Vec2 {
+  const l = Math.hypot(v.x, v.y);
+  if (l < 1e-9) return { x: 0, y: 0 };
+  return { x: v.x / l, y: v.y / l };
+}
+
 function toPointArray(points: Vec2[]): number[] {
   const out: number[] = [];
   for (const p of points) {
@@ -57,6 +63,206 @@ function polylineFromEdgesInOrder(
   }
 
   return points;
+}
+
+/**
+ * Get the direction vector at the start of an edge from a specific node.
+ */
+function getEdgeDirection(
+  figure: Figure,
+  edge: FigureEdge,
+  atNode: string
+): Vec2 {
+  const fromNode = figure.nodes.find((n) => n.id === edge.from);
+  const toNode = figure.nodes.find((n) => n.id === edge.to);
+  if (!fromNode || !toNode) return { x: 1, y: 0 };
+
+  const p0 = { x: fromNode.x, y: fromNode.y };
+  const p3 = { x: toNode.x, y: toNode.y };
+
+  // Check for cubic curves with handles
+  if (edge.kind === "cubic" && fromNode.outHandle && toNode.inHandle) {
+    const p1 = add(p0, fromNode.outHandle);
+    const p2 = add(p3, toNode.inHandle);
+
+    if (atNode === edge.from) {
+      return normalizeVec(sub(p1, p0));
+    } else {
+      return normalizeVec(sub(p3, p2));
+    }
+  } else {
+    // Line segment
+    if (atNode === edge.from) {
+      return normalizeVec(sub(p3, p0));
+    } else {
+      return normalizeVec(sub(p0, p3));
+    }
+  }
+}
+
+/**
+ * Find the outer boundary of a figure using angle-based walking.
+ * This handles figures with nodes that have more than 2 edges (like connected shapes).
+ */
+export function findOuterBoundaryPolyline(
+  figure: Figure,
+  cubicSteps: number
+): Vec2[] | null {
+  if (figure.edges.length === 0) return null;
+
+  // Build adjacency: for each node, which edges connect to it?
+  const nodeToEdges = new Map<string, FigureEdge[]>();
+  for (const edge of figure.edges) {
+    const fromList = nodeToEdges.get(edge.from) ?? [];
+    fromList.push(edge);
+    nodeToEdges.set(edge.from, fromList);
+    const toList = nodeToEdges.get(edge.to) ?? [];
+    toList.push(edge);
+    nodeToEdges.set(edge.to, toList);
+  }
+
+  // Check if any node has more than 2 edges (complex topology)
+  let hasComplexTopology = false;
+  let maxDegree = 0;
+  for (const [, edges] of nodeToEdges) {
+    if (edges.length > maxDegree) {
+      maxDegree = edges.length;
+    }
+    if (edges.length > 2) {
+      hasComplexTopology = true;
+    }
+  }
+  
+  // Debug logging
+  // console.log("[findOuterBoundaryPolyline] maxDegree =", maxDegree, "hasComplexTopology =", hasComplexTopology, "figureId =", figure.id);
+  
+  // If simple topology, return null to use the standard traversal
+  if (!hasComplexTopology) return null;
+
+  // Find the node with smallest Y (and smallest X as tiebreaker)
+  let startNode: FigureNode | null = null;
+  for (const node of figure.nodes) {
+    const edgeCount = nodeToEdges.get(node.id)?.length ?? 0;
+    if (edgeCount < 2) continue;
+
+    if (
+      !startNode ||
+      node.y < startNode.y ||
+      (node.y === startNode.y && node.x < startNode.x)
+    ) {
+      startNode = node;
+    }
+  }
+
+  if (!startNode) return null;
+
+  // Find the edge that goes in the most "rightward" direction from startNode
+  // For CCW traversal of outer boundary starting from top-left, we go RIGHT first
+  const startEdges = nodeToEdges.get(startNode.id) ?? [];
+  if (startEdges.length === 0) return null;
+
+  let startEdge: FigureEdge | null = null;
+  let bestAngle = Infinity;
+
+  for (const edge of startEdges) {
+    const dir = getEdgeDirection(figure, edge, startNode.id);
+    // Choose edge closest to pointing right (angle closest to 0)
+    const a = Math.atan2(dir.y, dir.x);
+    const distFromRight = Math.abs(a); // Distance from angle 0 (right)
+    if (distFromRight < bestAngle) {
+      bestAngle = distFromRight;
+      startEdge = edge;
+    }
+  }
+
+  if (!startEdge) return null;
+
+  // Now trace the boundary
+  const points: Vec2[] = [];
+  const usedInLoop = new Set<string>();
+
+  let currentEdge = startEdge;
+  let currentNodeId = startNode.id;
+  let prevDir: Vec2 = { x: 0, y: 1 };
+
+  let iterations = 0;
+  const maxIterations = figure.edges.length * 3;
+
+  while (iterations < maxIterations) {
+    iterations++;
+
+    const isForward = currentNodeId === currentEdge.from;
+    const nextNodeId = isForward ? currentEdge.to : currentEdge.from;
+
+    const edgeKey = `${currentEdge.id}:${isForward ? "fwd" : "rev"}`;
+    if (usedInLoop.has(edgeKey)) break;
+    usedInLoop.add(edgeKey);
+
+    // Get points for this edge
+    const pts = edgeLocalPoints(figure, currentEdge, cubicSteps);
+    const orderedPts = isForward ? pts : [...pts].reverse();
+
+    if (points.length === 0) {
+      points.push(...orderedPts);
+    } else {
+      points.push(...orderedPts.slice(1));
+    }
+
+    // Update direction
+    if (orderedPts.length >= 2) {
+      const last = orderedPts[orderedPts.length - 1];
+      const secondLast = orderedPts[orderedPts.length - 2];
+      prevDir = normalizeVec(sub(last, secondLast));
+    }
+
+    currentNodeId = nextNodeId;
+
+    // Check if we returned to the start
+    if (currentNodeId === startNode.id) break;
+
+    // Find next edge using angle-based selection
+    const candidates = (nodeToEdges.get(currentNodeId) ?? []).filter(
+      (e) => e.id !== currentEdge.id
+    );
+
+    if (candidates.length === 0) break;
+
+    // For external boundary traversal (CCW in screen coords where Y points down),
+    // we want to always turn "left" (counter-clockwise), which means choosing
+    // the edge with the LARGEST relative angle (measured CCW from incoming).
+    let nextEdge: FigureEdge | null = null;
+    let bestTurnAngle = -Infinity;
+
+    const incomingAngle = Math.atan2(prevDir.y, prevDir.x);
+
+    for (const candidate of candidates) {
+      const candidateDir = getEdgeDirection(figure, candidate, currentNodeId);
+      const outgoingAngle = Math.atan2(candidateDir.y, candidateDir.x);
+
+      // Relative angle from incoming to outgoing (CCW positive)
+      let turnAngle = outgoingAngle - incomingAngle;
+      // Normalize to (0, 2π] - we want CCW angle, positive values
+      while (turnAngle <= 0) turnAngle += 2 * Math.PI;
+      while (turnAngle > 2 * Math.PI) turnAngle -= 2 * Math.PI;
+
+      // For outer boundary, always take the LARGEST CCW turn (closest to 2π = smallest actual turn)
+      if (turnAngle > bestTurnAngle) {
+        bestTurnAngle = turnAngle;
+        nextEdge = candidate;
+      }
+    }
+
+    if (!nextEdge) break;
+    currentEdge = nextEdge;
+  }
+
+  // console.log("[findOuterBoundaryPolyline] result points:", points.length, "iterations:", iterations, "pts:", JSON.stringify(points.slice(0, 10).map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }))));
+
+  if (points.length >= 3) {
+    return points;
+  }
+
+  return null;
 }
 
 function tryPolylineByTraversal(
@@ -170,9 +376,26 @@ export function figureLocalPolyline(
   figure: Figure,
   cubicSteps: number = 30
 ): number[] {
-  const traversed = tryPolylineByTraversal(figure, cubicSteps);
-  if (traversed) return toPointArray(traversed);
+  // console.log("[figureLocalPolyline] figure.id =", figure.id, "closed =", figure.closed, "edges =", figure.edges.length);
+  
+  // First, try the boundary walking algorithm for complex figures
+  if (figure.closed) {
+    const boundary = findOuterBoundaryPolyline(figure, cubicSteps);
+    if (boundary) {
+      // console.log("[figureLocalPolyline] using boundary algorithm, points:", boundary.length);
+      return toPointArray(boundary);
+    }
+  }
 
+  // For simple figures, use standard traversal
+  const traversed = tryPolylineByTraversal(figure, cubicSteps);
+  if (traversed) {
+    // console.log("[figureLocalPolyline] using traversal, points:", traversed.length);
+    return toPointArray(traversed);
+  }
+
+  // Fallback: just iterate edges in order
+  // console.log("[figureLocalPolyline] using fallback");
   const points = polylineFromEdgesInOrder(figure, cubicSteps, figure.edges);
   return toPointArray(points);
 }

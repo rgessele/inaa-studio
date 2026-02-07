@@ -195,8 +195,24 @@ const FigureRenderer = ({
       degree.set(e.to, (degree.get(e.to) ?? 0) + 1);
     }
     const hasBranch = Array.from(degree.values()).some((d) => d > 2);
+    const degree1Count = Array.from(degree.values()).filter((d) => d === 1)
+      .length;
+    const forceSegments =
+      figure.tool === "line" && figure.edges.length > 1 && !figure.closed;
+    const isOrderedPath = figure.edges.every((edge, idx) => {
+      if (idx === 0) return true;
+      return figure.edges[idx - 1].to === edge.from;
+    });
+    const isOrderedOpen = !figure.closed && degree1Count === 2 && isOrderedPath;
+    const isOrderedClosed =
+      figure.closed &&
+      degree1Count === 0 &&
+      isOrderedPath &&
+      figure.edges.length > 1 &&
+      figure.edges[figure.edges.length - 1].to ===
+        figure.edges[0].from;
 
-    if (!hasBranch) {
+    if (!forceSegments && !hasBranch && (isOrderedOpen || isOrderedClosed)) {
       return { pts: polyPts, isSimpleContour: true, edgeSegments: [] };
     }
 

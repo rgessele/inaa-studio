@@ -56,6 +56,7 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_GIT_SHA: gitSha,
     NEXT_PUBLIC_GIT_REF: gitRef,
     NEXT_PUBLIC_GIT_COMMIT_COUNT: gitCommitCount,
+    NEXT_PUBLIC_DEBUG: process.env.DEBUG ?? "",
   },
 };
 

@@ -382,7 +382,8 @@ export function PropertiesPanel() {
   React.useEffect(() => {
     if (!selectedFigure) return;
     if (isEditingFigureName) return;
-    setFigureNameDraft(selectedFigure.name ?? "");
+    const nextName = selectedFigure.name ?? "";
+    setFigureNameDraft((prev) => (prev === nextName ? prev : nextName));
   }, [isEditingFigureName, selectedFigure]);
 
   React.useEffect(() => {
