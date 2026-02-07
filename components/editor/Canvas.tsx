@@ -1333,11 +1333,52 @@ function findHoveredPique(
   return best;
 }
 
+type EdgeSplitResult = {
+  figure: Figure;
+  newNodeId?: string;
+  replacedEdgeId?: string;
+  replacementEdgeIds?: [string, string];
+};
+
+function applySplitResultToFigureSet(
+  prev: Figure[],
+  figureId: string,
+  split: EdgeSplitResult
+): Figure[] {
+  const replacedEdgeId = split.replacedEdgeId;
+  const replacementEdgeIds = split.replacementEdgeIds;
+  let changed = false;
+
+  const next = prev.map((f) => {
+    if (f.id === figureId) {
+      changed = true;
+      return split.figure;
+    }
+
+    if (!replacedEdgeId || !replacementEdgeIds) return f;
+    if (f.kind !== "seam" || f.parentId !== figureId) return f;
+    if (!f.offsetCm || typeof f.offsetCm !== "object") return f;
+
+    const inherited = f.offsetCm[replacedEdgeId];
+    if (!Number.isFinite(inherited) || inherited <= 0) return f;
+
+    const nextOffsets: Record<string, number> = { ...f.offsetCm };
+    delete nextOffsets[replacedEdgeId];
+    nextOffsets[replacementEdgeIds[0]] = inherited;
+    nextOffsets[replacementEdgeIds[1]] = inherited;
+
+    changed = true;
+    return { ...f, offsetCm: nextOffsets };
+  });
+
+  return changed ? next : prev;
+}
+
 function splitFigureEdge(
   figure: Figure,
   edgeId: string,
   t: number
-): { figure: Figure; newNodeId?: string } {
+): EdgeSplitResult {
   const edgeIndex = figure.edges.findIndex((e) => e.id === edgeId);
   if (edgeIndex === -1) return { figure };
   const edge = figure.edges[edgeIndex];
@@ -1387,6 +1428,8 @@ function splitFigureEdge(
         })
       ),
       newNodeId,
+      replacedEdgeId: edge.id,
+      replacementEdgeIds: [e1.id, e2.id],
     };
   }
 
@@ -1455,6 +1498,8 @@ function splitFigureEdge(
       })
     ),
     newNodeId,
+    replacedEdgeId: edge.id,
+    replacementEdgeIds: [e1.id, e2.id],
   };
 }
 
@@ -5427,7 +5472,7 @@ export default function Canvas() {
         if (!splitA.newNodeId) return;
 
         setFigures((prev) =>
-          prev.map((f) => (f.id === targetFigure.id ? splitA.figure : f))
+          applySplitResultToFigureSet(prev, targetFigure.id, splitA)
         );
 
         setSelectedFigureIds([targetFigure.id]);
@@ -5462,7 +5507,7 @@ export default function Canvas() {
         if (!splitB.newNodeId) return;
 
         setFigures((prev) =>
-          prev.map((f) => (f.id === selectedFigure.id ? splitB.figure : f))
+          applySplitResultToFigureSet(prev, selectedFigure.id, splitB)
         );
 
         setDartDraft({
@@ -5571,7 +5616,7 @@ export default function Canvas() {
             hoveredEdge.t
           );
           setFigures((prev) =>
-            prev.map((f) => (f.id === selectedFigureId ? res.figure : f))
+            applySplitResultToFigureSet(prev, selectedFigureId, res)
           );
           if (res.newNodeId) {
             setNodeSelection({
@@ -5669,7 +5714,7 @@ export default function Canvas() {
         edgePick.t
       );
       setFigures((prev) =>
-        prev.map((f) => (f.id === selectedFigureId ? res.figure : f))
+        applySplitResultToFigureSet(prev, selectedFigureId, res)
       );
       if (res.newNodeId) {
         setNodeSelection({

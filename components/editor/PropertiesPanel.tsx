@@ -1452,9 +1452,24 @@ export function PropertiesPanel() {
   ]);
 
   const updateSelectedEdgeSeamOffset = (nextCm: number) => {
-    if (!selectedEdgeId || !seamForSelection) return;
+    if (!selectedEdgeId || !selectedFigure) return;
+    if (
+      !selectedFigure.closed ||
+      selectedFigure.tool === "circle" ||
+      selectedFigure.kind === "seam"
+    ) {
+      return;
+    }
     const safe = clampMin(nextCm, 0.1);
     setOffsetValueCm(safe);
+
+    if (!seamForSelection) {
+      const seam = makeSeamFigure(selectedFigure, { [selectedEdgeId]: safe });
+      if (seam) {
+        setFigures((prev) => [...prev, seam]);
+      }
+      return;
+    }
 
     setFigures((prev) => {
       return prev.map((f) => {
@@ -3127,7 +3142,7 @@ export function PropertiesPanel() {
                               2
                             )}
                             value={seamEdgeOffsetDraft}
-                            disabled={!edgeSeamEnabled}
+                            disabled={!canEditEdgeSeam}
                             onFocus={() => setIsEditingSeamEdgeOffset(true)}
                             onChange={(e) => {
                               setSeamEdgeOffsetDraft(e.target.value);
