@@ -27,6 +27,7 @@ import {
   sub,
 } from "./figureGeometry";
 import { formatCm, pxToCm } from "./measureUnits";
+import { hasClosedLoop } from "./seamFigure";
 
 export type {
   ExportSettings,
@@ -197,7 +198,7 @@ function computePiqueSegmentWorld(
   figure: Figure,
   pique: { edgeId: string; t01: number; lengthCm: number; side: 1 | -1 }
 ): { aWorld: Vec2; bWorld: Vec2 } | null {
-  if (!figure.closed) return null;
+  if (!figure.closed && !hasClosedLoop(figure)) return null;
   const edge = figure.edges.find((e) => e.id === pique.edgeId) ?? null;
   if (!edge) return null;
 
@@ -958,7 +959,11 @@ export async function generateTiledPDF(
 
       // Piques (notches)
       const piques = figure.piques ?? [];
-      if (shouldIncludePiques && figure.closed && piques.length) {
+      if (
+        shouldIncludePiques &&
+        (figure.closed || hasClosedLoop(figure)) &&
+        piques.length
+      ) {
         for (const pk of piques) {
           const seg = computePiqueSegmentWorld(figure, pk);
           if (!seg) continue;
@@ -1617,7 +1622,7 @@ export function generateSVG(
 
     // Piques (notches)
     const piques = fig.piques ?? [];
-    if (shouldIncludePiques && fig.closed && piques.length) {
+    if (shouldIncludePiques && (fig.closed || hasClosedLoop(fig)) && piques.length) {
       for (const pk of piques) {
         const seg = computePiqueSegmentWorld(fig, pk);
         if (!seg) continue;

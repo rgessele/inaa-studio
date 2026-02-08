@@ -1282,7 +1282,7 @@ function computePiqueSegmentWorld(
   figure: Figure,
   pique: { edgeId: string; t01: number; lengthCm: number; side: 1 | -1 }
 ): { aWorld: Vec2; bWorld: Vec2 } | null {
-  if (!figure.closed) return null;
+  if (!figure.closed && !hasClosedLoop(figure)) return null;
   const edge = figure.edges.find((e) => e.id === pique.edgeId) ?? null;
   if (!edge) return null;
 
@@ -1315,7 +1315,7 @@ function findHoveredPique(
   let bestD = Number.POSITIVE_INFINITY;
 
   for (const fig of figures) {
-    if (!fig.closed) continue;
+    if (!fig.closed && !hasClosedLoop(fig)) continue;
     const piques = fig.piques ?? [];
     if (!piques.length) continue;
     for (const pk of piques) {
@@ -5461,7 +5461,8 @@ export default function Canvas() {
       }
 
       if (!fig || fig.kind === "seam") return;
-      if (!fig.closed) {
+      const supportsPique = fig.closed || hasClosedLoop(fig);
+      if (!supportsPique) {
         toast("Pique só funciona em figuras fechadas.", "error");
         return;
       }
@@ -5497,11 +5498,7 @@ export default function Canvas() {
       const t01 = clamp(sSnap / total, 0, 1);
 
       // Choose the notch direction so it points inward.
-      const polyFlat = figureLocalPolyline(fig, 120);
-      const poly: Vec2[] = [];
-      for (let i = 0; i < polyFlat.length - 1; i += 2) {
-        poly.push({ x: polyFlat[i], y: polyFlat[i + 1] });
-      }
+      const poly = getOuterLoopPolygon(fig);
       if (poly.length < 3) {
         toast("Pique só funciona em figuras fechadas.", "error");
         return;
@@ -8508,7 +8505,8 @@ export default function Canvas() {
     const previewStroke = "#2563eb";
     const previewOpacity = 0.95;
 
-    if (!fig.closed) {
+    const supportsPique = fig.closed || hasClosedLoop(fig);
+    if (!supportsPique) {
       return (
         <Group
           x={fig.x}
@@ -8599,11 +8597,9 @@ export default function Canvas() {
     };
 
     // Preview notch segment pointing inward.
-    const polyFlat = figureLocalPolyline(fig, 120);
-    const poly: Vec2[] = [];
-    for (let i = 0; i < polyFlat.length - 1; i += 2) {
-      poly.push({ x: polyFlat[i], y: polyFlat[i + 1] });
-    }
+    // Use the same outer-loop polygon logic used when committing the pique,
+    // so preview and apply always agree on the inward side.
+    const poly = getOuterLoopPolygon(fig);
     if (poly.length < 3) return null;
 
     const at = pointAndTangentAtArcLength(pts, sSnap);

@@ -11,6 +11,7 @@ import { MemoizedSeamLabel } from "./SeamLabel";
 import { MemoizedDartOverlay } from "./DartOverlay";
 import { SelectedEdge } from "./EditorContext";
 import type { PointLabelsMode } from "./types";
+import { hasClosedLoop } from "./seamFigure";
 
 interface FigureRendererProps {
   figure: Figure;
@@ -177,6 +178,7 @@ const FigureRenderer = ({
   onNameOffsetCommit,
 }: FigureRendererProps) => {
   const isTextFigure = figure.tool === "text";
+  const supportsPiques = figure.closed || hasClosedLoop(figure);
 
   // Compute polyline data. For figures with branches (e.g., merged figures
   // with a line coming off an edge), we need to render edge-by-edge instead
@@ -471,7 +473,7 @@ const FigureRenderer = ({
       onDragEnd={onDragEnd}
     >
       {/* Piques (notches) */}
-      {figure.closed && figure.piques?.length
+      {supportsPiques && figure.piques?.length
         ? figure.piques.map((p) => {
             const edge = figure.edges.find((e) => e.id === p.edgeId) ?? null;
             if (!edge) return null;
@@ -503,6 +505,7 @@ const FigureRenderer = ({
                 lineCap="round"
                 lineJoin="round"
                 listening={false}
+                name="inaa-pique"
                 perfectDrawEnabled={false}
                 shadowForStrokeEnabled={false}
               />
