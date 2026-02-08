@@ -366,7 +366,7 @@ function normalizeLineEdgesAtNodes(figure: Figure): Figure {
   const nodeById = new Map(figure.nodes.map((n) => [n.id, n]));
   const newEdges: FigureEdge[] = [];
   let changed = false;
-  const eps = 1;
+  const epsDist = 1;
 
   for (const edge of figure.edges) {
     if (edge.kind !== "line") {
@@ -383,28 +383,30 @@ function normalizeLineEdgesAtNodes(figure: Figure): Figure {
 
     const ab = sub(b, a);
     const abLen2 = ab.x * ab.x + ab.y * ab.y;
-    if (abLen2 < eps) {
+    if (abLen2 < 1e-9) {
       newEdges.push(edge);
       continue;
     }
+    const abLen = Math.sqrt(abLen2);
+    const tTol = epsDist / abLen;
 
     const onSegment = figure.nodes
       .map((n) => {
         const ap = sub(n, a);
         const cross = ab.x * ap.y - ab.y * ap.x;
-        const dot = ab.x * ap.x + ab.y * ap.y;
-        const t = dot / abLen2;
-        return { node: n, t, cross, dot };
+        const t = (ab.x * ap.x + ab.y * ap.y) / abLen2;
+        const perpDist = Math.abs(cross) / abLen;
+        return { node: n, t, perpDist };
       })
-      .filter((item) => Math.abs(item.cross) <= eps)
-      .filter((item) => item.t >= -eps && item.t <= 1 + eps)
+      .filter((item) => item.perpDist <= epsDist)
+      .filter((item) => item.t >= -tTol && item.t <= 1 + tTol)
       .sort((u, v) => u.t - v.t);
 
     const unique: Array<{ node: FigureNode; t: number }> = [];
     for (const item of onSegment) {
       if (
         unique.length === 0 ||
-        dist(unique[unique.length - 1].node, item.node) > eps
+        dist(unique[unique.length - 1].node, item.node) > epsDist
       ) {
         unique.push({ node: item.node, t: item.t });
       }
@@ -5266,9 +5268,27 @@ export default function Canvas() {
 
     // Offset tool: click on background/inside closed figure applies offset
     if (tool === "offset" && e.evt.button === 0) {
-      if (!hoveredOffsetBaseId) return;
-      
-      const baseId = hoveredOffsetBaseId;
+      const thresholdWorld = 10 / scale;
+      const baseIdFromClick = (() => {
+        const hitId = findHoveredFigureId(figures, world, thresholdWorld);
+        const hit = hitId ? (figures.find((f) => f.id === hitId) ?? null) : null;
+        const hitBaseId = hit?.kind === "seam" ? (hit.parentId ?? null) : hitId;
+        if (hitBaseId) return hitBaseId;
+        return findHoveredClosedFigureOrSeamBaseId(
+          figures,
+          world,
+          60,
+          thresholdWorld
+        );
+      })();
+
+      const baseId = hoveredOffsetBaseId ?? baseIdFromClick;
+      if (!baseId) return;
+
+      if (baseId !== hoveredOffsetBaseId) {
+        setHoveredOffsetBaseId(baseId);
+      }
+
       const base = figures.find((f) => f.id === baseId) ?? null;
       if (!base || (!base.closed && !hasClosedLoop(base))) return;
       
