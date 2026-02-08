@@ -54,6 +54,19 @@ function asString(value: unknown): string | null {
   return out.length > 0 ? out : null;
 }
 
+function asRawString(value: unknown): string | null {
+  if (typeof value === "string") {
+    const out = value.trim();
+    return out.length > 0 ? out : null;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return null;
+}
+
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -153,7 +166,7 @@ function parsePurchasePayload(payload: Record<string, unknown>) {
     buyerName: asString(buyer.name),
     transaction: asString(purchase.transaction),
     purchaseStatus: asString(purchase.status),
-    orderDateRaw: asString(purchase.order_date),
+    orderDateRaw: asRawString(purchase.order_date),
     approvedDateMs: asNumber(purchase.approved_date),
     subscriberCode: asString(subscriber.code),
     subscriberName: asString(subscriber.name),
