@@ -13,6 +13,14 @@ import { EditMenu } from "./EditMenu";
 import { createClient } from "@/lib/supabase/client";
 import { ThemeToggleButton } from "@/components/theme/ThemeToggleButton";
 
+function isE2EAutomationActive(): boolean {
+  return (
+    process.env.NEXT_PUBLIC_E2E_TESTS === "1" &&
+    typeof navigator !== "undefined" &&
+    navigator.webdriver === true
+  );
+}
+
 export function EditorHeader() {
   const {
     readOnly,
@@ -134,7 +142,7 @@ export function EditorHeader() {
 
   const runAutoSave = useCallback(
     async (reason: "idle" | "time" | "visibility" | "retry") => {
-      if (process.env.NEXT_PUBLIC_E2E_TESTS === "1") return;
+      if (isE2EAutomationActive()) return;
 
       const snapshotNow = latestStateRef.current;
       if (!snapshotNow.projectId) return;
@@ -257,7 +265,7 @@ export function EditorHeader() {
   );
 
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_E2E_TESTS === "1") return;
+    if (isE2EAutomationActive()) return;
 
     if (readOnly) {
       autoSavePrevUnsavedRef.current = false;
@@ -332,7 +340,7 @@ export function EditorHeader() {
   ]);
 
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_E2E_TESTS === "1") return;
+    if (isE2EAutomationActive()) return;
 
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
