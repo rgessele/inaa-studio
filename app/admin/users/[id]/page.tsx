@@ -91,6 +91,86 @@ export default async function AdminUserDetailPage({
 
   const { data: projects } = await projectsDataQuery.range(from, to);
 
+  const { data: eventsByProfile } = await supabase
+    .from("hotmart_webhook_events")
+    .select(
+      "id, topic, event_name, status, error_message, received_at, creation_date_ms, subject_email, transaction, subscriber_code, product_ucode"
+    )
+    .eq("profile_id", id)
+    .order("received_at", { ascending: false })
+    .limit(100);
+
+  const emailForLookup = (user.email ?? "").trim().toLowerCase();
+  const { data: eventsByEmail } = emailForLookup
+    ? await supabase
+        .from("hotmart_webhook_events")
+        .select(
+          "id, topic, event_name, status, error_message, received_at, creation_date_ms, subject_email, transaction, subscriber_code, product_ucode"
+        )
+        .ilike("subject_email", emailForLookup)
+        .order("received_at", { ascending: false })
+        .limit(100)
+    : { data: null };
+
+  const hotmartEventsMap = new Map<
+    string,
+    {
+      id: string;
+      topic: string | null;
+      event_name: string | null;
+      status: string | null;
+      error_message: string | null;
+      received_at: string | null;
+      creation_date_ms: number | null;
+      subject_email: string | null;
+      transaction: string | null;
+      subscriber_code: string | null;
+      product_ucode: string | null;
+    }
+  >();
+
+  for (const row of eventsByProfile ?? []) {
+    hotmartEventsMap.set(row.id as string, {
+      id: row.id as string,
+      topic: (row.topic as string | null) ?? null,
+      event_name: (row.event_name as string | null) ?? null,
+      status: (row.status as string | null) ?? null,
+      error_message: (row.error_message as string | null) ?? null,
+      received_at: (row.received_at as string | null) ?? null,
+      creation_date_ms: (row.creation_date_ms as number | null) ?? null,
+      subject_email: (row.subject_email as string | null) ?? null,
+      transaction: (row.transaction as string | null) ?? null,
+      subscriber_code: (row.subscriber_code as string | null) ?? null,
+      product_ucode: (row.product_ucode as string | null) ?? null,
+    });
+  }
+
+  for (const row of eventsByEmail ?? []) {
+    if (hotmartEventsMap.has(row.id as string)) continue;
+
+    hotmartEventsMap.set(row.id as string, {
+      id: row.id as string,
+      topic: (row.topic as string | null) ?? null,
+      event_name: (row.event_name as string | null) ?? null,
+      status: (row.status as string | null) ?? null,
+      error_message: (row.error_message as string | null) ?? null,
+      received_at: (row.received_at as string | null) ?? null,
+      creation_date_ms: (row.creation_date_ms as number | null) ?? null,
+      subject_email: (row.subject_email as string | null) ?? null,
+      transaction: (row.transaction as string | null) ?? null,
+      subscriber_code: (row.subscriber_code as string | null) ?? null,
+      product_ucode: (row.product_ucode as string | null) ?? null,
+    });
+  }
+
+  const hotmartEvents = Array.from(hotmartEventsMap.values())
+    .sort((a, b) => {
+      const aMs = a.received_at ? new Date(a.received_at).getTime() : 0;
+      const bMs = b.received_at ? new Date(b.received_at).getTime() : 0;
+      return bMs - aMs;
+    })
+    .slice(0, 100);
+
   const fmtDate = (iso: string | null) => {
     if (!iso) return "—";
     const d = new Date(iso);
@@ -295,6 +375,99 @@ export default async function AdminUserDetailPage({
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
               Bloqueio derruba sessões e impede login.
             </p>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark shadow-subtle overflow-hidden">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Histórico Hotmart
+              </h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Últimos eventos recebidos para este usuário.
+              </p>
+            </div>
+
+            {hotmartEvents.length === 0 ? (
+              <p className="p-6 text-sm text-gray-500 dark:text-gray-400">
+                Nenhum evento Hotmart encontrado.
+              </p>
+            ) : (
+              <div className="max-h-[520px] overflow-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-[11px] leading-tight">
+                  <thead className="bg-white/50 dark:bg-white/5 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-600 dark:text-gray-300">
+                        Evento
+                      </th>
+                      <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-600 dark:text-gray-300">
+                        Status
+                      </th>
+                      <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-600 dark:text-gray-300">
+                        Recebido
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {hotmartEvents.map((ev) => {
+                      const badgeClass =
+                        ev.status === "processed"
+                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                          : ev.status === "failed"
+                            ? "bg-red-500/10 text-red-700 dark:text-red-300"
+                            : ev.status === "ignored"
+                              ? "bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"
+                              : "bg-gray-500/10 text-gray-700 dark:text-gray-300";
+
+                      return (
+                        <tr
+                          key={ev.id}
+                          className="hover:bg-black/[0.02] dark:hover:bg-white/[0.04]"
+                        >
+                          <td className="px-3 py-2 align-top">
+                            <p className="font-medium text-gray-900 dark:text-gray-100">
+                              {ev.event_name || "—"}
+                            </p>
+                            <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+                              {ev.topic || "—"}
+                            </p>
+                            {ev.product_ucode ? (
+                              <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+                                Produto: {ev.product_ucode}
+                              </p>
+                            ) : null}
+                            {ev.transaction ? (
+                              <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400 break-all">
+                                TX: {ev.transaction}
+                              </p>
+                            ) : null}
+                            {ev.subscriber_code ? (
+                              <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400 break-all">
+                                SUB: {ev.subscriber_code}
+                              </p>
+                            ) : null}
+                            {ev.error_message ? (
+                              <p className="mt-1 text-[10px] text-red-600 dark:text-red-300">
+                                {ev.error_message}
+                              </p>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-2 align-top">
+                            <span
+                              className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${badgeClass}`}
+                            >
+                              {ev.status || "received"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 align-top text-gray-700 dark:text-gray-200 whitespace-nowrap">
+                            {fmtDate(ev.received_at)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </div>

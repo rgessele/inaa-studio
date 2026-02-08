@@ -11,6 +11,11 @@ Estas são as variáveis atualmente presentes no seu `.env.local`:
 - `SUPABASE_SECRET_KEY`
 - `NEXT_PUBLIC_E2E_TESTS`
 - `DEBUG`
+- `HOTMART_WEBHOOK_ENABLED`
+- `HOTMART_HOTTOK`
+- `HOTMART_HOTTOK_PREVIOUS`
+- `HOTMART_DELAYED_GRACE_DAYS`
+- `HOTMART_ALLOWED_PRODUCT_UCODES`
 
 ## Tabela principal
 
@@ -21,6 +26,11 @@ Estas são as variáveis atualmente presentes no seu `.env.local`:
 | `SUPABASE_SECRET_KEY` | Servidor | Sim (ou uma alternativa) | Chave administrativa secreta do Supabase | fallback para outras chaves | Operações admin (`createAdminClient`) |
 | `NEXT_PUBLIC_E2E_TESTS` | Cliente | Não | `"1"` ou `"0"` | `"0"` (quando ausente) | Ativa comportamentos auxiliares de E2E no editor |
 | `DEBUG` | Servidor (+ espelhada para cliente) | Não | `"true"` ou `"false"` | desativado | Liga endpoint de debug-log em ambiente não-prod |
+| `HOTMART_WEBHOOK_ENABLED` | Servidor | Não | `"true"` ou `"false"` | `"false"` | Liga processamento dos endpoints de webhook Hotmart |
+| `HOTMART_HOTTOK` | Servidor | Sim quando Hotmart ativo | token string | sem default | Validação do header `X-HOTMART-HOTTOK` |
+| `HOTMART_HOTTOK_PREVIOUS` | Servidor | Não | token string | vazio | Token antigo para rotação de chave sem downtime |
+| `HOTMART_DELAYED_GRACE_DAYS` | Servidor | Não | inteiro positivo | `3` | Dias de carência aplicados em `PURCHASE_DELAYED` |
+| `HOTMART_ALLOWED_PRODUCT_UCODES` | Servidor | Não | lista CSV de `ucode` | vazio (aceita todos) | Filtra produtos válidos para provisionamento/bloqueio |
 
 ## Detalhamento por variável
 
@@ -93,6 +103,59 @@ Estas são as variáveis atualmente presentes no seu `.env.local`:
 - Observação E2E:
   - Durante automação Playwright (`NEXT_PUBLIC_E2E_TESTS=1` + `navigator.webdriver=true`), debug logs ficam forçados para manter os testes determinísticos.
 
+### `HOTMART_WEBHOOK_ENABLED`
+
+- Onde é usada:
+  - `app/api/webhooks/hotmart/purchase/route.ts`
+  - `app/api/webhooks/hotmart/subscription-cancellation/route.ts`
+  - `lib/hotmart/webhook.ts`
+- Valores:
+  - `"true"`: ativa validação do `hottok` e processamento de eventos.
+  - `"false"` ou ausente: integração Hotmart fica desativada.
+- Recomendação:
+  - Mantenha `false` até configurar token e URLs de webhook na Hotmart.
+
+### `HOTMART_HOTTOK`
+
+- Onde é usada:
+  - `lib/hotmart/webhook.ts` (comparação segura por tempo constante).
+- Regra:
+  - Obrigatória em produção quando `HOTMART_WEBHOOK_ENABLED=true`.
+- Segurança:
+  - Não expor em cliente, logs públicos ou screenshots.
+
+### `HOTMART_HOTTOK_PREVIOUS`
+
+- Onde é usada:
+  - `lib/hotmart/webhook.ts`.
+- Objetivo:
+  - Aceita temporariamente uma chave antiga durante rotação.
+- Fluxo recomendado:
+  1. Configure `HOTMART_HOTTOK` com a nova chave.
+  2. Mantenha a antiga em `HOTMART_HOTTOK_PREVIOUS`.
+  3. Após propagação na Hotmart, remova `HOTMART_HOTTOK_PREVIOUS`.
+
+### `HOTMART_DELAYED_GRACE_DAYS`
+
+- Onde é usada:
+  - `lib/hotmart/webhook.ts`.
+- Valores:
+  - Inteiro positivo (`1`, `3`, `7`, etc.).
+- Efeito:
+  - Em `PURCHASE_DELAYED`, define `profiles.access_expires_at = now + N dias`.
+
+### `HOTMART_ALLOWED_PRODUCT_UCODES`
+
+- Onde é usada:
+  - `lib/hotmart/webhook.ts`.
+- Formato:
+  - Lista separada por vírgula, ex.: `ABC123,DEF456`.
+- Efeito:
+  - Em eventos de compra, só processa produtos cujo `data.product.ucode` esteja na lista.
+  - Em cancelamento de assinatura, usa o produto já espelhado no banco para validar se pertence à allowlist.
+- Recomendação:
+  - Defina explicitamente os `ucode`s dos produtos que concedem acesso ao Inaá Studio.
+
 ## Variáveis relacionadas (não obrigatórias no seu `.env.local` atual)
 
 Estas variáveis aparecem no código e podem ser úteis em cenários específicos:
@@ -118,6 +181,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SECRET_KEY=...
 NEXT_PUBLIC_E2E_TESTS=0
 DEBUG=false
+HOTMART_WEBHOOK_ENABLED=false
 ```
 
 ### Sessão de investigação local com logs
@@ -128,6 +192,20 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SECRET_KEY=...
 NEXT_PUBLIC_E2E_TESTS=0
 DEBUG=true
+HOTMART_WEBHOOK_ENABLED=false
+```
+
+### Produção com Hotmart ativa
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SECRET_KEY=...
+HOTMART_WEBHOOK_ENABLED=true
+HOTMART_HOTTOK=...
+HOTMART_HOTTOK_PREVIOUS=... # opcional
+HOTMART_DELAYED_GRACE_DAYS=3
+HOTMART_ALLOWED_PRODUCT_UCODES=ABC123,DEF456
 ```
 
 ### Execução E2E local (Playwright)
@@ -153,3 +231,9 @@ NEXT_DIST_DIR=.next-e2e
    - Confirme se não está em sessão automatizada de browser.
 4. Log de debug não grava:
    - Verifique `DEBUG=true` e `NODE_ENV` diferente de `production`.
+5. Webhook Hotmart retornando `401 unauthorized`:
+   - Verifique se `HOTMART_WEBHOOK_ENABLED=true`.
+   - Verifique se `HOTMART_HOTTOK` bate com o token da Hotmart (header `X-HOTMART-HOTTOK`).
+6. Evento Hotmart recebido mas sem efeito no acesso:
+   - Verifique se o produto está na `HOTMART_ALLOWED_PRODUCT_UCODES`.
+   - Verifique na área admin o histórico de eventos Hotmart do usuário.

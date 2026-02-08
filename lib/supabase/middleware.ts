@@ -26,7 +26,8 @@ export async function updateSession(request: NextRequest) {
     const isPublic =
       pathname === "/" ||
       pathname.startsWith("/login") ||
-      pathname.startsWith("/auth");
+      pathname.startsWith("/auth") ||
+      pathname.startsWith("/api/webhooks/hotmart");
     if (!isPublic && isProd) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
@@ -68,7 +69,8 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/login") ||
     pathname.startsWith("/auth") ||
     pathname.startsWith("/forgot-password") ||
-    pathname.startsWith("/reset-password");
+    pathname.startsWith("/reset-password") ||
+    pathname.startsWith("/api/webhooks/hotmart");
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
