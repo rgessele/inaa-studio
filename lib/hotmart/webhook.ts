@@ -118,7 +118,18 @@ function parseAllowedProductUcodes(): Set<string> {
 
 function isInviteInvalidEmailErrorMessage(message: string): boolean {
   const normalized = message.toLowerCase();
-  return normalized.includes("email address") && normalized.includes("invalid");
+  const compact = normalized.replace(/\s+/g, "");
+
+  const hasEmailHint =
+    normalized.includes("email") ||
+    compact.includes("emailaddress") ||
+    compact.includes("email");
+  const hasInvalidHint =
+    normalized.includes("invalid") ||
+    compact.includes("isinvalid") ||
+    compact.includes("invalid");
+
+  return hasEmailHint && hasInvalidHint;
 }
 
 function secureEquals(left: string, right: string): boolean {
