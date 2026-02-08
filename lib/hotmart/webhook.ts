@@ -115,6 +115,14 @@ function parseAllowedProductUcodes(): Set<string> {
   );
 }
 
+function isInviteInvalidEmailErrorMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("email address") &&
+    normalized.includes("invalid")
+  );
+}
+
 function secureEquals(left: string, right: string): boolean {
   const leftBuf = Buffer.from(left);
   const rightBuf = Buffer.from(right);
@@ -556,9 +564,20 @@ async function processPurchaseEvent(
   }
 
   let profile: ProfileRow | null = await findProfileByEmail(admin, parsed.buyerEmail);
+  let grantIgnoredReason: string | null = null;
 
   if (!profile && PURCHASE_GRANT_EVENTS.has(eventName) && parsed.buyerEmail) {
-    profile = await ensureHotmartUser(admin, parsed.buyerEmail, parsed.buyerName);
+    try {
+      profile = await ensureHotmartUser(admin, parsed.buyerEmail, parsed.buyerName);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!isInviteInvalidEmailErrorMessage(message)) {
+        throw error;
+      }
+
+      grantIgnoredReason =
+        "Compra aprovada com email inválido no payload (provável evento de teste Hotmart)";
+    }
   }
 
   const profileId = profile?.id ?? null;
@@ -626,7 +645,7 @@ async function processPurchaseEvent(
 
     return {
       status: "ignored",
-      message: "Compra aprovada sem usuário identificável",
+      message: grantIgnoredReason ?? "Compra aprovada sem usuário identificável",
       subjectEmail: parsed.buyerEmail,
       transaction: parsed.transaction,
       subscriberCode: parsed.subscriberCode,
