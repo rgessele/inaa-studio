@@ -43,6 +43,7 @@ const PURCHASE_BLOCK_EVENTS = new Set([
 
 const PURCHASE_OBSERVE_EVENTS = new Set(["PURCHASE_BILLET_PRINTED"]);
 const PURCHASE_DELAY_EVENT = "PURCHASE_DELAYED";
+const HOTMART_TEST_EMAIL_FALLBACK = "suporte@comunidadeinaa.com.br";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -117,10 +118,7 @@ function parseAllowedProductUcodes(): Set<string> {
 
 function isInviteInvalidEmailErrorMessage(message: string): boolean {
   const normalized = message.toLowerCase();
-  return (
-    normalized.includes("email address") &&
-    normalized.includes("invalid")
-  );
+  return normalized.includes("email address") && normalized.includes("invalid");
 }
 
 function secureEquals(left: string, right: string): boolean {
@@ -564,7 +562,7 @@ async function processPurchaseEvent(
   }
 
   let profile: ProfileRow | null = await findProfileByEmail(admin, parsed.buyerEmail);
-  let grantIgnoredReason: string | null = null;
+  let usedFallbackEmail = false;
 
   if (!profile && PURCHASE_GRANT_EVENTS.has(eventName) && parsed.buyerEmail) {
     try {
@@ -575,8 +573,12 @@ async function processPurchaseEvent(
         throw error;
       }
 
-      grantIgnoredReason =
-        "Compra aprovada com email inválido no payload (provável evento de teste Hotmart)";
+      profile = await ensureHotmartUser(
+        admin,
+        HOTMART_TEST_EMAIL_FALLBACK,
+        parsed.buyerName
+      );
+      usedFallbackEmail = true;
     }
   }
 
@@ -634,7 +636,9 @@ async function processPurchaseEvent(
       await grantAccess(admin, profile, true);
       return {
         status: "processed",
-        message: "Acesso liberado",
+        message: usedFallbackEmail
+          ? `Acesso liberado via fallback (${HOTMART_TEST_EMAIL_FALLBACK})`
+          : "Acesso liberado",
         profileId,
         subjectEmail: parsed.buyerEmail,
         transaction: parsed.transaction,
@@ -645,7 +649,7 @@ async function processPurchaseEvent(
 
     return {
       status: "ignored",
-      message: grantIgnoredReason ?? "Compra aprovada sem usuário identificável",
+      message: "Compra aprovada sem usuário identificável",
       subjectEmail: parsed.buyerEmail,
       transaction: parsed.transaction,
       subscriberCode: parsed.subscriberCode,
