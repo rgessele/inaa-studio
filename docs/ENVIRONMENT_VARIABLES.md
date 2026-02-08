@@ -86,6 +86,10 @@ Estas são as variáveis atualmente presentes no seu `.env.local`:
   - qualquer outro valor: endpoint responde sem gravar log.
 - Regra de produção:
   - Em `production`, o debug-log fica desativado mesmo com `DEBUG=true`.
+- Override em runtime (sem restart):
+  - `localStorage.setItem("inaa:debugLogsEnabled", "off")` desliga envio no cliente.
+  - `localStorage.setItem("inaa:debugLogsEnabled", "on")` religa envio no cliente.
+  - Remover chave volta ao comportamento do env: `localStorage.removeItem("inaa:debugLogsEnabled")`.
 
 ## Variáveis relacionadas (não obrigatórias no seu `.env.local` atual)
 

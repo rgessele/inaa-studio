@@ -26,7 +26,7 @@ import { withComputedFigureMeasures } from "./figureMeasures";
 import { figureWorldBoundingBox } from "./figurePath";
 import { figureLocalToWorld } from "./figurePath";
 import { hasClosedLoop } from "./seamFigure";
-import { sendDebugLog } from "@/utils/debugLog";
+import { isDebugLogEnabled, sendDebugLog } from "@/utils/debugLog";
 
 import { add, len, mul, sub } from "./figureGeometry";
 
@@ -1291,6 +1291,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
   React.useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
+    if (!isDebugLogEnabled()) return;
     if (!selectedFigureId) return;
     const fig = (figures || []).find((f) => f.id === selectedFigureId);
     if (!fig) return;

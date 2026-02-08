@@ -3,18 +3,44 @@ type DebugLogEvent = {
   payload: unknown;
 };
 
-const DEBUG_ENABLED =
+const DEBUG_ENV_ENABLED =
   process.env.NEXT_PUBLIC_DEBUG === "true" &&
   process.env.NODE_ENV !== "production";
+
+const DEBUG_RUNTIME_KEY = "inaa:debugLogsEnabled";
 
 const sessionId =
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Math.random().toString(16).slice(2)}_${Date.now()}`;
 
+function parseBoolish(
+  raw: string
+): boolean | null {
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "on")
+    return true;
+  if (normalized === "0" || normalized === "false" || normalized === "off")
+    return false;
+  return null;
+}
+
+export function isDebugLogEnabled(): boolean {
+  if (!DEBUG_ENV_ENABLED) return false;
+  if (typeof window === "undefined") return false;
+
+  try {
+    const stored = window.localStorage.getItem(DEBUG_RUNTIME_KEY);
+    if (stored == null) return true;
+    const parsed = parseBoolish(stored);
+    return parsed ?? true;
+  } catch {
+    return true;
+  }
+}
+
 export function sendDebugLog(event: DebugLogEvent): void {
-  if (!DEBUG_ENABLED) return;
-  if (typeof window === "undefined") return;
+  if (!isDebugLogEnabled()) return;
 
   const body = {
     ts: new Date().toISOString(),
@@ -22,7 +48,7 @@ export function sendDebugLog(event: DebugLogEvent): void {
     ...event,
   };
 
-  console.log("[debug-log]", body);
+  console.debug("[debug-log]", body);
 
   void fetch("/api/debug-log", {
     method: "POST",
