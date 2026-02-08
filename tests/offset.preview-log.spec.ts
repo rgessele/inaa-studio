@@ -3,7 +3,7 @@ import { gotoEditor } from "./helpers/e2e";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-type Box = { x: number; y: number; width: number; height: number };
+type Point = { x: number; y: number };
 
 type LogEvent = {
   type: string;
@@ -17,9 +17,9 @@ type LogEvent = {
   };
 };
 
-async function getStageBox(
+async function getOffsetEdgeHoverPoint(
   page: import("@playwright/test").Page
-): Promise<Box> {
+): Promise<Point> {
   const stage = page.getByTestId("editor-stage-container");
   await expect(stage).toBeVisible();
 
@@ -34,9 +34,70 @@ async function getStageBox(
     })
     .toBeGreaterThan(0);
 
-  const box = await stage.boundingBox();
-  expect(box).toBeTruthy();
-  return box as Box;
+  const canvasBox = await stageCanvas.boundingBox();
+  expect(canvasBox).toBeTruthy();
+
+  const stagePoint = await page.evaluate(() => {
+    const debug = window.__INAA_DEBUG__ as
+      | {
+          getFiguresSnapshot?: () => Array<{
+            kind?: string;
+            x: number;
+            y: number;
+            rotation: number;
+            nodes: Array<{ id: string; x: number; y: number }>;
+            edges: Array<{ from: string; to: string }>;
+          }>;
+          getPosition?: () => { x: number; y: number };
+          getScale?: () => number;
+        }
+      | undefined;
+    const figures = debug?.getFiguresSnapshot?.() ?? [];
+    const base = figures.find(
+      (f) =>
+        f.kind !== "seam" &&
+        Array.isArray(f.nodes) &&
+        f.nodes.length > 1 &&
+        Array.isArray(f.edges) &&
+        f.edges.length > 0
+    );
+    if (!base) return null;
+
+    const rotationRad = ((base.rotation || 0) * Math.PI) / 180;
+    const cos = Math.cos(rotationRad);
+    const sin = Math.sin(rotationRad);
+
+    const position = debug?.getPosition?.();
+    const scale = debug?.getScale?.();
+    if (!position || !Number.isFinite(scale) || (scale ?? 0) <= 0) return null;
+
+    const candidates = base.edges
+      .map((edge) => {
+        const from = base.nodes.find((n) => n.id === edge.from);
+        const to = base.nodes.find((n) => n.id === edge.to);
+        if (!from || !to) return null;
+
+        const midLocal = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+        const world = {
+          x: (base.x || 0) + midLocal.x * cos - midLocal.y * sin,
+          y: (base.y || 0) + midLocal.x * sin + midLocal.y * cos,
+        };
+        return {
+          x: world.x * scale + position.x,
+          y: world.y * scale + position.y,
+        };
+      })
+      .filter((entry): entry is { x: number; y: number } => entry !== null)
+      .filter((entry) => Number.isFinite(entry.x) && Number.isFinite(entry.y))
+      .sort((a, b) => b.y - a.y);
+
+    return candidates[0] ?? null;
+  });
+
+  expect(stagePoint).toBeTruthy();
+  const box = canvasBox as { x: number; y: number };
+  const point = stagePoint as Point;
+  return { x: box.x + point.x, y: box.y + point.y };
 }
 
 async function readDebugEvents(logPath: string): Promise<LogEvent[]> {
@@ -89,8 +150,8 @@ test("gera log de preview ao hover de aresta na margem", async ({ page }) => {
     )
     .toBe("offset");
 
-  const box = await getStageBox(page);
-  await page.mouse.move(box.x + 100, box.y + 2);
+  const hoverPoint = await getOffsetEdgeHoverPoint(page);
+  await page.mouse.move(hoverPoint.x, hoverPoint.y);
 
   await expect
     .poll(async () => {

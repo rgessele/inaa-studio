@@ -9,6 +9,14 @@ const DEBUG_ENV_ENABLED =
 
 const DEBUG_RUNTIME_KEY = "inaa:debugLogsEnabled";
 
+function isE2EAutomationActive(): boolean {
+  return (
+    process.env.NEXT_PUBLIC_E2E_TESTS === "1" &&
+    typeof navigator !== "undefined" &&
+    navigator.webdriver === true
+  );
+}
+
 const sessionId =
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -26,8 +34,12 @@ function parseBoolish(
 }
 
 export function isDebugLogEnabled(): boolean {
-  if (!DEBUG_ENV_ENABLED) return false;
+  const e2eAutomation = isE2EAutomationActive();
+  if (!DEBUG_ENV_ENABLED && !e2eAutomation) return false;
   if (typeof window === "undefined") return false;
+
+  // Keep E2E deterministic even if a previous test mutates localStorage.
+  if (e2eAutomation) return true;
 
   try {
     const stored = window.localStorage.getItem(DEBUG_RUNTIME_KEY);

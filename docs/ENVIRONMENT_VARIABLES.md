@@ -90,6 +90,8 @@ Estas são as variáveis atualmente presentes no seu `.env.local`:
   - `localStorage.setItem("inaa:debugLogsEnabled", "off")` desliga envio no cliente.
   - `localStorage.setItem("inaa:debugLogsEnabled", "on")` religa envio no cliente.
   - Remover chave volta ao comportamento do env: `localStorage.removeItem("inaa:debugLogsEnabled")`.
+- Observação E2E:
+  - Durante automação Playwright (`NEXT_PUBLIC_E2E_TESTS=1` + `navigator.webdriver=true`), debug logs ficam forçados para manter os testes determinísticos.
 
 ## Variáveis relacionadas (não obrigatórias no seu `.env.local` atual)
 
