@@ -78,6 +78,24 @@ export function EditorToolbar() {
   const printOnly = searchParams.get("printOnly") === "1";
   const printOnlyReadOnly = readOnly && printOnly;
 
+  const getExportShapes = useCallback(() => {
+    const activeMolds = figures.filter(
+      (f) =>
+        f.kind === "mold" &&
+        f.moldMeta?.printEnabled !== false &&
+        f.moldMeta?.visible !== false
+    );
+    const activeMoldIds = new Set(activeMolds.map((f) => f.id));
+    if (!includeSeamAllowance) return activeMolds;
+    const seams = figures.filter(
+      (f) =>
+        f.kind === "seam" &&
+        !!f.parentId &&
+        activeMoldIds.has(f.parentId)
+    );
+    return [...activeMolds, ...seams];
+  }, [figures, includeSeamAllowance]);
+
   const urlWantsExportModal = useMemo(() => {
     return searchParams.get("export") === "pdf";
   }, [searchParams]);
@@ -143,9 +161,11 @@ export function EditorToolbar() {
         },
       };
 
-      const exportShapes = includeSeamAllowance
-        ? figures
-        : figures.filter((figure) => figure.kind !== "seam");
+      const exportShapes = getExportShapes();
+      if (!exportShapes.length) {
+        toast("Nenhum molde ativo para impressão.", "error");
+        return;
+      }
 
       await generateTiledPDF(
         stage,
@@ -182,6 +202,7 @@ export function EditorToolbar() {
     searchParams,
     setShowGrid,
     figures,
+    getExportShapes,
   ]);
 
   const handleToolChange = (newTool: Tool) => {
@@ -489,9 +510,12 @@ export function EditorToolbar() {
       },
     };
 
-    const exportShapes = includeSeamAllowance
-      ? figures
-      : figures.filter((figure) => figure.kind !== "seam");
+    const exportShapes = getExportShapes();
+    if (!exportShapes.length) {
+      toast("Nenhum molde ativo para impressão.", "error");
+      setIsExportingPdf(false);
+      return;
+    }
 
     try {
       await generateTiledPDF(
@@ -527,9 +551,12 @@ export function EditorToolbar() {
       },
     };
 
-    const exportShapes = includeSeamAllowance
-      ? figures
-      : figures.filter((figure) => figure.kind !== "seam");
+    const exportShapes = getExportShapes();
+    if (!exportShapes.length) {
+      toast("Nenhum molde ativo para impressão.", "error");
+      setIsExportingSvg(false);
+      return;
+    }
 
     try {
       generateSVG(exportShapes, resolvedSettings, {
@@ -1023,6 +1050,21 @@ export function EditorToolbar() {
             />
 
             <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
+
+            <ToolButton
+              active={tool === "extractMold"}
+              onClick={() => handleToolChange("extractMold")}
+              icon="content_cut"
+              isMac={isMac}
+              title="Extrair molde"
+              shortcuts={[{ key: "E" }]}
+              details={[
+                "Selecione arestas em sequência para montar o perímetro.",
+                "Funciona a partir do diagrama ou de um molde existente.",
+                "Enter confirma quando o perímetro estiver fechado.",
+              ]}
+              customIcon={getToolIcon("extractMold", "toolbar")}
+            />
 
             <ToolButton
               active={tool === "offset"}

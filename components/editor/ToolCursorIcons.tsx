@@ -13,6 +13,7 @@ type ToolName =
   | "measure"
   | "pique"
   | "offset"
+  | "extractMold"
   | "dart"
   | "mirror"
   | "unfold";
@@ -141,6 +142,14 @@ function getToolIconInternal(
           <rect x="3" y="3" width="18" height="18" strokeDasharray="2 2" />
         </Svg>
       );
+    case "extractMold":
+      return (
+        <Svg className={className} strokeWidth={strokeWidth}>
+          <path d="M5 6h9l5 5v7H10l-5-5z" />
+          <path d="M10 6v5h5" />
+          <path d="M6.5 12.5l2 2 2.5-2.5 2 2 3-3" />
+        </Svg>
+      );
     case "dart":
       return (
         <Svg className={className} strokeWidth={strokeWidth}>
@@ -228,6 +237,7 @@ export function isToolCursorOverlayEnabled(tool: string): boolean {
     tool === "measure" ||
     tool === "pique" ||
     tool === "offset" ||
+    tool === "extractMold" ||
     tool === "dart" ||
     tool === "mirror" ||
     tool === "unfold"

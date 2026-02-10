@@ -7,7 +7,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 import { useEditor } from "./EditorContext";
-import { figureWorldBoundingBox } from "./figurePath";
+import { figureLocalPolyline, figureWorldBoundingBox } from "./figurePath";
 import { cmToPx, pxToCm } from "./measureUnits";
 import { PX_PER_CM } from "./constants";
 import { setEdgeTargetLengthPx } from "./edgeEdit";
@@ -42,6 +42,7 @@ export function PropertiesPanel() {
     tool,
     selectedFigureId,
     selectedFigureIds,
+    setSelectedFigureId,
     figures,
     setFigures,
     selectedEdge,
@@ -332,6 +333,55 @@ export function PropertiesPanel() {
     applyCircleCircDraft(nextStr);
   };
   const selectedFigure = figures.find((f) => f.id === selectedFigureId);
+  const moldFigures = useMemo(
+    () => figures.filter((f) => f.kind === "mold"),
+    [figures]
+  );
+  const selectedMold = selectedFigure?.kind === "mold" ? selectedFigure : null;
+
+  const getMoldThumbPoints = useCallback(
+    (
+      figure: typeof selectedFigure,
+      targetWidth: number = 26,
+      targetHeight: number = 26
+    ) => {
+      if (!figure || figure.kind !== "mold") return "";
+      const flat = figureLocalPolyline(figure, 24);
+      if (flat.length < 4) return "";
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (let i = 0; i < flat.length; i += 2) {
+        const x = flat[i]!;
+        const y = flat[i + 1]!;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+      if (!Number.isFinite(minX) || !Number.isFinite(minY)) return "";
+      const w = Math.max(1, maxX - minX);
+      const h = Math.max(1, maxY - minY);
+      const pad = 2;
+      const drawW = Math.max(1, targetWidth - pad * 2);
+      const drawH = Math.max(1, targetHeight - pad * 2);
+      const sx = drawW / w;
+      const sy = drawH / h;
+      const s = Math.min(sx, sy);
+      const ox = pad + (drawW - w * s) / 2;
+      const oy = pad + (drawH - h * s) / 2;
+      let d = "";
+      for (let i = 0; i < flat.length; i += 2) {
+        const x = ox + (flat[i]! - minX) * s;
+        const y = oy + (flat[i + 1]! - minY) * s;
+        d += `${i === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)} `;
+      }
+      if (figure.closed) d += "Z";
+      return d.trim();
+    },
+    []
+  );
 
   const selectedMirrorLink = selectedFigure?.mirrorLink ?? null;
   const selectedMirrorSyncEnabled = selectedMirrorLink?.sync === true;
@@ -1676,12 +1726,310 @@ export function PropertiesPanel() {
     // - Start collapsed
     // - Open when something is selected
     // - Close when selection is cleared (unless we are showing tool properties)
-    if (hasCanvasSelection || showToolProperties) {
+    if (hasCanvasSelection || showToolProperties || moldFigures.length > 0) {
       setCollapsed(false);
       return;
     }
     setCollapsed(true);
-  }, [hasCanvasSelection, showToolProperties]);
+  }, [hasCanvasSelection, moldFigures.length, showToolProperties]);
+
+  const renderMoldListSection = () => {
+    if (!moldFigures.length) return null;
+
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Moldes extraídos
+          </span>
+          <span className="text-[10px] text-gray-400 dark:text-gray-500">
+            {moldFigures.length}
+          </span>
+        </div>
+        <div className="max-h-[42vh] overflow-y-auto overscroll-contain custom-scrollbar pr-1">
+          <div className="grid grid-cols-2 gap-2">
+            {moldFigures.map((m) => {
+            const thumbWidth = 96;
+            const thumbHeight = 56;
+            const active = selectedFigureId === m.id;
+            const thumbPath = getMoldThumbPoints(m, thumbWidth, thumbHeight);
+            const isVisible = m.moldMeta?.visible !== false;
+            const isPrintable = m.moldMeta?.printEnabled !== false;
+            return (
+              <div
+                key={m.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedFigureId(m.id)}
+                onKeyDown={(evt) => {
+                  if (evt.key === "Enter" || evt.key === " ") {
+                    evt.preventDefault();
+                    setSelectedFigureId(m.id);
+                  }
+                }}
+                className={
+                  "rounded border p-2 text-left transition-colors cursor-pointer bg-white dark:bg-gray-900 " +
+                  (active
+                    ? "border-primary shadow-[inset_0_0_0_1px_rgba(37,99,235,0.25)]"
+                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600")
+                }
+              >
+                <div className="mb-1 flex items-center justify-start">
+                  <div className="inline-flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      title={isVisible ? "Ocultar molde" : "Mostrar molde"}
+                      aria-label={isVisible ? "Ocultar molde" : "Mostrar molde"}
+                      className={
+                        "inline-flex items-center justify-center p-0 leading-none transition-colors " +
+                        (isVisible
+                          ? "text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                          : "text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300")
+                      }
+                      onClick={(evt) => {
+                        evt.stopPropagation();
+                        setFigures((prev) =>
+                          prev.map((f) =>
+                            f.id === m.id
+                              ? {
+                                  ...f,
+                                  moldMeta: {
+                                    ...(f.moldMeta ?? {}),
+                                    visible: !isVisible,
+                                  },
+                                }
+                              : f
+                          )
+                        );
+                      }}
+                    >
+                      <span className="material-symbols-outlined !text-[16px] leading-none">
+                        {isVisible ? "visibility" : "visibility_off"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      title={isPrintable ? "Desativar impressão" : "Ativar impressão"}
+                      aria-label={
+                        isPrintable ? "Desativar impressão" : "Ativar impressão"
+                      }
+                      className={
+                        "inline-flex items-center justify-center p-0 leading-none transition-colors " +
+                        (isPrintable
+                          ? "text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                          : "text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300")
+                      }
+                      onClick={(evt) => {
+                        evt.stopPropagation();
+                        setFigures((prev) =>
+                          prev.map((f) =>
+                            f.id === m.id
+                              ? {
+                                  ...f,
+                                  moldMeta: {
+                                    ...(f.moldMeta ?? {}),
+                                    printEnabled: !isPrintable,
+                                  },
+                                }
+                              : f
+                          )
+                        );
+                      }}
+                    >
+                      <span className="material-symbols-outlined !text-[16px] leading-none">
+                        {isPrintable ? "print" : "print_disabled"}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-1 flex items-center justify-start">
+                  <div className="h-16 w-full rounded bg-white dark:bg-gray-900 overflow-hidden grid place-items-center">
+                    <svg
+                      width="100%"
+                      height="100%"
+                      viewBox={`0 0 ${thumbWidth} ${thumbHeight}`}
+                      className="overflow-visible"
+                    >
+                      {thumbPath ? (
+                        <path
+                          d={thumbPath}
+                          fill="rgba(96,165,250,0.2)"
+                        />
+                      ) : (
+                        <rect
+                          x="2"
+                          y="2"
+                          width={String(thumbWidth - 4)}
+                          height={String(thumbHeight - 4)}
+                          fill="rgba(96,165,250,0.2)"
+                        />
+                      )}
+                    </svg>
+                  </div>
+                </div>
+                <div className="mt-1 min-w-0">
+                  <div className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate">
+                    {(m.name ?? "").trim() || "Molde sem nome"}
+                  </div>
+                  <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                    Tam.: {m.moldMeta?.baseSize ?? "-"}
+                  </div>
+                </div>
+              </div>
+            );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderMoldDocumentationSection = () => {
+    if (!selectedMold) return null;
+
+    return (
+      <div className="space-y-3">
+        <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+          Documentação do molde
+        </div>
+        <div className="space-y-3">
+          <label className="space-y-1 block">
+            <span className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              Tamanho base
+            </span>
+            <input
+              className={"w-full " + inputBaseClass + " " + inputFocusClass}
+              value={selectedMold.moldMeta?.baseSize ?? ""}
+              onChange={(evt) => {
+                const value = evt.target.value;
+                setFigures((prev) =>
+                  prev.map((f) =>
+                    f.id === selectedMold.id
+                      ? {
+                          ...f,
+                          moldMeta: {
+                            ...(f.moldMeta ?? {}),
+                            baseSize: value,
+                          },
+                        }
+                      : f
+                  )
+                );
+              }}
+            />
+          </label>
+          <label className="space-y-1 block">
+            <span className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              Quantidade
+            </span>
+            <input
+              className={"w-full " + inputBaseClass + " " + inputFocusClass}
+              type="number"
+              min={1}
+              value={String(selectedMold.moldMeta?.cutQuantity ?? 1)}
+              onChange={(evt) => {
+                const value = Math.max(
+                  1,
+                  Math.round(Number(evt.target.value) || 1)
+                );
+                setFigures((prev) =>
+                  prev.map((f) =>
+                    f.id === selectedMold.id
+                      ? {
+                          ...f,
+                          moldMeta: {
+                            ...(f.moldMeta ?? {}),
+                            cutQuantity: value,
+                          },
+                        }
+                      : f
+                  )
+                );
+              }}
+            />
+          </label>
+          <label className="space-y-1 block">
+            <span className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              Fio (graus)
+            </span>
+            <input
+              className={"w-full " + inputBaseClass + " " + inputFocusClass}
+              type="number"
+              value={String(selectedMold.moldMeta?.grainline?.angleDeg ?? 0)}
+              onChange={(evt) => {
+                const value = Number(evt.target.value) || 0;
+                setFigures((prev) =>
+                  prev.map((f) =>
+                    f.id === selectedMold.id
+                      ? {
+                          ...f,
+                          moldMeta: {
+                            ...(f.moldMeta ?? {}),
+                            grainline: {
+                              ...(f.moldMeta?.grainline ?? {}),
+                              angleDeg: value,
+                              autoGenerated: false,
+                            },
+                          },
+                        }
+                      : f
+                  )
+                );
+              }}
+            />
+          </label>
+        </div>
+        <label className="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+          <input
+            type="checkbox"
+            checked={selectedMold.moldMeta?.cutOnFold === true}
+            onChange={(evt) => {
+              const checked = evt.target.checked;
+              setFigures((prev) =>
+                prev.map((f) =>
+                  f.id === selectedMold.id
+                    ? {
+                        ...f,
+                        moldMeta: {
+                          ...(f.moldMeta ?? {}),
+                          cutOnFold: checked,
+                        },
+                      }
+                    : f
+                )
+              );
+            }}
+          />
+          Cortar na dobra
+        </label>
+        <label className="space-y-1 block">
+          <span className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Notas
+          </span>
+          <input
+            className={"w-full " + inputBaseClass + " " + inputFocusClass}
+            value={selectedMold.moldMeta?.notes ?? ""}
+            onChange={(evt) => {
+              const value = evt.target.value;
+              setFigures((prev) =>
+                prev.map((f) =>
+                  f.id === selectedMold.id
+                    ? {
+                        ...f,
+                        moldMeta: {
+                          ...(f.moldMeta ?? {}),
+                          notes: value,
+                        },
+                      }
+                    : f
+                )
+              );
+            }}
+          />
+        </label>
+      </div>
+    );
+  };
 
   return (
     <aside
@@ -1719,6 +2067,8 @@ export function PropertiesPanel() {
               {showCurveStylePanel
                 ? renderCurveStylePanel({ showHelp: true })
                 : null}
+
+              {renderMoldDocumentationSection()}
 
               {selectedFigure?.tool === "circle" &&
               selectedFigure.kind !== "seam" &&
@@ -3370,6 +3720,7 @@ export function PropertiesPanel() {
                 </div>
               </div>
               <div className="h-px bg-gray-200 dark:bg-gray-700"></div>
+              {renderMoldListSection()}
               {/* Appearance section omitted for brevity, can be added later */}
             </div>
           </>
@@ -3488,11 +3839,17 @@ export function PropertiesPanel() {
                   </p>
                 </div>
               )}
+
+              {renderMoldListSection()}
             </div>
           </>
         ) : (
-          <div className="flex-1 p-4 text-center text-gray-500 text-xs">
-            Nenhum objeto selecionado
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+            {renderMoldListSection() ?? (
+              <div className="text-center text-gray-500 text-xs">
+                Nenhum objeto selecionado
+              </div>
+            )}
           </div>
         )}
       </div>

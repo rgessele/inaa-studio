@@ -16,6 +16,7 @@ const TOOL_KEY_TO_TOOL: Record<string, Tool> = {
   KeyM: "measure",
   KeyP: "pique",
   KeyO: "offset",
+  KeyE: "extractMold",
   KeyD: "dart",
   KeyF: "mirror",
   KeyG: "unfold",

@@ -28,7 +28,13 @@ import {
 } from "react-konva";
 import Konva from "konva";
 import { useEditor } from "./EditorContext";
-import type { Figure, FigureEdge, FigureNode, GuideLine } from "./types";
+import type {
+  Figure,
+  FigureEdge,
+  FigureNode,
+  GuideLine,
+  MoldSourceSegmentRef,
+} from "./types";
 import { PX_PER_CM, PX_PER_MM } from "./constants";
 import { getPaperDimensionsCm } from "./exportSettings";
 import {
@@ -324,6 +330,25 @@ type MarqueeDraft = {
   currentWorld: Vec2;
   additive: boolean;
 } | null;
+
+type ExtractSourceMode = "diagram" | "mold";
+
+type ExtractSegmentDraft = {
+  sourceDomain: ExtractSourceMode;
+  sourceId: string;
+  edgeId: string;
+  t0: number;
+  t1: number;
+  pointsWorld: Vec2[];
+};
+
+type MoldExtractionDraft = {
+  sourceMode: ExtractSourceMode;
+  sourceId: string | null;
+  segments: ExtractSegmentDraft[];
+  pathWorld: Vec2[];
+  closed: boolean;
+};
 
 function id(prefix: string): string {
   // crypto.randomUUID() is available in modern browsers; fallback for safety.
@@ -1278,6 +1303,39 @@ function findNearestEdgeAcrossFigures(
 
   if (!bestFig || !bestEdge || !bestLocal) return null;
   return { figure: bestFig, edge: bestEdge, local: bestLocal };
+}
+
+function isFigureEligibleForExtractSource(
+  figure: Figure,
+  sourceMode: ExtractSourceMode
+): boolean {
+  if (figure.kind === "seam") return false;
+  if (!figure.edges.length) return false;
+
+  if (sourceMode === "mold") return figure.kind === "mold";
+  // sourceMode === "diagram"
+  return figure.kind !== "mold" && figure.tool !== "text";
+}
+
+function edgeWorldSamples(figure: Figure, edge: FigureEdge): Vec2[] {
+  const steps = edge.kind === "line" ? 1 : 60;
+  const local = edgeLocalPoints(figure, edge, steps);
+  return local.map((p) => figureLocalToWorld(figure, p));
+}
+
+function buildPathFromExtractSegments(segments: ExtractSegmentDraft[]): Vec2[] {
+  if (!segments.length) return [];
+  const out: Vec2[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i]!;
+    if (!seg.pointsWorld.length) continue;
+    if (out.length === 0) {
+      out.push(...seg.pointsWorld);
+      continue;
+    }
+    out.push(...seg.pointsWorld.slice(1));
+  }
+  return out;
 }
 
 function computePiqueSegmentWorld(
@@ -2546,24 +2604,62 @@ function mergeFiguresWithNewFigure(
     addedEdgeKeys.add(key);
   }
 
+  const touchedTargets = updatedFigures.filter(
+    (f) => touchedIds.has(f.id) && f.kind !== "seam" && f.tool !== "text"
+  );
+  // Prefer preserving mold metadata/style when extending an extracted mold.
+  const styleSource =
+    touchedTargets.find((f) => f.kind === "mold") ??
+    touchedTargets[0] ??
+    newFigure;
+
   const mergedFigure: Figure = {
     id: id("fig"),
-    tool: newFigure.tool || "line",
+    name: styleSource.name,
+    nameFontSizePx: styleSource.nameFontSizePx,
+    nameRotationDeg: styleSource.nameRotationDeg,
+    nameOffsetLocal: styleSource.nameOffsetLocal
+      ? { ...styleSource.nameOffsetLocal }
+      : undefined,
+    tool: styleSource.tool || newFigure.tool || "line",
+    kind: styleSource.kind,
     x: 0,
     y: 0,
     rotation: 0,
-    closed: newFigure.closed ?? false,
+    closed: false,
     nodes: mergedNodes,
     edges: mergedEdges,
-    stroke: newFigure.stroke,
-    strokeWidth: newFigure.strokeWidth,
-    fill: newFigure.fill ?? "transparent",
-    opacity: newFigure.opacity ?? 1,
+    stroke: styleSource.stroke,
+    strokeWidth: styleSource.strokeWidth,
+    fill:
+      styleSource.kind === "mold"
+        ? styleSource.fill ?? "rgba(96,165,250,0.22)"
+        : styleSource.fill ?? "transparent",
+    opacity: styleSource.opacity ?? 1,
+    dash: styleSource.dash ? [...styleSource.dash] : undefined,
+    moldMeta: styleSource.moldMeta
+      ? {
+          ...styleSource.moldMeta,
+          grainline: styleSource.moldMeta.grainline
+            ? { ...styleSource.moldMeta.grainline }
+            : undefined,
+          sourceSegments: styleSource.moldMeta.sourceSegments?.map((seg) => ({
+            ...seg,
+          })),
+          lineage: styleSource.moldMeta.lineage
+            ? { ...styleSource.moldMeta.lineage }
+            : undefined,
+        }
+      : undefined,
   };
 
-  const normalizedMerged = normalizeLineEdgesAtNodes(
+  const normalizedMergedBase = normalizeLineEdgesAtNodes(
     mergeCoincidentNodes(mergedFigure)
   );
+  const normalizedMerged = {
+    ...normalizedMergedBase,
+    closed: hasClosedLoop(normalizedMergedBase),
+  };
 
   return [
     ...updatedFigures.filter((f) => {
@@ -2781,6 +2877,7 @@ export default function Canvas() {
     if (tool === "pique") return;
     setHoveredPique(null);
   }, [tool]);
+
   const backgroundRef = useRef<Konva.Rect | null>(null);
   const [draft, setDraft] = useState<Draft>(null);
   const [curveDraft, setCurveDraft] = useState<CurveDraft>(null);
@@ -2788,6 +2885,18 @@ export default function Canvas() {
   const lineDraftRef = useRef<LineDraft>(null);
   const [penDraft, setPenDraft] = useState<PenDraft>(null);
   const penDraftRef = useRef<PenDraft>(null);
+  const [extractSourceMode, setExtractSourceMode] =
+    useState<ExtractSourceMode>("diagram");
+  const [moldExtractionDraft, setMoldExtractionDraft] =
+    useState<MoldExtractionDraft | null>(null);
+  const moldExtractionDraftRef = useRef<MoldExtractionDraft | null>(null);
+  const [moldConfirmDialog, setMoldConfirmDialog] = useState<{
+    name: string;
+    baseSize: string;
+    cutQuantity: string;
+    cutOnFold: boolean;
+    notes: string;
+  } | null>(null);
   const [nodeSelection, setNodeSelection] = useState<NodeSelection>(null);
   const [nodeMergePreview, setNodeMergePreview] = useState<{
     figureId: string;
@@ -2857,6 +2966,261 @@ export default function Canvas() {
   const lastOffsetPreviewLogRef = useRef<string | null>(null);
   const lastNodeHoverLogRef = useRef<number>(0);
   const lastNodeClickLogRef = useRef<number>(0);
+
+  useEffect(() => {
+    moldExtractionDraftRef.current = moldExtractionDraft;
+  }, [moldExtractionDraft]);
+
+  const clearMoldExtractionState = useCallback(() => {
+    moldExtractionDraftRef.current = null;
+    setMoldExtractionDraft(null);
+    setMoldConfirmDialog(null);
+  }, []);
+
+  useEffect(() => {
+    if (tool === "extractMold") return;
+    clearMoldExtractionState();
+  }, [clearMoldExtractionState, tool]);
+
+  const moldCount = useMemo(
+    () => figures.filter((f) => f.kind === "mold").length,
+    [figures]
+  );
+
+  const openMoldConfirmDialog = useCallback(
+    (draft: MoldExtractionDraft) => {
+      if (!draft.pathWorld.length) return;
+
+      const sourceMold =
+        draft.sourceMode === "mold" && draft.sourceId
+          ? (figures.find(
+              (f) => f.id === draft.sourceId && f.kind === "mold"
+            ) ?? null)
+          : null;
+
+      const fallbackName = sourceMold
+        ? `${(sourceMold.name ?? "Molde").trim() || "Molde"} - derivado`
+        : `Molde ${moldCount + 1}`;
+
+      setMoldConfirmDialog({
+        name: fallbackName,
+        baseSize: sourceMold?.moldMeta?.baseSize ?? "M",
+        cutQuantity: String(
+          Math.max(1, Math.round(sourceMold?.moldMeta?.cutQuantity ?? 1))
+        ),
+        cutOnFold: sourceMold?.moldMeta?.cutOnFold === true,
+        notes: sourceMold?.moldMeta?.notes ?? "",
+      });
+    },
+    [figures, moldCount]
+  );
+
+  const appendEdgeToMoldExtraction = useCallback(
+    (figure: Figure, edge: FigureEdge) => {
+      const current =
+        moldExtractionDraftRef.current ??
+        ({
+          sourceMode: extractSourceMode,
+          sourceId: extractSourceMode === "mold" ? figure.id : null,
+          segments: [],
+          pathWorld: [],
+          closed: false,
+        } satisfies MoldExtractionDraft);
+
+      if (extractSourceMode === "mold") {
+        const sourceId = current.sourceId ?? figure.id;
+        if (sourceId !== figure.id) {
+          toast("Selecione arestas de um único molde por extração.", "error");
+          return;
+        }
+      }
+
+      const raw = edgeWorldSamples(figure, edge);
+      if (raw.length < 2) return;
+
+      const connectTolWorld = 8 / Math.max(0.1, scale);
+      let oriented = raw;
+      let t0 = 0;
+      let t1 = 1;
+
+      if (current.pathWorld.length > 0) {
+        const last = current.pathWorld[current.pathWorld.length - 1]!;
+        const firstRaw = raw[0]!;
+        const lastRaw = raw[raw.length - 1]!;
+        const matchStart = dist(last, firstRaw) <= connectTolWorld;
+        const matchEnd = dist(last, lastRaw) <= connectTolWorld;
+
+        if (matchStart) {
+          oriented = raw;
+          t0 = 0;
+          t1 = 1;
+        } else if (matchEnd) {
+          oriented = [...raw].reverse();
+          t0 = 1;
+          t1 = 0;
+        } else {
+          toast("A aresta selecionada não conecta com o último segmento.", "error");
+          return;
+        }
+      }
+
+      const nextSegments = [
+        ...current.segments,
+        {
+          sourceDomain: extractSourceMode,
+          sourceId: figure.id,
+          edgeId: edge.id,
+          t0,
+          t1,
+          pointsWorld: oriented,
+        } satisfies ExtractSegmentDraft,
+      ];
+
+      const nextPath = buildPathFromExtractSegments(nextSegments);
+      let nextClosed = false;
+      if (nextPath.length >= 3) {
+        const first = nextPath[0]!;
+        const last = nextPath[nextPath.length - 1]!;
+        nextClosed = dist(first, last) <= connectTolWorld;
+      }
+
+      const nextDraft: MoldExtractionDraft = {
+        sourceMode: extractSourceMode,
+        sourceId: extractSourceMode === "mold" ? current.sourceId ?? figure.id : null,
+        segments: nextSegments,
+        pathWorld: nextPath,
+        closed: nextClosed,
+      };
+
+      moldExtractionDraftRef.current = nextDraft;
+      setMoldExtractionDraft(nextDraft);
+
+      if (nextClosed) {
+        openMoldConfirmDialog(nextDraft);
+      }
+    },
+    [extractSourceMode, openMoldConfirmDialog, scale]
+  );
+
+  const confirmMoldGeneration = useCallback(() => {
+    const draft = moldExtractionDraftRef.current;
+    const form = moldConfirmDialog;
+    if (!draft || !form) return;
+    if (!draft.closed) {
+      toast("Feche o perímetro antes de gerar o molde.", "error");
+      return;
+    }
+
+    const path = [...draft.pathWorld];
+    if (path.length < 3) {
+      toast("Perímetro inválido para gerar molde.", "error");
+      return;
+    }
+
+    const first = path[0]!;
+    const last = path[path.length - 1]!;
+    if (dist(first, last) <= 8 / Math.max(0.1, scale)) {
+      path.pop();
+    }
+
+    if (path.length < 3) {
+      toast("Perímetro inválido para gerar molde.", "error");
+      return;
+    }
+
+    const nodes = path.map((p) => ({
+      id: id("n"),
+      x: p.x,
+      y: p.y,
+      mode: "corner" as const,
+    }));
+
+    const edges = nodes.map((n, idx) => ({
+      id: id("e"),
+      from: n.id,
+      to: nodes[(idx + 1) % nodes.length]!.id,
+      kind: "line" as const,
+    }));
+
+    const qty = Math.max(1, Math.round(Number(form.cutQuantity) || 1));
+    const sourceSegments: MoldSourceSegmentRef[] = draft.segments.map((seg) => ({
+      sourceDomain: seg.sourceDomain,
+      sourceId: seg.sourceId,
+      edgeId: seg.edgeId,
+      t0: seg.t0,
+      t1: seg.t1,
+    }));
+
+    const minX = Math.min(...path.map((p) => p.x));
+    const minY = Math.min(...path.map((p) => p.y));
+    const maxX = Math.max(...path.map((p) => p.x));
+    const maxY = Math.max(...path.map((p) => p.y));
+    const width = maxX - minX;
+    const height = maxY - minY;
+    const grainAngleDeg = width >= height ? 0 : 90;
+    const sourceMoldId =
+      draft.sourceMode === "mold" ? (draft.sourceId ?? undefined) : undefined;
+
+    const name = (form.name ?? "").trim() || `Molde ${moldCount + 1}`;
+
+    const figure: Figure = {
+      id: id("fig"),
+      name,
+      tool: "line",
+      kind: "mold",
+      x: 0,
+      y: 0,
+      rotation: 0,
+      closed: true,
+      nodes,
+      edges,
+      stroke: "aci7",
+      strokeWidth: 2,
+      fill: "rgba(96,165,250,0.22)",
+      opacity: 1,
+      moldMeta: {
+        baseSize: form.baseSize.trim() || "M",
+        cutQuantity: qty,
+        cutOnFold: form.cutOnFold,
+        notes: form.notes,
+        printEnabled: true,
+        visible: true,
+        sourceMode: draft.sourceMode === "mold" ? "fromMold" : "fromDiagram",
+        sourceMoldId,
+        grainline: {
+          angleDeg: grainAngleDeg,
+          autoGenerated: true,
+        },
+        sourceSegments,
+        lineage:
+          draft.sourceMode === "mold"
+            ? {
+                rootMoldId: sourceMoldId,
+                parentMoldId: sourceMoldId,
+                depth: 1,
+              }
+            : {
+                depth: 0,
+              },
+      },
+    };
+
+    setFigures((prev) => [...prev, figure]);
+    setSelectedFigureIds([figure.id]);
+    setSelectedEdge(null);
+    setTool("select");
+    clearMoldExtractionState();
+    toast("Molde gerado com sucesso.", "success");
+  }, [
+    clearMoldExtractionState,
+    moldConfirmDialog,
+    moldCount,
+    scale,
+    setFigures,
+    setSelectedEdge,
+    setSelectedFigureIds,
+    setTool,
+  ]);
   
   // Expose hoveredOffsetBaseId for E2E tests
   React.useEffect(() => {
@@ -5266,6 +5630,22 @@ export default function Canvas() {
       return;
     }
 
+    if (tool === "extractMold" && e.evt.button === 0) {
+      const thresholdWorld = 10 / scale;
+      const candidates = figures.filter((f) =>
+        isFigureEligibleForExtractSource(f, extractSourceMode)
+      );
+      const edgePick = findNearestEdgeAcrossFigures(
+        candidates,
+        world,
+        thresholdWorld
+      );
+      if (!edgePick) return;
+
+      appendEdgeToMoldExtraction(edgePick.figure, edgePick.edge);
+      return;
+    }
+
     // Offset tool: click on background/inside closed figure applies offset
     if (tool === "offset" && e.evt.button === 0) {
       const thresholdWorld = 10 / scale;
@@ -5290,7 +5670,12 @@ export default function Canvas() {
       }
 
       const base = figures.find((f) => f.id === baseId) ?? null;
-      if (!base || (!base.closed && !hasClosedLoop(base))) return;
+      if (!base) return;
+      if (base.kind !== "mold") {
+        toast("Margem de costura funciona apenas em moldes extraídos.", "error");
+        return;
+      }
+      if (!base.closed && !hasClosedLoop(base)) return;
       
       setSelectedFigureId(baseId);
       setOffsetTargetId(baseId);
@@ -5473,14 +5858,17 @@ export default function Canvas() {
         const thresholdWorld = 10 / scale;
         const figId = findHoveredFigureId(figures, world, thresholdWorld);
         fig = figId ? (figures.find((f) => f.id === figId) ?? null) : null;
-        if (!fig || fig.kind === "seam") return;
+        if (!fig || fig.kind !== "mold") return;
         const local = worldToFigureLocal(fig, world);
         const hit = findNearestEdge(fig, local);
         if (!hit.best || hit.bestDist > thresholdWorld) return;
         hitEdge = hit.best;
       }
 
-      if (!fig || fig.kind === "seam") return;
+      if (!fig || fig.kind !== "mold") {
+        toast("Pique só funciona em moldes extraídos.", "error");
+        return;
+      }
       const supportsPique = fig.closed || hasClosedLoop(fig);
       if (!supportsPique) {
         toast("Pique só funciona em figuras fechadas.", "error");
@@ -6283,7 +6671,12 @@ export default function Canvas() {
             thresholdWorld
           );
 
-      const baseId = hitBaseId ?? insideId;
+      const baseIdCandidate = hitBaseId ?? insideId;
+      const baseCandidate = baseIdCandidate
+        ? (figures.find((f) => f.id === baseIdCandidate) ?? null)
+        : null;
+      const baseId =
+        baseCandidate && baseCandidate.kind === "mold" ? baseIdCandidate : null;
       setHoveredOffsetBaseId((prev) => (prev === baseId ? prev : baseId));
       setOffsetRemoveMode(e.evt.metaKey || e.evt.ctrlKey);
 
@@ -6508,7 +6901,7 @@ export default function Canvas() {
         const fig = figId
           ? (figures.find((f) => f.id === figId) ?? null)
           : null;
-        if (!fig || fig.kind === "seam") {
+        if (!fig || fig.kind !== "mold") {
           if (hoveredEdge) setHoveredEdge(null);
         } else {
           const local = worldToFigureLocal(fig, world);
@@ -6561,6 +6954,29 @@ export default function Canvas() {
       }
     }
 
+    if (tool === "extractMold") {
+      const thresholdWorld = 10 / scale;
+      const candidates = figures.filter((f) =>
+        isFigureEligibleForExtractSource(f, extractSourceMode)
+      );
+      const edgePick = findNearestEdgeAcrossFigures(
+        candidates,
+        world,
+        thresholdWorld
+      );
+      if (!edgePick) {
+        if (hoveredEdge) setHoveredEdge(null);
+      } else {
+        const local = worldToFigureLocal(edgePick.figure, world);
+        const hit = findNearestEdge(edgePick.figure, local);
+        if (!hit.best || hit.bestDist > thresholdWorld) {
+          if (hoveredEdge) setHoveredEdge(null);
+        } else {
+          setHoveredEdge(hit.best);
+        }
+      }
+    }
+
     if (tool === "mirror") {
       const thresholdWorld = 10 / scale;
       const figId = findHoveredFigureId(figures, world, thresholdWorld);
@@ -6576,7 +6992,12 @@ export default function Canvas() {
           setHoveredEdge(hit.best);
         }
       }
-    } else if (tool !== "dart" && tool !== "node" && tool !== "pique") {
+    } else if (
+      tool !== "dart" &&
+      tool !== "node" &&
+      tool !== "pique" &&
+      tool !== "extractMold"
+    ) {
       if (hoveredEdge) setHoveredEdge(null);
     }
 
@@ -7130,6 +7551,51 @@ export default function Canvas() {
         setPenDraft(null);
         dragNodeRef.current = null;
         dragHandleRef.current = null;
+        clearMoldExtractionState();
+      }
+
+      if (tool === "extractMold") {
+        const currentDraft = moldExtractionDraftRef.current;
+
+        if (evt.key === "Enter") {
+          evt.preventDefault();
+          if (!currentDraft) return;
+          if (!currentDraft.closed) {
+            toast("Feche o perímetro antes de gerar o molde.", "error");
+            return;
+          }
+          if (!moldConfirmDialog) {
+            openMoldConfirmDialog(currentDraft);
+          }
+          return;
+        }
+
+        const isUndoLast =
+          evt.key.toLowerCase() === "z" && (evt.metaKey || evt.ctrlKey);
+        if (evt.key === "Backspace" || isUndoLast) {
+          evt.preventDefault();
+          evt.stopPropagation();
+          if (!currentDraft || currentDraft.segments.length === 0) return;
+          const nextSegments = currentDraft.segments.slice(0, -1);
+          const nextPath = buildPathFromExtractSegments(nextSegments);
+          const connectTolWorld = 8 / Math.max(0.1, scale);
+          const nextClosed =
+            nextPath.length >= 3 &&
+            dist(nextPath[0]!, nextPath[nextPath.length - 1]!) <=
+              connectTolWorld;
+          const nextDraft: MoldExtractionDraft = {
+            ...currentDraft,
+            segments: nextSegments,
+            pathWorld: nextPath,
+            closed: nextClosed,
+          };
+          moldExtractionDraftRef.current = nextDraft;
+          setMoldExtractionDraft(nextDraft);
+          if (!nextClosed && moldConfirmDialog) {
+            setMoldConfirmDialog(null);
+          }
+          return;
+        }
       }
 
       const currentLineDraft = lineDraftRef.current;
@@ -7271,8 +7737,11 @@ export default function Canvas() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     addFigureWithOptionalMerge,
+    clearMoldExtractionState,
     curveDraft,
     magnetJoinEnabled,
+    moldConfirmDialog,
+    openMoldConfirmDialog,
     scale,
     tool,
   ]);
@@ -7629,6 +8098,41 @@ export default function Canvas() {
       </>
     );
   }, [curveDraft, previewDash, previewStroke, scale]);
+
+  const moldExtractionPreview = useMemo(() => {
+    if (tool !== "extractMold") return null;
+    if (!moldExtractionDraft || moldExtractionDraft.pathWorld.length < 2)
+      return null;
+
+    const flat: number[] = [];
+    for (const p of moldExtractionDraft.pathWorld) {
+      flat.push(p.x, p.y);
+    }
+
+    const first = moldExtractionDraft.pathWorld[0]!;
+    const closed = moldExtractionDraft.closed;
+
+    return (
+      <>
+        <Line
+          points={flat}
+          stroke={closed ? "#16a34a" : "#2563eb"}
+          strokeWidth={1.5 / scale}
+          dash={closed ? [5 / scale, 3 / scale] : [8 / scale, 6 / scale]}
+          listening={false}
+          lineCap="round"
+          lineJoin="round"
+        />
+        <Circle
+          x={first.x}
+          y={first.y}
+          radius={4 / scale}
+          fill={closed ? "#16a34a" : "#2563eb"}
+          listening={false}
+        />
+      </>
+    );
+  }, [moldExtractionDraft, scale, tool]);
 
   const angleLockGuideOverlay = useMemo(() => {
     if (!modifierKeys.shift) return null;
@@ -8301,6 +8805,7 @@ export default function Canvas() {
     nodeMergePreview,
     nodeSelection,
     previewRemoveStroke,
+    queueNodeMergePreview,
     scale,
     selectedFigure,
     setFigures,
@@ -9420,6 +9925,159 @@ export default function Canvas() {
           </div>
         ) : null}
 
+        {tool === "extractMold" ? (
+          <div className="absolute top-3 left-3 z-50 pointer-events-auto">
+            <div
+              className="rounded border border-gray-300 dark:border-gray-600 bg-white/95 dark:bg-gray-800/95 shadow-subtle p-3 w-[320px]"
+              onMouseDown={(evt) => {
+                evt.preventDefault();
+                evt.stopPropagation();
+              }}
+            >
+              <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+                Extração de molde
+              </div>
+              <div className="inline-flex rounded border border-gray-300 dark:border-gray-600 overflow-hidden mb-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExtractSourceMode("diagram");
+                    clearMoldExtractionState();
+                  }}
+                  className={
+                    "px-2 py-1 text-xs font-bold " +
+                    (extractSourceMode === "diagram"
+                      ? "bg-primary text-white"
+                      : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200")
+                  }
+                >
+                  Do diagrama
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExtractSourceMode("mold");
+                    clearMoldExtractionState();
+                  }}
+                  className={
+                    "px-2 py-1 text-xs font-bold border-l border-gray-300 dark:border-gray-600 " +
+                    (extractSourceMode === "mold"
+                      ? "bg-primary text-white"
+                      : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200")
+                  }
+                >
+                  De molde
+                </button>
+              </div>
+              <p className="text-xs text-gray-600 dark:text-gray-300">
+                Clique nas arestas em sequência para montar o perímetro.
+                {moldExtractionDraft?.closed
+                  ? " Perímetro fechado."
+                  : " Feche no ponto inicial ou pressione Enter quando estiver válido."}
+              </p>
+              <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
+                Segmentos: {moldExtractionDraft?.segments.length ?? 0}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {tool === "extractMold" && moldConfirmDialog ? (
+          <div
+            className="absolute inset-0 z-50 bg-black/30 flex items-center justify-center"
+            onMouseDown={(evt) => {
+              evt.preventDefault();
+              evt.stopPropagation();
+            }}
+          >
+            <div className="rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl p-5 w-[460px] max-w-[92vw]">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                Gerar molde
+              </h3>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <label className="text-xs text-gray-600 dark:text-gray-300">
+                  Nome
+                  <input
+                    className="mt-1 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-900 dark:text-gray-100"
+                    value={moldConfirmDialog.name}
+                    onChange={(evt) =>
+                      setMoldConfirmDialog((prev) =>
+                        prev ? { ...prev, name: evt.target.value } : prev
+                      )
+                    }
+                  />
+                </label>
+                <label className="text-xs text-gray-600 dark:text-gray-300">
+                  Tamanho base
+                  <input
+                    className="mt-1 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-900 dark:text-gray-100"
+                    value={moldConfirmDialog.baseSize}
+                    onChange={(evt) =>
+                      setMoldConfirmDialog((prev) =>
+                        prev ? { ...prev, baseSize: evt.target.value } : prev
+                      )
+                    }
+                  />
+                </label>
+                <label className="text-xs text-gray-600 dark:text-gray-300">
+                  Quantidade
+                  <input
+                    className="mt-1 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-900 dark:text-gray-100"
+                    type="number"
+                    min={1}
+                    value={moldConfirmDialog.cutQuantity}
+                    onChange={(evt) =>
+                      setMoldConfirmDialog((prev) =>
+                        prev ? { ...prev, cutQuantity: evt.target.value } : prev
+                      )
+                    }
+                  />
+                </label>
+                <label className="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200 mt-6">
+                  <input
+                    type="checkbox"
+                    checked={moldConfirmDialog.cutOnFold}
+                    onChange={(evt) =>
+                      setMoldConfirmDialog((prev) =>
+                        prev ? { ...prev, cutOnFold: evt.target.checked } : prev
+                      )
+                    }
+                  />
+                  Cortar na dobra
+                </label>
+                <label className="text-xs text-gray-600 dark:text-gray-300 col-span-2">
+                  Notas
+                  <input
+                    className="mt-1 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-2 py-1 text-sm text-gray-900 dark:text-gray-100"
+                    value={moldConfirmDialog.notes}
+                    onChange={(evt) =>
+                      setMoldConfirmDialog((prev) =>
+                        prev ? { ...prev, notes: evt.target.value } : prev
+                      )
+                    }
+                  />
+                </label>
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200"
+                  onClick={() => setMoldConfirmDialog(null)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-1.5 text-sm rounded bg-primary text-white"
+                  onClick={confirmMoldGeneration}
+                >
+                  Gerar molde
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <Stage
           ref={(node) => {
             stageRef.current = node;
@@ -9527,6 +10185,9 @@ export default function Canvas() {
 
           <Layer id="figures-layer">
             {figures.map((fig) => {
+              if (fig.kind === "mold" && fig.moldMeta?.visible === false) {
+                return null;
+              }
               const isSeam = fig.kind === "seam" && !!fig.parentId;
               const baseId = isSeam ? fig.parentId! : fig.id;
               const isSelected = selectedIdsSet.has(baseId);
@@ -9717,7 +10378,8 @@ export default function Canvas() {
                       tool === "measure" ||
                       tool === "dart" ||
                       tool === "text" ||
-                      tool === "pique";
+                      tool === "pique" ||
+                      tool === "extractMold";
 
                     if (allowStageForDrawing) {
                       return;
@@ -10259,6 +10921,8 @@ export default function Canvas() {
             {penDraftPreview}
 
             {curveDraftPreview}
+
+            {moldExtractionPreview}
 
             {draftMeasuresOverlay}
 

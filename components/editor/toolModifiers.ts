@@ -52,6 +52,13 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
       descriptionPtBr: "Modo remover (clique para apagar offset)",
     },
   ],
+  extractMold: [
+    {
+      key: "cmdOrCtrl",
+      label: { mac: "⌘", win: "Ctrl" },
+      descriptionPtBr: "Desfazer último segmento selecionado",
+    },
+  ],
   mirror: [],
   unfold: [],
   rectangle: [
