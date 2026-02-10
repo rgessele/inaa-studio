@@ -1746,7 +1746,7 @@ export function PropertiesPanel() {
             {moldFigures.length}
           </span>
         </div>
-        <div className="max-h-[42vh] overflow-y-auto overscroll-contain custom-scrollbar pr-1">
+        <div className="min-h-0 max-h-[42vh] overflow-y-auto overscroll-contain custom-scrollbar pr-1">
           <div className="grid grid-cols-2 gap-2">
             {moldFigures.map((m) => {
             const thumbWidth = 96;
@@ -2042,7 +2042,7 @@ export function PropertiesPanel() {
     >
       <div
         className={
-          "flex-1 flex w-72 flex-col transition-all duration-200 ease-in-out " +
+          "min-h-0 flex-1 flex w-72 flex-col transition-all duration-200 ease-in-out " +
           (collapsed
             ? "translate-x-full opacity-0 pointer-events-none"
             : "translate-x-0 opacity-100")
@@ -2063,7 +2063,7 @@ export function PropertiesPanel() {
                 </span>
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+            <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
               {showCurveStylePanel
                 ? renderCurveStylePanel({ showHelp: true })
                 : null}
@@ -3737,7 +3737,7 @@ export function PropertiesPanel() {
                       : "Margem de costura"}
               </h3>
             </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+            <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
               {tool === "curve"
                 ? renderCurveStylePanel({
                     showHelp: true,
@@ -3844,7 +3844,7 @@ export function PropertiesPanel() {
             </div>
           </>
         ) : (
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+          <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
             {renderMoldListSection() ?? (
               <div className="text-center text-gray-500 text-xs">
                 Nenhum objeto selecionado

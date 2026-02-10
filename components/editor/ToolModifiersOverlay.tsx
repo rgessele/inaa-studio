@@ -116,6 +116,11 @@ function SystemStatus() {
 
   const figureCount = figures.length;
   const nodeCount = figures.reduce((acc, f) => acc + f.nodes.length, 0);
+  const edgeCount = figures.reduce((acc, f) => acc + f.edges.length, 0);
+  const moldCount = figures.reduce(
+    (acc, f) => acc + (f.kind === "mold" ? 1 : 0),
+    0
+  );
 
   let fpsColor = "text-emerald-600 dark:text-emerald-400";
   if (fps < 30) fpsColor = "text-red-600 dark:text-red-400";
@@ -152,6 +157,34 @@ function SystemStatus() {
             share
           </span>
           <span>{nodeCount}</span>
+        </div>
+      </StatusTooltip>
+
+      <div className="w-px h-3 bg-gray-300 dark:bg-gray-700" />
+
+      <StatusTooltip text="Total de Arestas">
+        <div className="flex items-center gap-1">
+          <span
+            className="material-symbols-outlined"
+            style={{ fontSize: "12px" }}
+          >
+            timeline
+          </span>
+          <span>{edgeCount}</span>
+        </div>
+      </StatusTooltip>
+
+      <div className="w-px h-3 bg-gray-300 dark:bg-gray-700" />
+
+      <StatusTooltip text="Total de Moldes Extraídos">
+        <div className="flex items-center gap-1">
+          <span
+            className="material-symbols-outlined"
+            style={{ fontSize: "12px" }}
+          >
+            content_cut
+          </span>
+          <span>{moldCount}</span>
         </div>
       </StatusTooltip>
 
