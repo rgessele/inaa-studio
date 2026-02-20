@@ -1316,6 +1316,7 @@ export function PropertiesPanel() {
     "disabled:bg-gray-50 dark:disabled:bg-gray-900/30 disabled:border-gray-200 dark:disabled:border-gray-700 disabled:text-gray-500 dark:disabled:text-gray-400 disabled:cursor-default disabled:shadow-none disabled:ring-0";
   const inputErrorClass =
     "border-red-500 dark:border-red-500 ring-1 ring-red-500 dark:ring-red-500 focus:ring-red-500 focus:border-red-500";
+  const MOLD_NOTES_MAX_LENGTH = 1000;
 
   React.useEffect(() => {
     if (tool !== "offset") return;
@@ -1733,19 +1734,101 @@ export function PropertiesPanel() {
     setCollapsed(true);
   }, [hasCanvasSelection, moldFigures.length, showToolProperties]);
 
+  type CollapsibleSectionId =
+    | "moldList"
+    | "moldDocumentation"
+    | "circleMetrics"
+    | "textProperties"
+    | "mirrorSync"
+    | "figureName"
+    | "seamAllowance"
+    | "edge"
+    | "transform"
+    | "toolCurve"
+    | "toolMirror"
+    | "toolUnfold"
+    | "toolOffset";
+
+  const [collapsedSections, setCollapsedSections] = useState<
+    Record<CollapsibleSectionId, boolean>
+  >({
+    moldList: false,
+    moldDocumentation: false,
+    circleMetrics: false,
+    textProperties: false,
+    mirrorSync: false,
+    figureName: false,
+    seamAllowance: false,
+    edge: false,
+    transform: false,
+    toolCurve: false,
+    toolMirror: false,
+    toolUnfold: false,
+    toolOffset: false,
+  });
+
+  const toggleSection = (id: CollapsibleSectionId) => {
+    setCollapsedSections((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const renderCollapsibleSection = ({
+    id,
+    title,
+    right,
+    children,
+    className = "space-y-3",
+    contentClassName = "",
+  }: {
+    id: CollapsibleSectionId;
+    title: string;
+    right?: React.ReactNode;
+    children: React.ReactNode;
+    className?: string;
+    contentClassName?: string;
+  }) => {
+    const isCollapsed = collapsedSections[id];
+    return (
+      <div className={className}>
+        <button
+          type="button"
+          className="w-full flex items-center justify-between text-left group"
+          aria-expanded={!isCollapsed}
+          onClick={() => toggleSection(id)}
+        >
+          <span className="inline-flex items-center gap-1.5 min-w-0">
+            <span
+              className={
+                "material-symbols-outlined text-[16px] leading-none transition-transform text-gray-500 dark:text-gray-400 " +
+                (isCollapsed ? "" : "rotate-90")
+              }
+              aria-hidden
+            >
+              chevron_right
+            </span>
+            <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              {title}
+            </span>
+          </span>
+          {right ? (
+            <span className="text-[10px] text-gray-400 dark:text-gray-500">
+              {right}
+            </span>
+          ) : null}
+        </button>
+        {isCollapsed ? null : <div className={contentClassName}>{children}</div>}
+      </div>
+    );
+  };
+
   const renderMoldListSection = () => {
     if (!moldFigures.length) return null;
 
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-            Moldes extraídos
-          </span>
-          <span className="text-[10px] text-gray-400 dark:text-gray-500">
-            {moldFigures.length}
-          </span>
-        </div>
+    return renderCollapsibleSection({
+      id: "moldList",
+      title: "Moldes extraídos",
+      right: moldFigures.length,
+      className: "space-y-2",
+      children: (
         <div className="min-h-0 max-h-[42vh] overflow-y-auto overscroll-contain custom-scrollbar pr-1">
           <div className="grid grid-cols-2 gap-2">
             {moldFigures.map((m) => {
@@ -1880,18 +1963,18 @@ export function PropertiesPanel() {
             })}
           </div>
         </div>
-      </div>
-    );
+      ),
+    });
   };
 
   const renderMoldDocumentationSection = () => {
     if (!selectedMold) return null;
 
-    return (
-      <div className="space-y-3">
-        <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-          Documentação do molde
-        </div>
+    return renderCollapsibleSection({
+      id: "moldDocumentation",
+      title: "Documentação do molde",
+      children: (
+      <>
         <div className="space-y-3">
           <label className="space-y-1 block">
             <span className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -2006,11 +2089,18 @@ export function PropertiesPanel() {
           <span className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
             Notas
           </span>
-          <input
-            className={"w-full " + inputBaseClass + " " + inputFocusClass}
+          <textarea
+            className={
+              "w-full " +
+              inputBaseClass +
+              " " +
+              inputFocusClass +
+              " !text-left resize-y min-h-[96px] leading-relaxed"
+            }
             value={selectedMold.moldMeta?.notes ?? ""}
+            maxLength={MOLD_NOTES_MAX_LENGTH}
             onChange={(evt) => {
-              const value = evt.target.value;
+              const value = evt.target.value.slice(0, MOLD_NOTES_MAX_LENGTH);
               setFigures((prev) =>
                 prev.map((f) =>
                   f.id === selectedMold.id
@@ -2026,9 +2116,13 @@ export function PropertiesPanel() {
               );
             }}
           />
+          <div className="text-[10px] text-gray-500 dark:text-gray-400 text-right tabular-nums">
+            {(selectedMold.moldMeta?.notes ?? "").length}/{MOLD_NOTES_MAX_LENGTH}
+          </div>
         </label>
-      </div>
-    );
+      </>
+      ),
+    });
   };
 
   return (
@@ -2073,16 +2167,12 @@ export function PropertiesPanel() {
               {selectedFigure?.tool === "circle" &&
               selectedFigure.kind !== "seam" &&
               selectedCircleMeasures ? (
-                <div className="space-y-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      {selectedCircleIsPerfect ? "Círculo" : "Elipse"}
-                    </span>
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500">
-                      ↑↓ e scroll
-                    </span>
-                  </div>
-
+                renderCollapsibleSection({
+                  id: "circleMetrics",
+                  title: selectedCircleIsPerfect ? "Círculo" : "Elipse",
+                  right: "↑↓ e scroll",
+                  children: (
+                  <>
                   <div className="grid grid-cols-2 gap-3">
                     {selectedCircleIsPerfect ? (
                       <>
@@ -2457,24 +2547,20 @@ export function PropertiesPanel() {
                       ? "Editar a circunferência ajusta o raio."
                       : "Editar a circunferência escala a elipse mantendo a proporção (Rx/Ry)."}
                   </p>
-
-                  <div className="h-px bg-gray-200 dark:bg-gray-700"></div>
-                </div>
+                  </>
+                  ),
+                })
               ) : null}
 
               {selectedFigure?.tool === "text" &&
               selectedFigure.kind !== "seam" &&
               selectedFigureIds.length === 1 ? (
-                <div className="space-y-3">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Texto
-                    </span>
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500">
-                      {isMac ? "⌘⏎ no canvas" : "Ctrl+Enter no canvas"}
-                    </span>
-                  </div>
-
+                renderCollapsibleSection({
+                  id: "textProperties",
+                  title: "Texto",
+                  right: isMac ? "⌘⏎ no canvas" : "Ctrl+Enter no canvas",
+                  children: (
+                  <>
                   <div className="space-y-2">
                     <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Conteúdo
@@ -3161,18 +3247,20 @@ export function PropertiesPanel() {
                       </div>
                     ) : null}
                   </div>
-
-                  <div className="h-px bg-gray-200 dark:bg-gray-700"></div>
-                </div>
+                  </>
+                  ),
+                })
               ) : null}
 
               {selectedFigureIds.length === 1 && (
                 <div>
                   {selectedFigure?.mirrorLink ? (
                     <div className="mb-4">
-                      <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-2 block">
-                        Espelho
-                      </label>
+                      {renderCollapsibleSection({
+                        id: "mirrorSync",
+                        title: "Espelho",
+                        children: (
+                        <>
                       <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer select-none">
                         <input
                           type="checkbox"
@@ -3196,14 +3284,17 @@ export function PropertiesPanel() {
                           edições serão substituídas.
                         </p>
                       ) : null}
-
-                      <div className="mt-3 h-px bg-gray-200 dark:bg-gray-700" />
+                        </>
+                        ),
+                      })}
                     </div>
                   ) : null}
 
-                  <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
-                    Nome da figura
-                  </label>
+                  {renderCollapsibleSection({
+                    id: "figureName",
+                    title: "Nome da figura",
+                    children: (
+                    <>
                   <input
                     className={
                       "w-full " +
@@ -3324,14 +3415,18 @@ export function PropertiesPanel() {
                       </div>
                     </div>
                   </div>
+                    </>
+                    ),
+                  })}
                 </div>
               )}
 
               {(tool === "offset" || !!seamForSelection) && (
-                <div>
-                  <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
-                    Margem de costura
-                  </label>
+                renderCollapsibleSection({
+                  id: "seamAllowance",
+                  title: "Margem de costura",
+                  children: (
+                  <>
                   <div className="flex items-center gap-2">
                     <input
                       className={
@@ -3401,20 +3496,17 @@ export function PropertiesPanel() {
                       ? "Edite a distância da margem desta peça."
                       : "Clique em uma forma fechada para gerar a margem tracejada."}
                   </p>
-                </div>
+                  </>
+                  ),
+                })
               )}
 
               {selectedEdgeInfo ? (
-                <div>
-                  <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[16px]">
-                        straighten
-                      </span>{" "}
-                      Aresta
-                    </span>
-                  </label>
-
+                renderCollapsibleSection({
+                  id: "edge",
+                  title: "Aresta",
+                  children: (
+                  <>
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <input
@@ -3622,20 +3714,16 @@ export function PropertiesPanel() {
                       clique na medida.
                     </p>
                   </div>
-
-                  <div className="h-px bg-gray-200 dark:bg-gray-700 mt-6"></div>
-                </div>
+                  </>
+                  ),
+                })
               ) : null}
 
-              <div>
-                <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[16px]">
-                      transform
-                    </span>{" "}
-                    Transformação
-                  </span>
-                </label>
+              {renderCollapsibleSection({
+                id: "transform",
+                title: "Transformação",
+                children: (
+                <>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-3">
                   <div className="relative group">
                     <span className="absolute left-2.5 top-1.5 text-[10px] text-gray-400 font-bold group-hover:text-primary transition-colors cursor-ew-resize">
@@ -3718,7 +3806,9 @@ export function PropertiesPanel() {
                     />
                   </div>
                 </div>
-              </div>
+                </>
+                ),
+              })}
               <div className="h-px bg-gray-200 dark:bg-gray-700"></div>
               {renderMoldListSection()}
               {/* Appearance section omitted for brevity, can be added later */}
@@ -3739,38 +3829,48 @@ export function PropertiesPanel() {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
               {tool === "curve"
-                ? renderCurveStylePanel({
-                    showHelp: true,
-                    helpWhenNoCurveSelected:
-                      "Desenhe e selecione uma curva para aplicar um estilo.",
+                ? renderCollapsibleSection({
+                    id: "toolCurve",
+                    title: "Curvas",
+                    children: renderCurveStylePanel({
+                      showHelp: true,
+                      helpWhenNoCurveSelected:
+                        "Desenhe e selecione uma curva para aplicar um estilo.",
+                    }),
                   })
                 : null}
 
               {tool === "mirror" && (
-                <div>
-                  <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
-                    Eixo de Espelhamento
-                  </label>
+                renderCollapsibleSection({
+                  id: "toolMirror",
+                  title: "Eixo de espelhamento",
+                  children: (
                   <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
                     Passe o mouse em uma aresta para definir o eixo exatamente
                     sobre ela, e clique para criar uma cópia espelhada.
                   </p>
-                </div>
+                  ),
+                })
               )}
               {tool === "unfold" && (
-                <div>
+                renderCollapsibleSection({
+                  id: "toolUnfold",
+                  title: "Desespelhar",
+                  children: (
                   <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
                     Clique em uma forma espelhada para remover a cópia e
                     desfazer o vínculo (funciona no original ou na cópia).
                   </p>
-                </div>
+                  ),
+                })
               )}
 
               {tool === "offset" && (
-                <div>
-                  <label className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-3 block">
-                    Distância
-                  </label>
+                renderCollapsibleSection({
+                  id: "toolOffset",
+                  title: "Distância",
+                  children: (
+                  <>
                   <div className="flex items-center gap-2">
                     <input
                       className={
@@ -3837,7 +3937,9 @@ export function PropertiesPanel() {
                   <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
                     Clique em uma forma fechada para gerar a margem tracejada.
                   </p>
-                </div>
+                  </>
+                  ),
+                })
               )}
 
               {renderMoldListSection()}
