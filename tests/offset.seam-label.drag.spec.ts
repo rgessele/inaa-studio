@@ -20,11 +20,32 @@ test.describe("offset tool - seam label", () => {
       if (!window.__INAA_DEBUG__?.loadTestProject) {
         throw new Error("loadTestProject not available");
       }
-      if (!window.__INAA_DEBUG__?.addTestRectangle) {
-        throw new Error("addTestRectangle not available");
-      }
-      window.__INAA_DEBUG__.loadTestProject({ figures: [] });
-      window.__INAA_DEBUG__.addTestRectangle();
+      const fig = {
+        id: "fig_mold_drag",
+        tool: "rectangle" as const,
+        kind: "mold" as const,
+        x: 0,
+        y: 0,
+        rotation: 0,
+        closed: true,
+        nodes: [
+          { id: "n1", x: 0, y: 0, mode: "corner" as const },
+          { id: "n2", x: 200, y: 0, mode: "corner" as const },
+          { id: "n3", x: 200, y: 120, mode: "corner" as const },
+          { id: "n4", x: 0, y: 120, mode: "corner" as const },
+        ],
+        edges: [
+          { id: "e1", from: "n1", to: "n2", kind: "line" as const },
+          { id: "e2", from: "n2", to: "n3", kind: "line" as const },
+          { id: "e3", from: "n3", to: "n4", kind: "line" as const },
+          { id: "e4", from: "n4", to: "n1", kind: "line" as const },
+        ],
+        stroke: "aci7",
+        strokeWidth: 2,
+        fill: "transparent",
+        opacity: 1,
+      };
+      window.__INAA_DEBUG__.loadTestProject({ figures: [fig] });
     });
 
     const stageCanvas = page

@@ -66,6 +66,9 @@ export function EditorToolbar() {
     createDefaultExportSettings()
   );
   const [customMargins, setCustomMargins] = useState(false);
+  const [includeMolds, setIncludeMolds] = useState(true);
+  const [includeConventionalFigures, setIncludeConventionalFigures] =
+    useState(false);
   const [includePatternName, setIncludePatternName] = useState(true);
   const [includePatternTexts, setIncludePatternTexts] = useState(true);
   const [includePiques, setIncludePiques] = useState(true);
@@ -77,24 +80,35 @@ export function EditorToolbar() {
     searchParams.get("embedded") === "1" || searchParams.get("embed") === "1";
   const printOnly = searchParams.get("printOnly") === "1";
   const printOnlyReadOnly = readOnly && printOnly;
+  const noShapesToExportMessage = "Nenhuma figura ativa para impressão.";
 
   const getExportShapes = useCallback(() => {
-    const activeMolds = figures.filter(
-      (f) =>
-        f.kind === "mold" &&
-        f.moldMeta?.printEnabled !== false &&
-        f.moldMeta?.visible !== false
-    );
+    const activeMolds = includeMolds
+      ? figures.filter(
+          (f) =>
+            f.kind === "mold" &&
+            f.moldMeta?.printEnabled !== false &&
+            f.moldMeta?.visible !== false
+        )
+      : [];
+
     const activeMoldIds = new Set(activeMolds.map((f) => f.id));
-    if (!includeSeamAllowance) return activeMolds;
-    const seams = figures.filter(
-      (f) =>
-        f.kind === "seam" &&
-        !!f.parentId &&
-        activeMoldIds.has(f.parentId)
-    );
-    return [...activeMolds, ...seams];
-  }, [figures, includeSeamAllowance]);
+    const seams =
+      includeMolds && includeSeamAllowance
+        ? figures.filter(
+            (f) =>
+              f.kind === "seam" &&
+              !!f.parentId &&
+              activeMoldIds.has(f.parentId)
+          )
+        : [];
+
+    const conventionalFigures = includeConventionalFigures
+      ? figures.filter((f) => f.kind !== "mold" && f.kind !== "seam")
+      : [];
+
+    return [...activeMolds, ...seams, ...conventionalFigures];
+  }, [figures, includeConventionalFigures, includeMolds, includeSeamAllowance]);
 
   const urlWantsExportModal = useMemo(() => {
     return searchParams.get("export") === "pdf";
@@ -163,7 +177,7 @@ export function EditorToolbar() {
 
       const exportShapes = getExportShapes();
       if (!exportShapes.length) {
-        toast("Nenhum molde ativo para impressão.", "error");
+        toast(noShapesToExportMessage, "error");
         return;
       }
 
@@ -194,10 +208,13 @@ export function EditorToolbar() {
     getStage,
     includePointLabels,
     includeMeasures,
+    includeMolds,
+    includeConventionalFigures,
     includePatternName,
     includePatternTexts,
     includePiques,
     includeSeamAllowance,
+    noShapesToExportMessage,
     pointLabelsMode,
     searchParams,
     setShowGrid,
@@ -512,7 +529,7 @@ export function EditorToolbar() {
 
     const exportShapes = getExportShapes();
     if (!exportShapes.length) {
-      toast("Nenhum molde ativo para impressão.", "error");
+      toast(noShapesToExportMessage, "error");
       setIsExportingPdf(false);
       return;
     }
@@ -553,7 +570,7 @@ export function EditorToolbar() {
 
     const exportShapes = getExportShapes();
     if (!exportShapes.length) {
-      toast("Nenhum molde ativo para impressão.", "error");
+      toast(noShapesToExportMessage, "error");
       setIsExportingSvg(false);
       return;
     }
@@ -1229,7 +1246,7 @@ export function EditorToolbar() {
             className={
               embedded
                 ? "bg-white dark:bg-gray-800 w-full h-full p-8 shadow-none overflow-auto"
-                : "bg-white dark:bg-gray-800 rounded-lg p-8 max-w-5xl w-full mx-4 shadow-xl"
+                : "bg-white dark:bg-gray-800 rounded-lg p-8 max-w-5xl w-full mx-4 shadow-xl max-h-[calc(100vh-2rem)] overflow-auto"
             }
             onClick={(e) => e.stopPropagation()}
           >
@@ -1262,6 +1279,16 @@ export function EditorToolbar() {
                 </p>
 
                 <div className="space-y-4">
+                  <SwitchRow
+                    label="Imprimir moldes"
+                    checked={includeMolds}
+                    onCheckedChange={setIncludeMolds}
+                  />
+                  <SwitchRow
+                    label="Imprimir figuras convencionais"
+                    checked={includeConventionalFigures}
+                    onCheckedChange={setIncludeConventionalFigures}
+                  />
                   <SwitchRow
                     label="Nome do molde"
                     checked={includePatternName}

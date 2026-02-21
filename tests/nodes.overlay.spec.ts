@@ -77,3 +77,76 @@ test("editor: nós (pontinhos) overlay modes (never/always/hover)", async ({
     })
     .toBe(4);
 });
+
+test("editor: molde denso não renderiza overlay de nós fora da ferramenta de nós", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("inaa:nodesDisplayMode", "always");
+  });
+
+  await gotoEditor(page);
+  await expect(page.getByTestId("editor-stage-container")).toBeVisible();
+
+  await page.evaluate(() => {
+    if (!window.__INAA_DEBUG__?.loadTestProject) {
+      throw new Error("loadTestProject not available");
+    }
+
+    const count = 160;
+    const radius = 140;
+    const cx = 640;
+    const cy = 360;
+
+    const nodes = Array.from({ length: count }, (_, i) => {
+      const t = (i / count) * Math.PI * 2;
+      return {
+        id: `n_${i}`,
+        x: cx + Math.cos(t) * radius,
+        y: cy + Math.sin(t) * radius,
+        mode: "corner",
+      };
+    });
+
+    const edges = Array.from({ length: count }, (_, i) => ({
+      id: `e_${i}`,
+      from: `n_${i}`,
+      to: `n_${(i + 1) % count}`,
+      kind: "line",
+    }));
+
+    window.__INAA_DEBUG__.loadTestProject({
+      figures: [
+        {
+          id: "fig_dense_mold",
+          name: "Molde Denso",
+          tool: "line",
+          kind: "mold",
+          x: 0,
+          y: 0,
+          rotation: 0,
+          closed: true,
+          nodes,
+          edges,
+          stroke: "aci7",
+          strokeWidth: 2,
+          fill: "rgba(96,165,250,0.22)",
+          opacity: 1,
+        },
+      ],
+    });
+  });
+
+  await expect
+    .poll(async () => (await getEditorState(page)).figuresCount)
+    .toBe(1);
+
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => {
+        if (!window.__INAA_DEBUG__?.countStageNodesByName) return 0;
+        return window.__INAA_DEBUG__.countStageNodesByName("inaa-node-point");
+      });
+    })
+    .toBe(0);
+});

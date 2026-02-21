@@ -22,6 +22,9 @@ interface MeasureOverlayProps {
   hoveredEdge: { figureId: string; edgeId: string } | null;
 }
 
+const DENSE_MOLD_EDGE_COUNT = 64;
+const DENSE_MOLD_MIN_LABEL_CM = 0.8;
+
 function resolveAci7(isDark: boolean): string {
   return isDark ? "#ffffff" : "#000000";
 }
@@ -235,6 +238,18 @@ const MeasureOverlayRenderer = ({
   const renderEdgeLabel = (edge: FigureEdge) => {
     const hit = figure.measures?.perEdge?.find((m) => m.edgeId === edge.id);
     if (!hit) return null;
+
+    // Extracted molds from curved shapes can generate many micro-edges.
+    // Rendering one label per micro-edge causes heavy visual overdraw ("blur ring").
+    // In that dense case, only keep labels for meaningfully long edges.
+    const isDenseMoldContour =
+      figure.kind === "mold" && figure.edges.length >= DENSE_MOLD_EDGE_COUNT;
+    if (
+      isDenseMoldContour &&
+      pxToCm(hit.lengthPx) < DENSE_MOLD_MIN_LABEL_CM
+    ) {
+      return null;
+    }
 
     const pts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 1 : 50);
     const mt = midAndTangent(pts);

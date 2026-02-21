@@ -118,6 +118,13 @@
       "risk": "medium",
       "unit": ["components/editor/dart.test.ts"],
       "notes": "Cobertura unitária de geometria."
+    },
+    {
+      "id": "export.pdfSvg.toggleSources",
+      "title": "Exportação PDF/SVG: fontes por chavinha (moldes e convencionais)",
+      "risk": "high",
+      "e2e": ["tests/point-labels.export.spec.ts"],
+      "notes": "Valida fluxo de export com chavinha de figuras convencionais e download em modal rolável."
     }
   ]
 }

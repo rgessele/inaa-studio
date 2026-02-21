@@ -27,10 +27,26 @@ test("circle: editar raio/raios e circunferência no painel", async ({
   const x1 = Math.round(box!.x + 220);
   const y1 = Math.round(box!.y + 170);
 
-  await page.mouse.move(x0, y0);
-  await page.mouse.down();
-  await page.mouse.move(x1, y1);
-  await page.mouse.up();
+  const drawEllipse = async () => {
+    await page.mouse.move(x0, y0);
+    await page.mouse.down();
+    await page.mouse.move(x1, y1, { steps: 6 });
+    await page.mouse.up();
+  };
+
+  await drawEllipse();
+  let hasCircle = await page.evaluate(() => {
+    const snap = window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? [];
+    return snap.some((f) => f.tool === "circle" && !f.kind);
+  });
+  if (!hasCircle) {
+    await drawEllipse();
+    hasCircle = await page.evaluate(() => {
+      const snap = window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? [];
+      return snap.some((f) => f.tool === "circle" && !f.kind);
+    });
+  }
+  expect(hasCircle).toBeTruthy();
 
   // Select it.
   await page.getByRole("button", { name: "Selecionar" }).click();

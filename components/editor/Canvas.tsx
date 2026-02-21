@@ -87,6 +87,7 @@ import {
 const MIN_ZOOM_SCALE = 0.1;
 const MAX_ZOOM_SCALE = 10;
 const ZOOM_FACTOR = 1.08;
+const DENSE_MOLD_NODE_OVERLAY_THRESHOLD = 96;
 
 type Vec2 = { x: number; y: number };
 
@@ -1315,6 +1316,18 @@ function isFigureEligibleForExtractSource(
   if (sourceMode === "mold") return figure.kind === "mold";
   // sourceMode === "diagram"
   return figure.kind !== "mold" && figure.tool !== "text";
+}
+
+function isFigureEligibleForContourTools(figure: Figure): boolean {
+  if (figure.kind === "seam") return false;
+  if (figure.tool === "text") return false;
+  return figure.edges.length > 0;
+}
+
+function isFigureEligibleForOffsetTool(figure: Figure): boolean {
+  if (figure.kind !== "mold") return false;
+  if (figure.tool === "text") return false;
+  return figure.edges.length > 0;
 }
 
 function edgeWorldSamples(figure: Figure, edge: FigureEdge): Vec2[] {
@@ -5671,10 +5684,7 @@ export default function Canvas() {
 
       const base = figures.find((f) => f.id === baseId) ?? null;
       if (!base) return;
-      if (base.kind !== "mold") {
-        toast("Margem de costura funciona apenas em moldes extraídos.", "error");
-        return;
-      }
+      if (!isFigureEligibleForOffsetTool(base)) return;
       if (!base.closed && !hasClosedLoop(base)) return;
       
       setSelectedFigureId(baseId);
@@ -5858,17 +5868,14 @@ export default function Canvas() {
         const thresholdWorld = 10 / scale;
         const figId = findHoveredFigureId(figures, world, thresholdWorld);
         fig = figId ? (figures.find((f) => f.id === figId) ?? null) : null;
-        if (!fig || fig.kind !== "mold") return;
+        if (!fig || !isFigureEligibleForContourTools(fig)) return;
         const local = worldToFigureLocal(fig, world);
         const hit = findNearestEdge(fig, local);
         if (!hit.best || hit.bestDist > thresholdWorld) return;
         hitEdge = hit.best;
       }
 
-      if (!fig || fig.kind !== "mold") {
-        toast("Pique só funciona em moldes extraídos.", "error");
-        return;
-      }
+      if (!fig || !isFigureEligibleForContourTools(fig)) return;
       const supportsPique = fig.closed || hasClosedLoop(fig);
       if (!supportsPique) {
         toast("Pique só funciona em figuras fechadas.", "error");
@@ -6676,7 +6683,9 @@ export default function Canvas() {
         ? (figures.find((f) => f.id === baseIdCandidate) ?? null)
         : null;
       const baseId =
-        baseCandidate && baseCandidate.kind === "mold" ? baseIdCandidate : null;
+        baseCandidate && isFigureEligibleForOffsetTool(baseCandidate)
+          ? baseIdCandidate
+          : null;
       setHoveredOffsetBaseId((prev) => (prev === baseId ? prev : baseId));
       setOffsetRemoveMode(e.evt.metaKey || e.evt.ctrlKey);
 
@@ -6901,7 +6910,7 @@ export default function Canvas() {
         const fig = figId
           ? (figures.find((f) => f.id === figId) ?? null)
           : null;
-        if (!fig || fig.kind !== "mold") {
+        if (!fig || !isFigureEligibleForContourTools(fig)) {
           if (hoveredEdge) setHoveredEdge(null);
         } else {
           const local = worldToFigureLocal(fig, world);
@@ -10231,6 +10240,11 @@ export default function Canvas() {
               const showNodes =
                 nodesDisplayMode !== "never" &&
                 fig.kind !== "seam" &&
+                !(
+                  fig.kind === "mold" &&
+                  fig.nodes.length >= DENSE_MOLD_NODE_OVERLAY_THRESHOLD &&
+                  tool !== "node"
+                ) &&
                 (nodesDisplayMode === "always" ||
                   fig.id === selectedFigureId ||
                   fig.id === hoveredFigureId);
@@ -10631,6 +10645,9 @@ export default function Canvas() {
                     }
 
                     if (tool === "offset") {
+                      if (!isFigureEligibleForOffsetTool(base)) return;
+                      if (!base.closed && !hasClosedLoop(base)) return;
+
                       setSelectedFigureId(baseId);
                       setOffsetTargetId(baseId);
 

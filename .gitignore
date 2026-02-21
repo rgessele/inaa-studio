@@ -55,3 +55,4 @@ node_modules/
 /playwright/.auth/
 .debug/figure-events.log
 .debug/figure-events.log
+.debug/figure-events.log

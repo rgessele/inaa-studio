@@ -435,6 +435,8 @@ function filterFiguresBySettings(
   settings: ExportSettings
 ): Figure[] {
   return figures.filter((figure) => {
+    // Exported molds/seam pieces should not depend on diagram tool filters.
+    if (figure.kind === "mold" || figure.kind === "seam") return true;
     const enabled =
       settings.toolFilter[figure.tool as keyof ExportSettings["toolFilter"]];
     return enabled !== false;

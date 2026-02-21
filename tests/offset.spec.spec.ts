@@ -100,6 +100,7 @@ test.describe("Spec 2.1: Offset somente para o lado externo", () => {
       const fig = {
         id: "fig_square",
         tool: "line" as const,
+        kind: "mold" as const,
         x: 0,
         y: 0,
         rotation: 0,
@@ -164,6 +165,7 @@ test.describe("Spec 2.1: Offset somente para o lado externo", () => {
       const fig = {
         id: "fig_triangle",
         tool: "line" as const,
+        kind: "mold" as const,
         x: 0,
         y: 0,
         rotation: 0,
@@ -240,6 +242,7 @@ test.describe("Spec 2.2: Offset somente no loop externo", () => {
       const fig = {
         id: "fig_with_hole",
         tool: "line" as const,
+        kind: "mold" as const,
         x: 0,
         y: 0,
         rotation: 0,
@@ -327,6 +330,7 @@ test.describe("Spec 3.1: Aplicar margem na figura inteira", () => {
       const fig = {
         id: "fig_rect",
         tool: "line" as const,
+        kind: "mold" as const,
         x: 0,
         y: 0,
         rotation: 0,
@@ -392,6 +396,7 @@ test.describe("Spec 3.2: Aplicar margem em uma única aresta", () => {
       const fig = {
         id: "fig_rect",
         tool: "line" as const,
+        kind: "mold" as const,
         x: 0,
         y: 0,
         rotation: 0,
@@ -479,6 +484,7 @@ test.describe("Spec 4: Valores diferentes por aresta", () => {
       const fig = {
         id: "fig_square",
         tool: "line" as const,
+        kind: "mold" as const,
         x: 0,
         y: 0,
         rotation: 0,
@@ -549,6 +555,7 @@ test.describe("Spec 5: Critérios de aceitação", () => {
       const fig = {
         id: "fig_circle",
         tool: "circle" as const,
+        kind: "mold" as const,
         x: 250,  // Circle center in world coords
         y: 250,
         rotation: 0,

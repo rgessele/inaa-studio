@@ -59,6 +59,8 @@ interface FigureRendererProps {
   ) => void;
 }
 
+const DENSE_LINEAR_CONTOUR_THRESHOLD = 96;
+
 type Vec2 = { x: number; y: number };
 
 function len(v: Vec2): number {
@@ -179,6 +181,16 @@ const FigureRenderer = ({
 }: FigureRendererProps) => {
   const isTextFigure = figure.tool === "text";
   const supportsPiques = figure.closed || hasClosedLoop(figure);
+  const isDenseLinearContour =
+    figure.closed &&
+    figure.edges.length >= DENSE_LINEAR_CONTOUR_THRESHOLD &&
+    figure.edges.every((e) => e.kind === "line");
+  const contourLineCap: "round" | "butt" = isDenseLinearContour
+    ? "butt"
+    : "round";
+  const contourLineJoin: "round" | "miter" = isDenseLinearContour
+    ? "miter"
+    : "round";
 
   // Compute polyline data. For figures with branches (e.g., merged figures
   // with a line coming off an edge), we need to render edge-by-edge instead
@@ -524,8 +536,8 @@ const FigureRenderer = ({
             fillEnabled={false}
             closed={false}
             dash={dash}
-            lineCap="round"
-            lineJoin="round"
+            lineCap={contourLineCap}
+            lineJoin={contourLineJoin}
             hitStrokeWidth={hitStrokeWidth}
             perfectDrawEnabled={false}
             shadowForStrokeEnabled={false}
@@ -561,8 +573,8 @@ const FigureRenderer = ({
           fillEnabled={hitFillEnabled}
           closed={figure.closed}
           dash={dash}
-          lineCap="round"
-          lineJoin="round"
+          lineCap={contourLineCap}
+          lineJoin={contourLineJoin}
           hitStrokeWidth={hitStrokeWidth}
           perfectDrawEnabled={false} // Optimization: Disable perfect draw
           shadowForStrokeEnabled={false} // Optimization: Disable shadow

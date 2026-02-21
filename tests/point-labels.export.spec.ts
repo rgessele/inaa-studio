@@ -52,6 +52,14 @@ test("point labels: toolbar cycle + SVG export respects editor mode", async ({
 
   // Export modal: enable include labels and export SVG
   await page.getByRole("button", { name: "Exportar" }).click();
+  const includeConventionalInTest1 = page.getByRole("switch", {
+    name: "Imprimir figuras convencionais",
+  });
+  if (
+    (await includeConventionalInTest1.getAttribute("aria-checked")) !== "true"
+  ) {
+    await includeConventionalInTest1.click();
+  }
   await page.getByRole("switch", { name: "Rótulos de pontos" }).click();
 
   const download1 = await Promise.all([
@@ -125,6 +133,14 @@ test("point labels: global vs per-figure + alpha modes in SVG", async ({
 
   // Export SVG with labels ON: should contain 1..8
   await page.getByRole("button", { name: "Exportar" }).click();
+  const includeConventionalInTest2 = page.getByRole("switch", {
+    name: "Imprimir figuras convencionais",
+  });
+  if (
+    (await includeConventionalInTest2.getAttribute("aria-checked")) !== "true"
+  ) {
+    await includeConventionalInTest2.click();
+  }
   await page.getByRole("switch", { name: "Rótulos de pontos" }).click();
 
   const downloadGlobal = await Promise.all([
@@ -280,6 +296,14 @@ test("point labels: PDF export toggles inclusion (size sanity)", async ({
 
   // Export PDF with labels included.
   await page.getByRole("button", { name: "Exportar", exact: true }).click();
+  const includeConventionalInTest3 = page.getByRole("switch", {
+    name: "Imprimir figuras convencionais",
+  });
+  if (
+    (await includeConventionalInTest3.getAttribute("aria-checked")) !== "true"
+  ) {
+    await includeConventionalInTest3.click();
+  }
   await page.getByRole("switch", { name: "Rótulos de pontos" }).click();
 
   const downloadWithLabels = await Promise.all([

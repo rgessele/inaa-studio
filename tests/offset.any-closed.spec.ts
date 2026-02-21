@@ -49,6 +49,7 @@ test("margem: funciona em figura fechada com edges fora de ordem", async ({
     const fig = {
       id: "fig_base",
       tool: "line" as const,
+      kind: "mold" as const,
       x: 0,
       y: 0,
       rotation: 0,
