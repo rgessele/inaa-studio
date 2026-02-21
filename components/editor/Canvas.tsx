@@ -1225,9 +1225,14 @@ function getNodeById(nodes: FigureNode[], id: string): FigureNode | undefined {
 function nearestOnEdgeLocal(
   figure: Figure,
   edge: FigureEdge,
-  pLocal: Vec2
+  pLocal: Vec2,
+  curveSteps = 40
 ): { d: number; t: number; pointLocal: Vec2 } | null {
-  const pts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 1 : 40);
+  const pts = edgeLocalPoints(
+    figure,
+    edge,
+    edge.kind === "line" ? 1 : Math.max(8, Math.round(curveSteps))
+  );
   if (pts.length < 2) return null;
 
   let bestD = Number.POSITIVE_INFINITY;
@@ -1252,12 +1257,13 @@ function nearestOnEdgeLocal(
 
 function findNearestEdge(
   figure: Figure,
-  pLocal: Vec2
+  pLocal: Vec2,
+  curveSteps = 40
 ): { best: EdgeHover; bestDist: number } {
   let best: EdgeHover = null;
   let bestDist = Number.POSITIVE_INFINITY;
   for (const edge of figure.edges) {
-    const hit = nearestOnEdgeLocal(figure, edge, pLocal);
+    const hit = nearestOnEdgeLocal(figure, edge, pLocal, curveSteps);
     if (!hit) continue;
     if (hit.d < bestDist) {
       bestDist = hit.d;
@@ -1275,13 +1281,14 @@ function findNearestEdge(
 function findNearestEdgeInSet(
   figure: Figure,
   pLocal: Vec2,
-  edgeIds: Set<string>
+  edgeIds: Set<string>,
+  curveSteps = 40
 ): { best: EdgeHover; bestDist: number } {
   let best: EdgeHover = null;
   let bestDist = Number.POSITIVE_INFINITY;
   for (const edge of figure.edges) {
     if (!edgeIds.has(edge.id)) continue;
-    const hit = nearestOnEdgeLocal(figure, edge, pLocal);
+    const hit = nearestOnEdgeLocal(figure, edge, pLocal, curveSteps);
     if (!hit) continue;
     if (hit.d < bestDist) {
       bestDist = hit.d;
@@ -1296,42 +1303,75 @@ function findNearestEdgeInSet(
   return { best, bestDist };
 }
 
-function findNearestEdgeAcrossFigures(
+type EdgePickCandidate = {
+  figure: Figure;
+  edge: FigureEdge;
+  local: Vec2;
+  hover: EdgeHover;
+  distance: number;
+  figureIndex: number;
+  edgeIndex: number;
+};
+
+function findNearestEdgeCandidatesAcrossFigures(
   figures: Figure[],
   pWorld: Vec2,
-  thresholdWorld: number
-): { figure: Figure; edge: FigureEdge; local: Vec2 } | null {
-  let bestDist = Number.POSITIVE_INFINITY;
-  let bestFig: Figure | null = null;
-  let bestEdge: FigureEdge | null = null;
-  let bestLocal: Vec2 | null = null;
-  let bestIndex = -1;
-
+  thresholdWorld: number,
+  curveSteps = 40
+): EdgePickCandidate[] {
+  const out: EdgePickCandidate[] = [];
   for (let i = 0; i < figures.length; i++) {
     const fig = figures[i];
     if (fig.kind === "seam") continue;
     if (!fig.edges.length) continue;
 
     const local = worldToFigureLocal(fig, pWorld);
-    const hit = findNearestEdge(fig, local);
-    if (!hit.best || hit.bestDist > thresholdWorld) continue;
-
-    if (
-      hit.bestDist < bestDist - 1e-6 ||
-      (Math.abs(hit.bestDist - bestDist) <= 1e-6 && i > bestIndex)
-    ) {
-      const edge = fig.edges.find((ed) => ed.id === hit.best!.edgeId) ?? null;
-      if (!edge) continue;
-      bestDist = hit.bestDist;
-      bestFig = fig;
-      bestEdge = edge;
-      bestLocal = local;
-      bestIndex = i;
+    for (let edgeIndex = 0; edgeIndex < fig.edges.length; edgeIndex++) {
+      const edge = fig.edges[edgeIndex]!;
+      const hit = nearestOnEdgeLocal(fig, edge, local, curveSteps);
+      if (!hit || hit.d > thresholdWorld) continue;
+      out.push({
+        figure: fig,
+        edge,
+        local,
+        hover: {
+          figureId: fig.id,
+          edgeId: edge.id,
+          t: hit.t,
+          pointLocal: hit.pointLocal,
+        },
+        distance: hit.d,
+        figureIndex: i,
+        edgeIndex,
+      });
     }
   }
 
-  if (!bestFig || !bestEdge || !bestLocal) return null;
-  return { figure: bestFig, edge: bestEdge, local: bestLocal };
+  out.sort((a, b) => {
+    if (Math.abs(a.distance - b.distance) > 1e-6) {
+      return a.distance - b.distance;
+    }
+    // Prefer top-most figure/edge (later in array) when distances tie.
+    if (a.figureIndex !== b.figureIndex) return b.figureIndex - a.figureIndex;
+    return b.edgeIndex - a.edgeIndex;
+  });
+
+  return out;
+}
+
+function findNearestEdgeAcrossFigures(
+  figures: Figure[],
+  pWorld: Vec2,
+  thresholdWorld: number
+): { figure: Figure; edge: FigureEdge; local: Vec2 } | null {
+  const hits = findNearestEdgeCandidatesAcrossFigures(
+    figures,
+    pWorld,
+    thresholdWorld
+  );
+  const best = hits[0];
+  if (!best) return null;
+  return { figure: best.figure, edge: best.edge, local: best.local };
 }
 
 function isFigureEligibleForExtractSource(
@@ -1369,6 +1409,102 @@ function edgeWorldSamples(figure: Figure, edge: FigureEdge): Vec2[] {
   const steps = edge.kind === "line" ? 1 : 60;
   const local = edgeLocalPoints(figure, edge, steps);
   return local.map((p) => figureLocalToWorld(figure, p));
+}
+
+function edgeWorldEndpoints(
+  figure: Figure,
+  edge: FigureEdge
+): { start: Vec2; end: Vec2 } | null {
+  const from = figure.nodes.find((n) => n.id === edge.from) ?? null;
+  const to = figure.nodes.find((n) => n.id === edge.to) ?? null;
+  if (!from || !to) return null;
+  return {
+    start: figureLocalToWorld(figure, { x: from.x, y: from.y }),
+    end: figureLocalToWorld(figure, { x: to.x, y: to.y }),
+  };
+}
+
+type ExtractConnectionPlacement = {
+  mode: "append" | "prepend";
+  reversed: boolean;
+  score: number;
+};
+
+function getExtractConnectionPlacements(
+  pathWorld: Vec2[],
+  startWorld: Vec2,
+  endWorld: Vec2,
+  connectTolWorld: number
+): ExtractConnectionPlacement[] {
+  if (pathWorld.length === 0) return [];
+  const first = pathWorld[0]!;
+  const last = pathWorld[pathWorld.length - 1]!;
+  const out: ExtractConnectionPlacement[] = [];
+
+  const dLastToStart = dist(last, startWorld);
+  if (dLastToStart <= connectTolWorld) {
+    out.push({ mode: "append", reversed: false, score: dLastToStart });
+  }
+
+  const dLastToEnd = dist(last, endWorld);
+  if (dLastToEnd <= connectTolWorld) {
+    out.push({ mode: "append", reversed: true, score: dLastToEnd });
+  }
+
+  const dFirstToStart = dist(first, startWorld);
+  if (dFirstToStart <= connectTolWorld) {
+    out.push({ mode: "prepend", reversed: true, score: dFirstToStart });
+  }
+
+  const dFirstToEnd = dist(first, endWorld);
+  if (dFirstToEnd <= connectTolWorld) {
+    out.push({ mode: "prepend", reversed: false, score: dFirstToEnd });
+  }
+
+  out.sort((a, b) => {
+    if (Math.abs(a.score - b.score) > 1e-6) return a.score - b.score;
+    // Keep the common left-to-right interaction if equally good.
+    if (a.mode !== b.mode) return a.mode === "append" ? -1 : 1;
+    if (a.reversed !== b.reversed) return a.reversed ? 1 : -1;
+    return 0;
+  });
+
+  return out;
+}
+
+function pickEdgeForMoldExtraction(
+  figures: Figure[],
+  clickWorld: Vec2,
+  thresholdWorld: number,
+  draft: MoldExtractionDraft | null,
+  connectTolWorld: number,
+  curveSteps = 96
+): EdgePickCandidate | null {
+  const hits = findNearestEdgeCandidatesAcrossFigures(
+    figures,
+    clickWorld,
+    thresholdWorld,
+    curveSteps
+  );
+  if (!hits.length) return null;
+  if (!draft || draft.pathWorld.length === 0) return hits[0]!;
+
+  for (const hit of hits) {
+    const ends = edgeWorldEndpoints(hit.figure, hit.edge);
+    if (!ends) continue;
+    const placements = getExtractConnectionPlacements(
+      draft.pathWorld,
+      ends.start,
+      ends.end,
+      connectTolWorld
+    );
+    if (placements.length > 0) {
+      return hit;
+    }
+  }
+
+  // Fallback to nearest edge (will trigger connectivity error message).
+  return hits[0]!;
 }
 
 function cross2(a: Vec2, b: Vec2): number {
@@ -3553,7 +3689,7 @@ export default function Canvas() {
   );
 
   const appendEdgeToMoldExtraction = useCallback(
-    (figure: Figure, edge: FigureEdge) => {
+    (figure: Figure, edge: FigureEdge, clickWorld?: Vec2) => {
       const current =
         moldExtractionDraftRef.current ??
         ({
@@ -3572,6 +3708,14 @@ export default function Canvas() {
         }
       }
 
+      const alreadySelected = current.segments.some(
+        (seg) => seg.sourceId === figure.id && seg.edgeId === edge.id
+      );
+      if (alreadySelected) {
+        toast("Esta aresta já foi selecionada.", "error");
+        return;
+      }
+
       const raw = edgeWorldSamples(figure, edge);
       if (raw.length < 2) return;
 
@@ -3579,39 +3723,55 @@ export default function Canvas() {
       let oriented = raw;
       let t0 = 0;
       let t1 = 1;
+      let insertMode: "append" | "prepend" = "append";
 
       if (current.pathWorld.length > 0) {
-        const last = current.pathWorld[current.pathWorld.length - 1]!;
-        const firstRaw = raw[0]!;
-        const lastRaw = raw[raw.length - 1]!;
-        const matchStart = dist(last, firstRaw) <= connectTolWorld;
-        const matchEnd = dist(last, lastRaw) <= connectTolWorld;
-
-        if (matchStart) {
-          oriented = raw;
-          t0 = 0;
-          t1 = 1;
-        } else if (matchEnd) {
+        const ends = edgeWorldEndpoints(figure, edge);
+        const placements = ends
+          ? getExtractConnectionPlacements(
+              current.pathWorld,
+              ends.start,
+              ends.end,
+              connectTolWorld
+            )
+          : [];
+        const chosen = placements[0] ?? null;
+        if (!chosen) {
+          toast(
+            "A aresta selecionada não conecta com as extremidades do perímetro atual.",
+            "error"
+          );
+          return;
+        }
+        insertMode = chosen.mode;
+        if (chosen.reversed) {
           oriented = [...raw].reverse();
           t0 = 1;
           t1 = 0;
-        } else {
-          toast("A aresta selecionada não conecta com o último segmento.", "error");
-          return;
+        }
+      } else if (clickWorld) {
+        const firstRaw = raw[0]!;
+        const lastRaw = raw[raw.length - 1]!;
+        if (dist(clickWorld, lastRaw) + 1e-6 < dist(clickWorld, firstRaw)) {
+          oriented = [...raw].reverse();
+          t0 = 1;
+          t1 = 0;
         }
       }
 
-      const nextSegments = [
-        ...current.segments,
-        {
-          sourceDomain: extractSourceMode,
-          sourceId: figure.id,
-          edgeId: edge.id,
-          t0,
-          t1,
-          pointsWorld: oriented,
-        } satisfies ExtractSegmentDraft,
-      ];
+      const nextSegment = {
+        sourceDomain: extractSourceMode,
+        sourceId: figure.id,
+        edgeId: edge.id,
+        t0,
+        t1,
+        pointsWorld: oriented,
+      } satisfies ExtractSegmentDraft;
+
+      const nextSegments =
+        insertMode === "append"
+          ? [...current.segments, nextSegment]
+          : [nextSegment, ...current.segments];
 
       const nextPath = buildPathFromExtractSegments(nextSegments);
       let nextClosed = false;
@@ -6583,18 +6743,22 @@ export default function Canvas() {
     }
 
     if (tool === "extractMold" && e.evt.button === 0) {
-      const thresholdWorld = 10 / scale;
+      const thresholdWorld = 14 / scale;
+      const connectTolWorld = 8 / Math.max(0.1, scale);
       const candidates = figures.filter((f) =>
         isFigureEligibleForExtractSource(f, extractSourceMode)
       );
-      const edgePick = findNearestEdgeAcrossFigures(
+      const edgePick = pickEdgeForMoldExtraction(
         candidates,
         world,
-        thresholdWorld
+        thresholdWorld,
+        moldExtractionDraftRef.current,
+        connectTolWorld,
+        96
       );
       if (!edgePick) return;
 
-      appendEdgeToMoldExtraction(edgePick.figure, edgePick.edge);
+      appendEdgeToMoldExtraction(edgePick.figure, edgePick.edge, world);
       return;
     }
 
@@ -7934,25 +8098,23 @@ export default function Canvas() {
     }
 
     if (tool === "extractMold") {
-      const thresholdWorld = 10 / scale;
+      const thresholdWorld = 14 / scale;
+      const connectTolWorld = 8 / Math.max(0.1, scale);
       const candidates = figures.filter((f) =>
         isFigureEligibleForExtractSource(f, extractSourceMode)
       );
-      const edgePick = findNearestEdgeAcrossFigures(
+      const edgePick = pickEdgeForMoldExtraction(
         candidates,
         world,
-        thresholdWorld
+        thresholdWorld,
+        moldExtractionDraftRef.current,
+        connectTolWorld,
+        96
       );
       if (!edgePick) {
         if (hoveredEdge) setHoveredEdge(null);
       } else {
-        const local = worldToFigureLocal(edgePick.figure, world);
-        const hit = findNearestEdge(edgePick.figure, local);
-        if (!hit.best || hit.bestDist > thresholdWorld) {
-          if (hoveredEdge) setHoveredEdge(null);
-        } else {
-          setHoveredEdge(hit.best);
-        }
+        setHoveredEdge(edgePick.hover);
       }
     }
 
@@ -9214,6 +9376,45 @@ export default function Canvas() {
       </>
     );
   }, [moldExtractionDraft, scale, tool]);
+
+  const extractMoldEdgeHoverOverlay = useMemo(() => {
+    if (tool !== "extractMold") return null;
+    if (!hoveredEdge) return null;
+
+    const fig = figures.find((f) => f.id === hoveredEdge.figureId) ?? null;
+    if (!fig || fig.kind === "seam") return null;
+    if (!isFigureEligibleForExtractSource(fig, extractSourceMode)) return null;
+
+    const edge = fig.edges.find((e) => e.id === hoveredEdge.edgeId) ?? null;
+    if (!edge) return null;
+
+    const pts = edgeLocalPoints(fig, edge, edge.kind === "line" ? 2 : 160);
+    if (pts.length < 2) return null;
+    const flat: number[] = [];
+    for (const p of pts) flat.push(p.x, p.y);
+
+    return (
+      <Group x={fig.x} y={fig.y} rotation={fig.rotation || 0} listening={false}>
+        <Line
+          points={flat}
+          stroke="rgba(22, 163, 74, 0.95)"
+          strokeWidth={3 / scale}
+          lineCap="round"
+          lineJoin="round"
+          listening={false}
+        />
+        <Circle
+          x={hoveredEdge.pointLocal.x}
+          y={hoveredEdge.pointLocal.y}
+          radius={4.5 / scale}
+          fill="#16a34a"
+          stroke="#ffffff"
+          strokeWidth={1.2 / scale}
+          listening={false}
+        />
+      </Group>
+    );
+  }, [extractSourceMode, figures, hoveredEdge, scale, tool]);
 
   const angleLockGuideOverlay = useMemo(() => {
     if (!modifierKeys.shift) return null;
@@ -12077,6 +12278,8 @@ export default function Canvas() {
             {curveDraftPreview}
 
             {moldExtractionPreview}
+
+            {extractMoldEdgeHoverOverlay}
 
             {draftMeasuresOverlay}
 
