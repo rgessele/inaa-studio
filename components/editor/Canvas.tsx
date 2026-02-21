@@ -1467,12 +1467,12 @@ function buildClosedMoldGeometryFromSegments(
     const isLast = idx === segments.length - 1;
     const canCloseOnFirst =
       isLast &&
-      firstNode &&
+      firstNode !== null &&
       dist({ x: firstNode.x, y: firstNode.y }, edgeGeom.endWorld) <=
         closeToleranceWorld;
 
     let endNode: FigureNode;
-    if (canCloseOnFirst) {
+    if (canCloseOnFirst && firstNode) {
       endNode = firstNode;
     } else {
       endNode = makeNode(edgeGeom.endWorld);

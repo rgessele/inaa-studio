@@ -17,6 +17,7 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 type NotificationStatus = "draft" | "scheduled" | "sent" | "canceled";
 type NotificationType = "info" | "warning" | "urgent";
+type NotificationExpiryFilter = "" | "active" | "expired";
 
 function toStr(v: string | string[] | undefined): string {
   if (Array.isArray(v)) return v[0] ?? "";
@@ -28,6 +29,12 @@ function toStatusFilter(raw: string): NotificationStatus | "" {
   if (raw === "scheduled") return "scheduled";
   if (raw === "sent") return "sent";
   if (raw === "canceled") return "canceled";
+  return "";
+}
+
+function toExpiryFilter(raw: string): NotificationExpiryFilter {
+  if (raw === "active") return "active";
+  if (raw === "expired") return "expired";
   return "";
 }
 
@@ -45,6 +52,13 @@ function fmtDateTime(iso: string | null): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return "—";
   return d.toLocaleString("pt-BR");
+}
+
+function isExpiredAt(iso: string | null): boolean {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return false;
+  return t <= Date.now();
 }
 
 function statusBadgeClass(status: NotificationStatus): string {
@@ -90,21 +104,28 @@ export default async function AdminNotificationsPage({
 }) {
   const sp = await searchParams;
   const statusFilter = toStatusFilter(toStr(sp.status).trim());
+  const expiryFilter = toExpiryFilter(toStr(sp.expiry).trim());
   const errorMessage = toStr(sp.error).trim();
   const successMessage = toStr(sp.ok).trim();
+  const nowIso = new Date().toISOString();
 
   const supabase = await createClient();
 
   let query = supabase
     .from("admin_notifications")
     .select(
-      "id, title, body, type, status, action_url, image_url, image_alt, created_at, scheduled_at, sent_at"
+      "id, title, body, type, status, action_url, image_url, image_alt, created_at, scheduled_at, sent_at, expires_at"
     )
     .order("created_at", { ascending: false })
     .limit(100);
 
   if (statusFilter) {
     query = query.eq("status", statusFilter);
+  }
+  if (expiryFilter === "expired") {
+    query = query.not("expires_at", "is", null).lte("expires_at", nowIso);
+  } else if (expiryFilter === "active") {
+    query = query.or(`expires_at.is.null,expires_at.gt.${nowIso}`);
   }
 
   const { data, error } = await query;
@@ -120,6 +141,7 @@ export default async function AdminNotificationsPage({
     created_at: string;
     scheduled_at: string | null;
     sent_at: string | null;
+    expires_at: string | null;
   }>;
 
   return (
@@ -170,6 +192,19 @@ export default async function AdminNotificationsPage({
             <option value="scheduled">Agendada</option>
             <option value="sent">Enviada</option>
             <option value="canceled">Cancelada</option>
+          </select>
+          <label htmlFor="expiry" className="text-sm font-medium">
+            Expiração
+          </label>
+          <select
+            id="expiry"
+            name="expiry"
+            defaultValue={expiryFilter}
+            className="h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-white/5 px-3 text-sm text-gray-900 dark:text-gray-100"
+          >
+            <option value="">Todas</option>
+            <option value="active">Não expiradas</option>
+            <option value="expired">Expiradas</option>
           </select>
           <button
             type="submit"
@@ -222,75 +257,82 @@ export default async function AdminNotificationsPage({
             Nenhuma notificação encontrada.
           </div>
         ) : (
-          rows.map((row) => (
-            <div
-              key={row.id}
-              className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark shadow-subtle p-4"
-            >
-              <div className="flex items-start gap-3">
-                <input
-                  type="checkbox"
-                  name="notification_ids"
-                  value={row.id}
-                  form="bulk-actions-form"
-                  className="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-700 accent-primary"
-                  aria-label={`Selecionar ${row.title}`}
-                />
+          rows.map((row) => {
+            const isExpired = isExpiredAt(row.expires_at);
+            return (
+              <div
+                key={row.id}
+                className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark shadow-subtle p-4"
+              >
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    name="notification_ids"
+                    value={row.id}
+                    form="bulk-actions-form"
+                    className="mt-1 h-4 w-4 rounded border-gray-300 dark:border-gray-700 accent-primary"
+                    aria-label={`Selecionar ${row.title}`}
+                  />
 
-                <details className="flex-1">
-                  <summary className="cursor-pointer select-none text-sm text-gray-900 dark:text-gray-100">
-                    <span className="inline-flex flex-wrap items-center gap-2">
-                      <span className="text-base font-semibold">{row.title}</span>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(row.status)}`}
-                      >
-                        {statusLabel(row.status)}
-                      </span>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${typeBadgeClass(row.type)}`}
-                      >
-                        {typeLabel(row.type)}
-                      </span>
-                    </span>
-                  </summary>
-
-                  <div className="mt-3 pl-1">
-                    <p className="text-sm whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-                      {row.body}
-                    </p>
-
-                    {row.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={row.image_url}
-                        alt={row.image_alt || row.title}
-                        className="mt-3 max-h-48 rounded-lg border border-gray-200 dark:border-gray-700 object-contain bg-black/5 dark:bg-white/5"
-                      />
-                    ) : null}
-
-                    <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-gray-500 dark:text-gray-400">
-                      <p>Criada: {fmtDateTime(row.created_at)}</p>
-                      <p>Agendada: {fmtDateTime(row.scheduled_at)}</p>
-                      <p>Enviada: {fmtDateTime(row.sent_at)}</p>
-                    </div>
-
-                    {row.action_url ? (
-                      <p className="mt-2 text-xs">
-                        <a
-                          href={row.action_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-primary hover:underline break-all"
+                  <details className="flex-1">
+                    <summary className="cursor-pointer select-none text-sm text-gray-900 dark:text-gray-100">
+                      <span className="inline-flex flex-wrap items-center gap-2">
+                        <span className="text-base font-semibold">{row.title}</span>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(row.status)}`}
                         >
-                          {row.action_url}
-                        </a>
-                      </p>
-                    ) : null}
+                          {statusLabel(row.status)}
+                        </span>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${typeBadgeClass(row.type)}`}
+                        >
+                          {typeLabel(row.type)}
+                        </span>
+                        {isExpired ? (
+                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                            Expirada
+                          </span>
+                        ) : null}
+                      </span>
+                    </summary>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {row.status === "draft" || row.status === "scheduled" ? (
-                        <>
-                          {row.status !== "sent" ? (
+                    <div className="mt-3 pl-1">
+                      <p className="text-sm whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+                        {row.body}
+                      </p>
+
+                      {row.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={row.image_url}
+                          alt={row.image_alt || row.title}
+                          className="mt-3 max-h-48 rounded-lg border border-gray-200 dark:border-gray-700 object-contain bg-black/5 dark:bg-white/5"
+                        />
+                      ) : null}
+
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-2 text-xs text-gray-500 dark:text-gray-400">
+                        <p>Criada: {fmtDateTime(row.created_at)}</p>
+                        <p>Agendada: {fmtDateTime(row.scheduled_at)}</p>
+                        <p>Enviada: {fmtDateTime(row.sent_at)}</p>
+                        <p>Expira: {fmtDateTime(row.expires_at)}</p>
+                      </div>
+
+                      {row.action_url ? (
+                        <p className="mt-2 text-xs">
+                          <a
+                            href={row.action_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-primary hover:underline break-all"
+                          >
+                            {row.action_url}
+                          </a>
+                        </p>
+                      ) : null}
+
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        {row.status === "draft" || row.status === "scheduled" ? (
+                          <>
                             <form action={publishNotificationFormAction}>
                               <input type="hidden" name="notification_id" value={row.id} />
                               <FormSubmitButton
@@ -299,33 +341,33 @@ export default async function AdminNotificationsPage({
                                 className="h-8 px-3 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"
                               />
                             </form>
-                          ) : null}
-                          <form action={cancelNotificationFormAction}>
-                            <input type="hidden" name="notification_id" value={row.id} />
-                            <FormSubmitButton
-                              idleText="Cancelar"
-                              pendingText="Cancelando..."
-                              className="h-8 px-3 rounded-md border border-gray-300 dark:border-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10"
-                            />
-                          </form>
-                        </>
-                      ) : null}
-                      <form action={deleteNotificationFormAction}>
-                        <input type="hidden" name="notification_id" value={row.id} />
-                        <ConfirmModalSubmitButton
-                          idleText="Apagar"
-                          pendingText="Apagando..."
-                          className="h-8 px-3 rounded-md border border-red-300 dark:border-red-900/40 text-xs font-medium text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/20"
-                          confirmTitle="Apagar notificação"
-                          confirmDescription="Tem certeza que deseja apagar esta notificação? Se ela já foi enviada, será removida da lista de todos os usuários."
-                        />
-                      </form>
+                            <form action={cancelNotificationFormAction}>
+                              <input type="hidden" name="notification_id" value={row.id} />
+                              <FormSubmitButton
+                                idleText="Cancelar"
+                                pendingText="Cancelando..."
+                                className="h-8 px-3 rounded-md border border-gray-300 dark:border-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10"
+                              />
+                            </form>
+                          </>
+                        ) : null}
+                        <form action={deleteNotificationFormAction}>
+                          <input type="hidden" name="notification_id" value={row.id} />
+                          <ConfirmModalSubmitButton
+                            idleText="Apagar"
+                            pendingText="Apagando..."
+                            className="h-8 px-3 rounded-md border border-red-300 dark:border-red-900/40 text-xs font-medium text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/20"
+                            confirmTitle="Apagar notificação"
+                            confirmDescription="Tem certeza que deseja apagar esta notificação? Se ela já foi enviada, será removida da lista de todos os usuários."
+                          />
+                        </form>
+                      </div>
                     </div>
-                  </div>
-                </details>
+                  </details>
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
@@ -341,15 +383,15 @@ async function createNotificationFormAction(formData: FormData) {
   const actionUrl = String(formData.get("action_url") ?? "");
   const deliveryMode = String(formData.get("delivery_mode") ?? "now");
   const scheduledAtLocal = String(formData.get("scheduled_at_local") ?? "");
+  const expiresAtLocal = String(formData.get("expires_at_local") ?? "");
   const imageAlt = String(formData.get("image_alt") ?? "");
   const imageEntry = formData.get("image");
   const imageFile =
     imageEntry instanceof File && imageEntry.size > 0 ? imageEntry : null;
 
-  let scheduledAtIso: string | null = null;
-  if (deliveryMode === "schedule" && scheduledAtLocal.trim()) {
-    scheduledAtIso = new Date(scheduledAtLocal).toISOString();
-  }
+  const scheduledAtIso =
+    deliveryMode === "schedule" ? scheduledAtLocal.trim() || null : null;
+  const expiresAtIso = expiresAtLocal.trim() || null;
 
   try {
     await adminCreateNotification({
@@ -359,6 +401,7 @@ async function createNotificationFormAction(formData: FormData) {
       actionUrl: actionUrl || null,
       deliveryMode,
       scheduledAtIso,
+      expiresAtIso,
       imageFile,
       imageAlt: imageAlt || null,
     });

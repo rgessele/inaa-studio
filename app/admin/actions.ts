@@ -1019,6 +1019,7 @@ export async function adminCreateNotification(params: {
   actionUrl?: string | null;
   deliveryMode?: string | null;
   scheduledAtIso?: string | null;
+  expiresAtIso?: string | null;
   imageFile?: File | null;
   imageAlt?: string | null;
 }) {
@@ -1050,6 +1051,29 @@ export async function adminCreateNotification(params: {
     scheduledAtIso = parsed.toISOString();
   }
 
+  let expiresAtIso: string | null = null;
+  const expiresRaw = (params.expiresAtIso ?? "").trim();
+  if (expiresRaw) {
+    const parsed = new Date(expiresRaw);
+    if (!Number.isFinite(parsed.getTime())) {
+      throw new Error("Data/hora de expiração inválida");
+    }
+    if (parsed.getTime() <= Date.now()) {
+      throw new Error("Data/hora de expiração deve estar no futuro");
+    }
+    expiresAtIso = parsed.toISOString();
+  }
+
+  if (scheduledAtIso && expiresAtIso) {
+    const scheduledMs = new Date(scheduledAtIso).getTime();
+    const expiresMs = new Date(expiresAtIso).getTime();
+    if (expiresMs <= scheduledMs) {
+      throw new Error(
+        "A expiração deve ser posterior ao horário de agendamento"
+      );
+    }
+  }
+
   const admin = createAdminClient();
   const { data: inserted, error: insertError } = await admin
     .from("admin_notifications")
@@ -1061,6 +1085,7 @@ export async function adminCreateNotification(params: {
       status: "draft",
       created_by: user.id,
       image_alt: imageAlt,
+      expires_at: expiresAtIso,
     })
     .select("id")
     .single();
@@ -1125,6 +1150,7 @@ export async function adminCreateNotification(params: {
       type,
       delivery_mode: deliveryMode,
       scheduled_at: scheduledAtIso,
+      expires_at: expiresAtIso,
       has_image: Boolean(maybeImage && maybeImage.size > 0),
     },
   });
@@ -1140,11 +1166,16 @@ export async function adminPublishNotification(notificationId: string) {
   const id = notificationId.trim();
   if (!id) throw new Error("Notificação inválida");
 
-  const { error } = await supabase.rpc("publish_admin_notification", {
+  const { data, error } = await supabase.rpc("publish_admin_notification", {
     p_notification_id: id,
   });
 
   if (error) throw new Error(error.message);
+  if (!data) {
+    throw new Error(
+      "Não foi possível publicar esta notificação (talvez já enviada, cancelada ou expirada)."
+    );
+  }
 
   await audit({
     actorUserId: user.id,
@@ -1256,18 +1287,18 @@ export async function adminApplyBulkNotificationAction(params: {
 
   if (action === "publish") {
     for (const id of ids) {
-      const { error } = await supabase.rpc("publish_admin_notification", {
+      const { data, error } = await supabase.rpc("publish_admin_notification", {
         p_notification_id: id,
       });
-      if (error) failed++;
+      if (error || !data) failed++;
       else ok++;
     }
   } else if (action === "cancel") {
     for (const id of ids) {
-      const { error } = await supabase.rpc("cancel_admin_notification", {
+      const { data, error } = await supabase.rpc("cancel_admin_notification", {
         p_notification_id: id,
       });
-      if (error) failed++;
+      if (error || !data) failed++;
       else ok++;
     }
   } else {

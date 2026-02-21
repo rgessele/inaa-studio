@@ -134,6 +134,21 @@ export function AdminNotificationCreateForm({
             className="h-10 w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white/70 disabled:bg-gray-100 disabled:text-gray-400 dark:bg-white/5 dark:disabled:bg-gray-900/30 dark:disabled:text-gray-500 px-3 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400/30 dark:focus:ring-white/10"
           />
         </div>
+
+        <div className="space-y-2">
+          <label htmlFor="expires_at_local" className="text-sm font-medium">
+            Data/hora de expiração (opcional)
+          </label>
+          <input
+            id="expires_at_local"
+            name="expires_at_local"
+            type="datetime-local"
+            className="h-10 w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-white/5 px-3 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400/30 dark:focus:ring-white/10"
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Após esta data, a mensagem deixa de aparecer para os usuários.
+          </p>
+        </div>
       </div>
 
       <div className="flex items-center gap-3">

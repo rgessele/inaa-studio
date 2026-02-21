@@ -17,6 +17,7 @@ type UserNotificationRow = {
   imageUrl: string | null;
   imageAlt: string | null;
   sentAt: string | null;
+  expiresAt: string | null;
 };
 
 type AdminNotificationDetail = {
@@ -28,6 +29,7 @@ type AdminNotificationDetail = {
   image_url: string | null;
   image_alt: string | null;
   sent_at: string | null;
+  expires_at: string | null;
 };
 
 type Props = {
@@ -60,6 +62,12 @@ function parseIsoToMs(value: string | null | undefined): number {
   if (!value) return 0;
   const t = Date.parse(value);
   return Number.isFinite(t) ? t : 0;
+}
+
+function isExpired(value: string | null | undefined): boolean {
+  const t = parseIsoToMs(value);
+  if (t <= 0) return false;
+  return t <= Date.now();
 }
 
 function dedupeNotificationsByNotificationId(
@@ -144,7 +152,7 @@ export function NotificationBell({ className }: Props) {
     const joined = await supabase
       .from("user_notifications")
       .select(
-        "id, notification_id, delivered_at, read_at, admin_notifications!user_notifications_notification_id_fkey(id, title, body, type, action_url, image_url, image_alt, sent_at)"
+        "id, notification_id, delivered_at, read_at, admin_notifications!user_notifications_notification_id_fkey(id, title, body, type, action_url, image_url, image_alt, sent_at, expires_at)"
       )
       .order("delivered_at", { ascending: false })
       .limit(MAX_ITEMS);
@@ -172,11 +180,14 @@ export function NotificationBell({ className }: Props) {
             imageUrl: notification.image_url,
             imageAlt: notification.image_alt,
             sentAt: notification.sent_at,
+            expiresAt: notification.expires_at,
           } satisfies UserNotificationRow;
         })
         .filter((value): value is UserNotificationRow => Boolean(value));
 
-      const deduped = dedupeNotificationsByNotificationId(mapped);
+      const deduped = dedupeNotificationsByNotificationId(mapped).filter(
+        (item) => !isExpired(item.expiresAt)
+      );
       setItems(deduped);
       setUnreadCount(deduped.filter((item) => item.readAt === null).length);
       setIsLoading(false);
@@ -208,9 +219,12 @@ export function NotificationBell({ className }: Props) {
     if (uniqueIds.length > 0) {
       const details = await supabase
         .from("admin_notifications")
-        .select("id, title, body, type, action_url, image_url, image_alt, sent_at")
+        .select(
+          "id, title, body, type, action_url, image_url, image_alt, sent_at, expires_at"
+        )
         .in("id", uniqueIds)
-        .eq("status", "sent");
+        .eq("status", "sent")
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`);
 
       if (!details.error) {
         const list = (details.data ?? []) as AdminNotificationDetail[];
@@ -234,11 +248,14 @@ export function NotificationBell({ className }: Props) {
           imageUrl: detail.image_url,
           imageAlt: detail.image_alt,
           sentAt: detail.sent_at,
+          expiresAt: detail.expires_at,
         } satisfies UserNotificationRow;
       })
       .filter((value): value is UserNotificationRow => Boolean(value));
 
-    const deduped = dedupeNotificationsByNotificationId(mapped);
+    const deduped = dedupeNotificationsByNotificationId(mapped).filter(
+      (item) => !isExpired(item.expiresAt)
+    );
     setItems(deduped);
     setUnreadCount(deduped.filter((item) => item.readAt === null).length);
     setIsLoading(false);
@@ -353,7 +370,7 @@ export function NotificationBell({ className }: Props) {
                 disabled={unreadCount <= 0}
                 className="h-7 px-2 rounded-md bg-primary hover:bg-primary-hover text-white text-[11px] disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Marcar todas
+                Ler todas
               </button>
             </div>
           </div>
@@ -418,9 +435,9 @@ export function NotificationBell({ className }: Props) {
                         href={item.actionUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="mt-2 inline-flex text-xs text-primary hover:underline"
+                        className="mt-3 inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-white hover:bg-primary-hover transition-colors"
                       >
-                        Abrir link
+                        Saber Mais
                       </a>
                     ) : null}
                   </div>

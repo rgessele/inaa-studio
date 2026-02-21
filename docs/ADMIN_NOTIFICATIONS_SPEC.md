@@ -12,6 +12,8 @@ Permitir que administradores enviem mensagens para usuários da plataforma via n
 6. Ao abrir/lê-la, contador reduz até sumir quando zerar.
 7. Admin pode apagar uma notificação já enviada, removendo-a da lista de todos os usuários.
 8. Admin pode selecionar múltiplas notificações e aplicar ação em massa (publicar, cancelar, apagar).
+9. Admin pode definir `data/hora de expiração` opcional para ocultar a mensagem dos usuários após esse momento.
+10. Lista admin permite filtrar por mensagens `expiradas` e `não expiradas`.
 
 ## Regras de Negócio
 1. Destino v1: todos os usuários ativos e não bloqueados.
@@ -21,13 +23,17 @@ Permitir que administradores enviem mensagens para usuários da plataforma via n
 5. Notificação enviada não volta para rascunho.
 6. Imagem é opcional.
 7. Imagem aceita: JPG, PNG, WEBP até 5MB.
+8. Expiração é opcional e, quando informada, deve ser futura.
+9. Se houver agendamento e expiração, `expires_at` deve ser maior que `scheduled_at`.
+10. Notificação expirada não aparece para usuário, lida ou não lida.
 
 ## Modelo de Dados
 ### `admin_notifications`
 1. Conteúdo: `title`, `body`, `type`, `action_url`.
 2. Anexo opcional: `image_url`, `image_mime_type`, `image_size_bytes`, `image_width`, `image_height`, `image_alt`.
 3. Ciclo de vida: `status` (`draft|scheduled|sent|canceled`), `scheduled_at`, `sent_at`.
-4. Auditoria: `created_by`, `created_at`, `updated_at`.
+4. Validade opcional: `expires_at`.
+5. Auditoria: `created_by`, `created_at`, `updated_at`.
 
 ### `user_notifications`
 1. Entrega por usuário: `notification_id`, `user_id`, `delivered_at`.
@@ -72,6 +78,8 @@ Permitir que administradores enviem mensagens para usuários da plataforma via n
 3. Painel lista mensagens com status de leitura.
 4. Ação “Marcar todas como lidas”.
 5. Exibe imagem opcional e link opcional por mensagem.
+6. Notificações expiradas deixam de aparecer automaticamente no sino.
+7. Tela admin com filtro de expiração para manutenção.
 
 ## Operação de Agendamento
 1. Função SQL `dispatch_due_admin_notifications` processa mensagens agendadas vencidas.
@@ -85,3 +93,4 @@ Permitir que administradores enviem mensagens para usuários da plataforma via n
 5. Badge some quando não há não lidas.
 6. Mensagem sem imagem funciona normalmente.
 7. Mensagem com imagem válida renderiza para usuário.
+8. Mensagem expirada deixa de aparecer para usuários.
