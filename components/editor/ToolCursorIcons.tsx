@@ -161,44 +161,41 @@ function getToolIconInternal(
     case "mirror":
       return (
         <Svg className={className} strokeWidth={strokeWidth}>
-          {/* Espelhar: original sólido + cópia tracejada */}
-          <path d="M12 4v16" />
-          <rect x="5" y="7" width="3.6" height="10" rx="1" />
+          {/* Espelhar: eixo + criação da cópia */}
+          <path d="M12 4v16" strokeDasharray="2 2" />
+          <rect x="5" y="7" width="3.8" height="10" rx="1" />
           <rect
-            x="15.4"
+            x="15.2"
             y="7"
-            width="3.6"
+            width="3.8"
             height="10"
             rx="1"
             strokeDasharray="2 2"
           />
-          {/* seta de criação (esquerda -> direita) */}
-          <path d="M9.4 12H14.6" />
-          <path d="M13.4 10.8L14.6 12L13.4 13.2" />
-          {/* sinal de mais dentro do lado tracejado */}
-          <path d="M16.9 11V13" />
-          <path d="M15.9 12H17.9" />
+          <path d="M9.5 12h4.8" />
+          <path d="M13.1 10.8L14.3 12L13.1 13.2" />
+          <circle cx="18.4" cy="18.3" r="2.1" />
+          <path d="M18.4 17.2v2.2" />
+          <path d="M17.3 18.3h2.2" />
         </Svg>
       );
     case "unfold":
       return (
         <Svg className={className} strokeWidth={strokeWidth}>
-          {/* Desespelhar: mostra um par espelhado com o lado "removível" tracejado */}
-          <path d="M12 4v16" />
-          <rect x="5" y="7" width="3.6" height="10" rx="1" />
+          {/* Desespelhar: desfazer/remover vínculo espelhado */}
+          <path d="M12 4v16" strokeDasharray="2 2" />
+          <rect x="5" y="7" width="3.8" height="10" rx="1" />
           <rect
-            x="15.4"
+            x="15.2"
             y="7"
-            width="3.6"
+            width="3.8"
             height="10"
             rx="1"
             strokeDasharray="2 2"
           />
-          {/* seta de remoção (direita -> esquerda) */}
-          <path d="M14.6 12H10.4" />
-          <path d="M11.6 10.8L10.4 12L11.6 13.2" />
-          {/* sinal de menos dentro do lado tracejado */}
-          <path d="M16.2 12H18.2" />
+          <path d="M6.3 17.7L17.7 6.3" />
+          <circle cx="18.4" cy="18.3" r="2.1" />
+          <path d="M17.3 18.3h2.2" />
         </Svg>
       );
     case "node":
