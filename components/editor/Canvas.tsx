@@ -345,8 +345,6 @@ type ExtractSegmentDraft = {
 };
 
 type MoldExtractionDraft = {
-  sourceMode: ExtractSourceMode;
-  sourceId: string | null;
   segments: ExtractSegmentDraft[];
   pathWorld: Vec2[];
   closed: boolean;
@@ -1375,15 +1373,11 @@ function findNearestEdgeAcrossFigures(
 }
 
 function isFigureEligibleForExtractSource(
-  figure: Figure,
-  sourceMode: ExtractSourceMode
+  figure: Figure
 ): boolean {
   if (figure.kind === "seam") return false;
   if (!figure.edges.length) return false;
-
-  if (sourceMode === "mold") return figure.kind === "mold";
-  // sourceMode === "diagram"
-  return figure.kind !== "mold" && figure.tool !== "text";
+  return figure.tool !== "text";
 }
 
 function isFigureEligibleForContourTools(figure: Figure): boolean {
@@ -1903,6 +1897,25 @@ function buildPathFromExtractSegments(segments: ExtractSegmentDraft[]): Vec2[] {
     out.push(...seg.pointsWorld.slice(1));
   }
   return out;
+}
+
+function getSingleSourceMoldFromExtractDraft(
+  draft: MoldExtractionDraft,
+  figuresById: Map<string, Figure>
+): Figure | null {
+  if (!draft.segments.length) return null;
+
+  const moldIds = new Set(
+    draft.segments
+      .filter((seg) => seg.sourceDomain === "mold")
+      .map((seg) => seg.sourceId)
+  );
+
+  if (moldIds.size !== 1) return null;
+  const sourceId = Array.from(moldIds)[0]!;
+  const source = figuresById.get(sourceId) ?? null;
+  if (!source || source.kind !== "mold") return null;
+  return source;
 }
 
 function computePiqueSegmentWorld(
@@ -3558,8 +3571,6 @@ export default function Canvas() {
   );
   const [penDraft, setPenDraft] = useState<PenDraft>(null);
   const penDraftRef = useRef<PenDraft>(null);
-  const [extractSourceMode, setExtractSourceMode] =
-    useState<ExtractSourceMode>("diagram");
   const [moldExtractionDraft, setMoldExtractionDraft] =
     useState<MoldExtractionDraft | null>(null);
   const moldExtractionDraftRef = useRef<MoldExtractionDraft | null>(null);
@@ -3664,12 +3675,10 @@ export default function Canvas() {
     (draft: MoldExtractionDraft) => {
       if (!draft.pathWorld.length) return;
 
-      const sourceMold =
-        draft.sourceMode === "mold" && draft.sourceId
-          ? (figures.find(
-              (f) => f.id === draft.sourceId && f.kind === "mold"
-            ) ?? null)
-          : null;
+      const sourceMold = getSingleSourceMoldFromExtractDraft(
+        draft,
+        new Map(figures.map((f) => [f.id, f]))
+      );
 
       const fallbackName = sourceMold
         ? `${(sourceMold.name ?? "Molde").trim() || "Molde"} - derivado`
@@ -3693,20 +3702,10 @@ export default function Canvas() {
       const current =
         moldExtractionDraftRef.current ??
         ({
-          sourceMode: extractSourceMode,
-          sourceId: extractSourceMode === "mold" ? figure.id : null,
           segments: [],
           pathWorld: [],
           closed: false,
         } satisfies MoldExtractionDraft);
-
-      if (extractSourceMode === "mold") {
-        const sourceId = current.sourceId ?? figure.id;
-        if (sourceId !== figure.id) {
-          toast("Selecione arestas de um único molde por extração.", "error");
-          return;
-        }
-      }
 
       const alreadySelected = current.segments.some(
         (seg) => seg.sourceId === figure.id && seg.edgeId === edge.id
@@ -3760,7 +3759,7 @@ export default function Canvas() {
       }
 
       const nextSegment = {
-        sourceDomain: extractSourceMode,
+        sourceDomain: figure.kind === "mold" ? "mold" : "diagram",
         sourceId: figure.id,
         edgeId: edge.id,
         t0,
@@ -3782,8 +3781,6 @@ export default function Canvas() {
       }
 
       const nextDraft: MoldExtractionDraft = {
-        sourceMode: extractSourceMode,
-        sourceId: extractSourceMode === "mold" ? current.sourceId ?? figure.id : null,
         segments: nextSegments,
         pathWorld: nextPath,
         closed: nextClosed,
@@ -3796,7 +3793,7 @@ export default function Canvas() {
         openMoldConfirmDialog(nextDraft);
       }
     },
-    [extractSourceMode, openMoldConfirmDialog, scale]
+    [openMoldConfirmDialog, scale]
   );
 
   const confirmMoldGeneration = useCallback(() => {
@@ -3859,6 +3856,16 @@ export default function Canvas() {
       t1: seg.t1,
     }));
 
+    const sourceMold = getSingleSourceMoldFromExtractDraft(
+      draft,
+      sourceFiguresById
+    );
+    const sourceMoldId = sourceMold?.id;
+    const allSegmentsFromMold = draft.segments.every(
+      (seg) => seg.sourceDomain === "mold"
+    );
+    const sourceMode = allSegmentsFromMold && sourceMoldId ? "fromMold" : "fromDiagram";
+
     const minX = Math.min(...nodes.map((p) => p.x));
     const minY = Math.min(...nodes.map((p) => p.y));
     const maxX = Math.max(...nodes.map((p) => p.x));
@@ -3866,8 +3873,6 @@ export default function Canvas() {
     const width = maxX - minX;
     const height = maxY - minY;
     const grainAngleDeg = width >= height ? 0 : 90;
-    const sourceMoldId =
-      draft.sourceMode === "mold" ? (draft.sourceId ?? undefined) : undefined;
 
     const name = (form.name ?? "").trim() || `Molde ${moldCount + 1}`;
 
@@ -3893,7 +3898,7 @@ export default function Canvas() {
         notes: form.notes,
         printEnabled: true,
         visible: true,
-        sourceMode: draft.sourceMode === "mold" ? "fromMold" : "fromDiagram",
+        sourceMode,
         sourceMoldId,
         grainline: {
           angleDeg: grainAngleDeg,
@@ -3901,7 +3906,7 @@ export default function Canvas() {
         },
         sourceSegments,
         lineage:
-          draft.sourceMode === "mold"
+          sourceMode === "fromMold"
             ? {
                 rootMoldId: sourceMoldId,
                 parentMoldId: sourceMoldId,
@@ -6746,7 +6751,7 @@ export default function Canvas() {
       const thresholdWorld = 14 / scale;
       const connectTolWorld = 8 / Math.max(0.1, scale);
       const candidates = figures.filter((f) =>
-        isFigureEligibleForExtractSource(f, extractSourceMode)
+        isFigureEligibleForExtractSource(f)
       );
       const edgePick = pickEdgeForMoldExtraction(
         candidates,
@@ -8101,7 +8106,7 @@ export default function Canvas() {
       const thresholdWorld = 14 / scale;
       const connectTolWorld = 8 / Math.max(0.1, scale);
       const candidates = figures.filter((f) =>
-        isFigureEligibleForExtractSource(f, extractSourceMode)
+        isFigureEligibleForExtractSource(f)
       );
       const edgePick = pickEdgeForMoldExtraction(
         candidates,
@@ -9383,7 +9388,7 @@ export default function Canvas() {
 
     const fig = figures.find((f) => f.id === hoveredEdge.figureId) ?? null;
     if (!fig || fig.kind === "seam") return null;
-    if (!isFigureEligibleForExtractSource(fig, extractSourceMode)) return null;
+    if (!isFigureEligibleForExtractSource(fig)) return null;
 
     const edge = fig.edges.find((e) => e.id === hoveredEdge.edgeId) ?? null;
     if (!edge) return null;
@@ -9414,7 +9419,7 @@ export default function Canvas() {
         />
       </Group>
     );
-  }, [extractSourceMode, figures, hoveredEdge, scale, tool]);
+  }, [figures, hoveredEdge, scale, tool]);
 
   const angleLockGuideOverlay = useMemo(() => {
     if (!modifierKeys.shift) return null;
@@ -11268,40 +11273,9 @@ export default function Canvas() {
               <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
                 Extração de molde
               </div>
-              <div className="inline-flex rounded border border-gray-300 dark:border-gray-600 overflow-hidden mb-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExtractSourceMode("diagram");
-                    clearMoldExtractionState();
-                  }}
-                  className={
-                    "px-2 py-1 text-xs font-bold " +
-                    (extractSourceMode === "diagram"
-                      ? "bg-primary text-white"
-                      : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200")
-                  }
-                >
-                  Do diagrama
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExtractSourceMode("mold");
-                    clearMoldExtractionState();
-                  }}
-                  className={
-                    "px-2 py-1 text-xs font-bold border-l border-gray-300 dark:border-gray-600 " +
-                    (extractSourceMode === "mold"
-                      ? "bg-primary text-white"
-                      : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200")
-                  }
-                >
-                  De molde
-                </button>
-              </div>
               <p className="text-xs text-gray-600 dark:text-gray-300">
-                Clique nas arestas em sequência para montar o perímetro.
+                Clique nas arestas em sequência para montar o perímetro (figuras
+                e moldes são aceitos).
                 {moldExtractionDraft?.closed
                   ? " Perímetro fechado."
                   : " Feche no ponto inicial ou pressione Enter quando estiver válido."}
