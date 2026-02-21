@@ -2,9 +2,23 @@ import { test, expect } from "./helpers/test";
 import { gotoEditor } from "./helpers/e2e";
 
 type Box = { x: number; y: number; width: number; height: number };
+const PX_PER_CM = 37.79527559055118;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function nodeDistancePx(
+  fig: {
+    nodes: Array<{ x: number; y: number }>;
+  },
+  fromIndex: number,
+  toIndex: number
+): number {
+  const a = fig.nodes[fromIndex];
+  const b = fig.nodes[toIndex];
+  if (!a || !b) return Number.NaN;
+  return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
 async function getStageBox(
@@ -180,6 +194,68 @@ test("linha: Enter com 2 pontos não duplica nós", async ({ page }) => {
   expect(last!.tool).toBe("line");
   expect(last!.closed).toBe(false);
   expect(last!.nodes.length).toBe(2);
+});
+
+test("linha: trava comprimento digitado e libera no próximo segmento", async ({
+  page,
+}) => {
+  await gotoEditor(page);
+
+  await page.getByRole("button", { name: "Linha" }).click();
+  await expect
+    .poll(
+      async () =>
+        (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ??
+        null
+    )
+    .toBe("line");
+
+  const beforeCount = await page.evaluate(
+    () => window.__INAA_DEBUG__?.getFiguresSnapshot?.().length ?? 0
+  );
+
+  const box = await getStageBox(page);
+  const p1 = { x: 240, y: 220 };
+  const p2 = { x: 420, y: 230 };
+  const p3 = { x: 620, y: 300 };
+
+  const p1X = clamp(box.x + p1.x, box.x + 1, box.x + box.width - 2);
+  const p1Y = clamp(box.y + p1.y, box.y + 1, box.y + box.height - 2);
+  const p2X = clamp(box.x + p2.x, box.x + 1, box.x + box.width - 2);
+  const p2Y = clamp(box.y + p2.y, box.y + 1, box.y + box.height - 2);
+  const p3X = clamp(box.x + p3.x, box.x + 1, box.x + box.width - 2);
+  const p3Y = clamp(box.y + p3.y, box.y + 1, box.y + box.height - 2);
+
+  await page.mouse.click(p1X, p1Y);
+  await page.keyboard.type("25", { delay: 10 });
+  await page.mouse.click(p2X, p2Y);
+  await page.mouse.click(p3X, p3Y);
+  await page.keyboard.press("Enter");
+
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => {
+        const figs = window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? [];
+        return figs.length;
+      });
+    })
+    .toBe(beforeCount + 1);
+
+  const last = await page.evaluate(() => {
+    const figs = window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? [];
+    return figs[figs.length - 1] ?? null;
+  });
+
+  expect(last).toBeTruthy();
+  expect(last!.tool).toBe("line");
+  expect(last!.nodes.length).toBeGreaterThanOrEqual(3);
+
+  const firstSeg = nodeDistancePx(last!, 0, 1);
+  const secondSeg = nodeDistancePx(last!, 1, 2);
+  const expected = 25 * PX_PER_CM;
+
+  expect(Math.abs(firstSeg - expected)).toBeLessThan(1);
+  expect(Math.abs(secondSeg - expected)).toBeGreaterThan(40);
 });
 
 test("visual: linha não duplica ponto no preview", async ({ page }) => {

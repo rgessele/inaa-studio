@@ -88,6 +88,7 @@ const MIN_ZOOM_SCALE = 0.1;
 const MAX_ZOOM_SCALE = 10;
 const ZOOM_FACTOR = 1.08;
 const DENSE_MOLD_NODE_OVERLAY_THRESHOLD = 96;
+const SEGMENT_LENGTH_INPUT_DEBOUNCE_MS = 450;
 
 type Vec2 = { x: number; y: number };
 
@@ -2270,6 +2271,18 @@ function applyLineAngleLock(from: Vec2, rawTo: Vec2): Vec2 {
   };
 }
 
+function constrainPointToDistance(from: Vec2, rawTo: Vec2, targetPx: number): Vec2 {
+  if (!Number.isFinite(targetPx) || targetPx <= 0) return rawTo;
+  const v = sub(rawTo, from);
+  const d = len(v);
+  if (!Number.isFinite(d) || d < 1e-6) return rawTo;
+  const u = { x: v.x / d, y: v.y / d };
+  return {
+    x: from.x + u.x * targetPx,
+    y: from.y + u.y * targetPx,
+  };
+}
+
 function computeRectLikeCorners(
   start: Vec2,
   raw: Vec2,
@@ -3063,6 +3076,15 @@ export default function Canvas() {
   const [curveDraft, setCurveDraft] = useState<CurveDraft>(null);
   const [lineDraft, setLineDraft] = useState<LineDraft>(null);
   const lineDraftRef = useRef<LineDraft>(null);
+  const [segmentLengthInputRaw, setSegmentLengthInputRaw] = useState("");
+  const segmentLengthInputRawRef = useRef("");
+  const [segmentLengthLockCm, setSegmentLengthLockCm] = useState<number | null>(
+    null
+  );
+  const segmentLengthLockCmRef = useRef<number | null>(null);
+  const segmentLengthApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const [penDraft, setPenDraft] = useState<PenDraft>(null);
   const penDraftRef = useRef<PenDraft>(null);
   const [extractSourceMode, setExtractSourceMode] =
@@ -4998,6 +5020,85 @@ export default function Canvas() {
     return Math.max(0.01, v);
   }, []);
 
+  const setSegmentLengthInputRawState = useCallback((next: string) => {
+    segmentLengthInputRawRef.current = next;
+    setSegmentLengthInputRaw(next);
+  }, []);
+
+  const setSegmentLengthLockCmState = useCallback((next: number | null) => {
+    segmentLengthLockCmRef.current = next;
+    setSegmentLengthLockCm(next);
+  }, []);
+
+  const clearSegmentLengthApplyTimer = useCallback(() => {
+    if (segmentLengthApplyTimerRef.current !== null) {
+      clearTimeout(segmentLengthApplyTimerRef.current);
+      segmentLengthApplyTimerRef.current = null;
+    }
+  }, []);
+
+  const commitSegmentLengthInputNow = useCallback((): number | null => {
+    clearSegmentLengthApplyTimer();
+    const raw = segmentLengthInputRawRef.current.trim();
+    if (!raw) return segmentLengthLockCmRef.current;
+
+    const cm = parseCmInput(raw);
+    if (cm == null || !Number.isFinite(cm) || cm <= 0) {
+      return segmentLengthLockCmRef.current;
+    }
+
+    setSegmentLengthLockCmState(cm);
+    setSegmentLengthInputRawState("");
+    return cm;
+  }, [
+    clearSegmentLengthApplyTimer,
+    parseCmInput,
+    setSegmentLengthInputRawState,
+    setSegmentLengthLockCmState,
+  ]);
+
+  const scheduleSegmentLengthInputCommit = useCallback(() => {
+    clearSegmentLengthApplyTimer();
+    segmentLengthApplyTimerRef.current = setTimeout(() => {
+      segmentLengthApplyTimerRef.current = null;
+      void commitSegmentLengthInputNow();
+    }, SEGMENT_LENGTH_INPUT_DEBOUNCE_MS);
+  }, [clearSegmentLengthApplyTimer, commitSegmentLengthInputNow]);
+
+  const clearSegmentLengthConstraint = useCallback(() => {
+    clearSegmentLengthApplyTimer();
+    setSegmentLengthInputRawState("");
+    setSegmentLengthLockCmState(null);
+  }, [
+    clearSegmentLengthApplyTimer,
+    setSegmentLengthInputRawState,
+    setSegmentLengthLockCmState,
+  ]);
+
+  const getSegmentLengthLockPx = useCallback((): number | null => {
+    const cm = segmentLengthLockCmRef.current;
+    if (!Number.isFinite(cm ?? NaN) || cm == null || cm <= 0) return null;
+    return cm * PX_PER_CM;
+  }, []);
+
+  useEffect(() => {
+    return () => clearSegmentLengthApplyTimer();
+  }, [clearSegmentLengthApplyTimer]);
+
+  useEffect(() => {
+    const isLineDraftActive = tool === "line" && !!lineDraft;
+    const isCurveDraftActive = tool === "curve" && !!curveDraft;
+    const hasActiveSegmentDraft = isLineDraftActive || isCurveDraftActive;
+    if (hasActiveSegmentDraft) return;
+    if (
+      segmentLengthInputRawRef.current.trim().length === 0 &&
+      segmentLengthLockCmRef.current == null
+    ) {
+      return;
+    }
+    clearSegmentLengthConstraint();
+  }, [clearSegmentLengthConstraint, curveDraft, lineDraft, tool]);
+
   useEffect(() => {
     if (!edgeContextMenu) return;
 
@@ -5881,6 +5982,7 @@ export default function Canvas() {
         if (nextPoints.length === 0) return null;
         return { pointsWorld: nextPoints, currentWorld: world, joinHits: nextHits };
       });
+      clearSegmentLengthConstraint();
       return;
     }
 
@@ -5902,6 +6004,7 @@ export default function Canvas() {
             };
       lineDraftRef.current = nextDraft;
       setLineDraft(nextDraft);
+      clearSegmentLengthConstraint();
       return;
     }
 
@@ -6600,7 +6703,7 @@ export default function Canvas() {
       const last = pts[pts.length - 1];
 
       const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
-      const placedWorld =
+      let placedWorld =
         !resolvedDown.snap.isSnapped && precisionSnap && last
           ? snapPointAlongDirFloor(
               worldForTool,
@@ -6611,6 +6714,10 @@ export default function Canvas() {
           : !resolvedDown.snap.isSnapped && precisionSnap
             ? snapWorldToStepPxFloor(worldForTool, PX_PER_MM)
             : worldForTool;
+
+      const typedLockCm = commitSegmentLengthInputNow();
+      const segmentLockPx =
+        typedLockCm != null ? typedLockCm * PX_PER_CM : getSegmentLengthLockPx();
 
       // Allow closing even with magnetJoin enabled when clicking on the first point
       // of the current figure (self-close). This makes sense UX-wise because the user
@@ -6628,7 +6735,12 @@ export default function Canvas() {
           addFigureWithOptionalMerge(finalized, hits);
         }
         setCurveDraft(null);
+        clearSegmentLengthConstraint();
         return;
+      }
+
+      if (last && segmentLockPx != null) {
+        placedWorld = constrainPointToDistance(last, placedWorld, segmentLockPx);
       }
 
       if (last && dist(placedWorld, last) < 0.5) {
@@ -6650,7 +6762,7 @@ export default function Canvas() {
               pointsWorld: [placedWorld],
               currentWorld: placedWorld,
               joinHits: [joinHit],
-            }
+          }
       );
       sendDebugLog({
         type: "draw-point",
@@ -6665,6 +6777,7 @@ export default function Canvas() {
             : null,
         },
       });
+      clearSegmentLengthConstraint();
       return;
     }
 
@@ -6745,6 +6858,10 @@ export default function Canvas() {
         }
       }
 
+      const typedLockCm = commitSegmentLengthInputNow();
+      const segmentLockPx =
+        typedLockCm != null ? typedLockCm * PX_PER_CM : getSegmentLengthLockPx();
+
       // Allow closing even with magnetJoin enabled when clicking on the first point
       // of the current figure (self-close). This makes sense UX-wise because the user
       // is clicking on THEIR OWN starting point, not trying to join another figure.
@@ -6762,7 +6879,16 @@ export default function Canvas() {
         }
         lineDraftRef.current = null;
         setLineDraft(null);
+        clearSegmentLengthConstraint();
         return;
+      }
+
+      if (last && segmentLockPx != null) {
+        const lockDistancePx =
+          !resolvedDown.snap.isSnapped && e.evt.altKey && pts.length === 1
+            ? segmentLockPx * 0.5
+            : segmentLockPx;
+        placedWorld = constrainPointToDistance(last, placedWorld, lockDistancePx);
       }
 
       if (!resolvedDown.snap.isSnapped && e.evt.altKey && pts.length === 1) {
@@ -6808,6 +6934,7 @@ export default function Canvas() {
             snapFigureId: null,
           },
         });
+        clearSegmentLengthConstraint();
         return;
       }
 
@@ -6839,6 +6966,7 @@ export default function Canvas() {
             : null,
         },
       });
+      clearSegmentLengthConstraint();
       return;
     }
 
@@ -7473,6 +7601,17 @@ export default function Canvas() {
         }
       }
 
+      const segmentLockPx = getSegmentLengthLockPx();
+      if (last && segmentLockPx != null) {
+        const lockDistancePx =
+          !resolvedMove.snap.isSnapped &&
+          e.evt.altKey &&
+          current.pointsWorld.length === 1
+            ? segmentLockPx * 0.5
+            : segmentLockPx;
+        nextWorld = constrainPointToDistance(last, nextWorld, lockDistancePx);
+      }
+
       const nextDraft = { ...current, currentWorld: nextWorld };
       lineDraftRef.current = nextDraft;
       setLineDraft(nextDraft);
@@ -7574,10 +7713,11 @@ export default function Canvas() {
 
       const resolved = getSnappedWorldForTool(world, "move");
       const precisionSnap = modifierKeys.meta || modifierKeys.ctrl;
+      const segmentLockPx = getSegmentLengthLockPx();
       setCurveDraft((prev) => {
         if (!prev) return prev;
         const last = prev.pointsWorld[prev.pointsWorld.length - 1] ?? null;
-        const nextWorld =
+        let nextWorld =
           !resolved.snap.isSnapped && precisionSnap && last
             ? snapPointAlongDirFloor(
                 resolved.world,
@@ -7588,12 +7728,16 @@ export default function Canvas() {
             : !resolved.snap.isSnapped && precisionSnap
               ? snapWorldToStepPxFloor(resolved.world, PX_PER_MM)
               : resolved.world;
+        if (last && segmentLockPx != null) {
+          nextWorld = constrainPointToDistance(last, nextWorld, segmentLockPx);
+        }
         return { ...prev, currentWorld: nextWorld };
       });
     },
     [
       curveDraft,
       getSnappedWorldForTool,
+      getSegmentLengthLockPx,
       modifierKeys.ctrl,
       modifierKeys.meta,
       position.x,
@@ -7841,6 +7985,25 @@ export default function Canvas() {
     );
   }, [magnetEnabled, magnetJoinEnabled, magnetSnap, previewStroke, scale, tool]);
 
+  const segmentLengthBadgeLabel = useMemo(() => {
+    const hasSegmentDraft =
+      (tool === "line" && !!lineDraft) || (tool === "curve" && !!curveDraft);
+    if (!hasSegmentDraft) return null;
+    const raw = segmentLengthInputRaw.trim();
+    if (raw.length > 0) return `Comprimento: ${raw} cm`;
+    if (
+      segmentLengthLockCm != null &&
+      Number.isFinite(segmentLengthLockCm) &&
+      segmentLengthLockCm > 0
+    ) {
+      return `Comprimento travado: ${formatPtBrDecimalFixed(
+        segmentLengthLockCm,
+        2
+      )} cm`;
+    }
+    return null;
+  }, [curveDraft, lineDraft, segmentLengthInputRaw, segmentLengthLockCm, tool]);
+
   useEffect(() => {
     const onKeyDown = (evt: KeyboardEvent) => {
       if (evt.key === "Escape") {
@@ -7853,6 +8016,7 @@ export default function Canvas() {
         dragNodeRef.current = null;
         dragHandleRef.current = null;
         clearMoldExtractionState();
+        clearSegmentLengthConstraint();
       }
 
       if (tool === "extractMold") {
@@ -7900,6 +8064,61 @@ export default function Canvas() {
       }
 
       const currentLineDraft = lineDraftRef.current;
+      const target = evt.target as HTMLElement | null;
+      const isTypingInField =
+        !!target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
+      const hasSegmentDraft =
+        (tool === "line" && !!currentLineDraft) ||
+        (tool === "curve" && !!curveDraft);
+      if (hasSegmentDraft && !isTypingInField) {
+        const isDigit = evt.key.length === 1 && /[0-9]/.test(evt.key);
+        const isDecimalSeparator = evt.key === "," || evt.key === ".";
+        const hasModifier = evt.metaKey || evt.ctrlKey || evt.altKey;
+
+        if (!hasModifier && (isDigit || isDecimalSeparator)) {
+          evt.preventDefault();
+          evt.stopPropagation();
+          const currentRaw = segmentLengthInputRawRef.current;
+          if (
+            isDecimalSeparator &&
+            (currentRaw.includes(",") || currentRaw.includes("."))
+          ) {
+            return;
+          }
+          const appended =
+            isDecimalSeparator && currentRaw.length === 0
+              ? `0${evt.key}`
+              : `${currentRaw}${evt.key}`;
+          setSegmentLengthInputRawState(appended);
+          scheduleSegmentLengthInputCommit();
+          return;
+        }
+
+        if (evt.key === "Enter" && segmentLengthInputRawRef.current.trim().length) {
+          evt.preventDefault();
+          evt.stopPropagation();
+          void commitSegmentLengthInputNow();
+          return;
+        }
+
+        if (evt.key === "Backspace" && segmentLengthInputRawRef.current.length > 0) {
+          evt.preventDefault();
+          evt.stopPropagation();
+          const nextRaw = segmentLengthInputRawRef.current.slice(0, -1);
+          setSegmentLengthInputRawState(nextRaw);
+          if (nextRaw.trim().length > 0) {
+            scheduleSegmentLengthInputCommit();
+          } else {
+            clearSegmentLengthApplyTimer();
+          }
+          return;
+        }
+      }
+
       if (tool === "line" && currentLineDraft) {
         if (evt.key === "Enter") {
           evt.preventDefault();
@@ -7915,6 +8134,7 @@ export default function Canvas() {
           if (pts.length < 2) {
             lineDraftRef.current = null;
             setLineDraft(null);
+            clearSegmentLengthConstraint();
             return;
           }
 
@@ -7940,6 +8160,7 @@ export default function Canvas() {
           }
           lineDraftRef.current = null;
           setLineDraft(null);
+          clearSegmentLengthConstraint();
           return;
         }
 
@@ -7967,6 +8188,7 @@ export default function Canvas() {
                 };
           lineDraftRef.current = nextDraft;
           setLineDraft(nextDraft);
+          clearSegmentLengthConstraint();
           return;
         }
       }
@@ -7985,6 +8207,7 @@ export default function Canvas() {
           }
           if (pts.length < 2) {
             setCurveDraft(null);
+            clearSegmentLengthConstraint();
             return;
           }
 
@@ -8009,6 +8232,7 @@ export default function Canvas() {
             addFigureWithOptionalMerge(finalized, hits);
           }
           setCurveDraft(null);
+          clearSegmentLengthConstraint();
           return;
         }
 
@@ -8029,6 +8253,7 @@ export default function Canvas() {
               joinHits: nextHits,
             };
           });
+          clearSegmentLengthConstraint();
           return;
         }
       }
@@ -8038,12 +8263,17 @@ export default function Canvas() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     addFigureWithOptionalMerge,
+    clearSegmentLengthApplyTimer,
+    clearSegmentLengthConstraint,
     clearMoldExtractionState,
+    commitSegmentLengthInputNow,
     curveDraft,
     magnetJoinEnabled,
     moldConfirmDialog,
     openMoldConfirmDialog,
+    scheduleSegmentLengthInputCommit,
     scale,
+    setSegmentLengthInputRawState,
     tool,
   ]);
 
@@ -9964,6 +10194,14 @@ export default function Canvas() {
                 }
               />
               {getToolIcon(tool, "cursor", "w-5 h-5 text-guide-neon")}
+            </div>
+          </div>
+        ) : null}
+
+        {segmentLengthBadgeLabel ? (
+          <div className="pointer-events-none absolute z-40 left-3 top-3">
+            <div className="rounded-md border border-gray-300 dark:border-gray-600 bg-white/95 dark:bg-gray-900/95 px-2.5 py-1 text-xs text-gray-900 dark:text-gray-100 shadow-subtle">
+              {segmentLengthBadgeLabel}
             </div>
           </div>
         ) : null}
