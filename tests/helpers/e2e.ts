@@ -72,6 +72,8 @@ declare global {
       getStageNodeAbsolutePositionsByName?: (
         name: string
       ) => Array<{ x: number; y: number }>;
+      getStageNodePointsLengthByName?: (name: string) => number[];
+      getStageNodePointsByName?: (name: string) => number[][];
       getFiguresSnapshot?: () => Array<{
         id: string;
         tool: string;

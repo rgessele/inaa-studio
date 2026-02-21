@@ -1300,7 +1300,7 @@ export async function generateTiledPDF(
       }
 
       const figureName = (figure.name ?? "").trim();
-      if (shouldIncludePatternName && figureName) {
+      if (shouldIncludePatternName && figure.kind !== "seam" && figureName) {
         const layout = computeFigureNameLayoutLocal(figure, figureName);
         if (layout) {
           const worldPos = figureLocalToWorld(figure, layout.posLocal);
@@ -1854,7 +1854,7 @@ export function generateSVG(
     }
 
     const figName = (fig.name ?? "").trim();
-    if (shouldIncludePatternName && figName) {
+    if (shouldIncludePatternName && fig.kind !== "seam" && figName) {
       const layout = computeFigureNameLayoutLocal(fig, figName);
       if (layout) {
         const worldPos = figureLocalToWorld(fig, layout.posLocal);

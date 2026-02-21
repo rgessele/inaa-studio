@@ -1212,6 +1212,33 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           return [];
         }
       },
+      getStageNodePointsLengthByName: (name: string) => {
+        const stage = stageRef.current;
+        if (!stage) return [];
+        try {
+          return stage.find(`.${name}`).map((node) => {
+            const points = node.getAttr?.("points");
+            return Array.isArray(points) ? points.length : 0;
+          });
+        } catch {
+          return [];
+        }
+      },
+      getStageNodePointsByName: (name: string) => {
+        const stage = stageRef.current;
+        if (!stage) return [];
+        try {
+          return stage.find(`.${name}`).map((node) => {
+            const points = node.getAttr?.("points");
+            if (!Array.isArray(points)) return [];
+            return points.map((value) =>
+              typeof value === "number" ? value : Number(value)
+            );
+          });
+        } catch {
+          return [];
+        }
+      },
       ...(isE2E
         ? {
             addTestRectangle,

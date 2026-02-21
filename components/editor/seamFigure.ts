@@ -780,12 +780,19 @@ export function getOuterLoopEdgeSequence(figure: Figure): string[] {
     const a = outerLoop.nodeIds[i];
     const b = outerLoop.nodeIds[(i + 1) % outerLoop.nodeIds.length];
     const candidates = edgeByNodes.get(`${a}->${b}`) ?? [];
-    const edge =
-      candidates.find((cand) => outerEdgeIds.has(cand.id)) ?? candidates[0];
-    if (edge) ordered.push(edge.id);
+    const edge = candidates.find((cand) => outerEdgeIds.has(cand.id));
+    if (!edge) continue;
+    if (ordered[ordered.length - 1] !== edge.id) {
+      ordered.push(edge.id);
+    }
   }
 
-  return ordered.length > 0 ? ordered : outerLoop.edgeIds;
+  if (ordered.length >= 3) return ordered;
+
+  const uniqueOuter = outerLoop.edgeIds.filter(
+    (edgeId, idx, arr) => arr.indexOf(edgeId) === idx
+  );
+  return uniqueOuter.length >= 3 ? uniqueOuter : outerLoop.edgeIds;
 }
 
 export function getOuterLoopEdgeDirections(
@@ -822,8 +829,7 @@ export function getOuterLoopEdgeDirections(
     const a = outerLoop.nodeIds[i];
     const b = outerLoop.nodeIds[(i + 1) % outerLoop.nodeIds.length];
     const candidates = edgeByNodes.get(`${a}->${b}`) ?? [];
-    const edge =
-      candidates.find((cand) => outerEdgeIds.has(cand.id)) ?? candidates[0];
+    const edge = candidates.find((cand) => outerEdgeIds.has(cand.id));
     if (edge) directions.set(edge.id, { from: a, to: b });
   }
 
@@ -832,6 +838,84 @@ export function getOuterLoopEdgeDirections(
 
 export function hasClosedLoop(figure: Figure): boolean {
   return extractClosedLoops(figure).length > 0;
+}
+
+function sampleLoopPointsFromEdges(
+  figure: Figure,
+  orderedEdgeIds: string[],
+  cubicSteps: number
+): Vec2[] {
+  if (orderedEdgeIds.length < 3) return [];
+
+  const edgeById = new Map(figure.edges.map((e) => [e.id, e]));
+  const orderedEdges = orderedEdgeIds
+    .map((id) => edgeById.get(id) ?? null)
+    .filter((e): e is NonNullable<typeof e> => !!e);
+  if (orderedEdges.length < 3) return [];
+
+  const oriented: Array<{ edge: FigureEdge; forward: boolean }> = [];
+  let firstStartNodeId: string | null = null;
+  let prevEndNodeId: string | null = null;
+
+  for (let i = 0; i < orderedEdges.length; i++) {
+    const edge = orderedEdges[i]!;
+    const nextEdge = i + 1 < orderedEdges.length ? orderedEdges[i + 1]! : null;
+
+    let forward = true;
+    if (i === 0) {
+      if (nextEdge) {
+        const nextEndpoints = new Set([nextEdge.from, nextEdge.to]);
+        const forwardMatchesNext = nextEndpoints.has(edge.to);
+        const reverseMatchesNext = nextEndpoints.has(edge.from);
+        if (!forwardMatchesNext && reverseMatchesNext) {
+          forward = false;
+        }
+      }
+      firstStartNodeId = forward ? edge.from : edge.to;
+      prevEndNodeId = forward ? edge.to : edge.from;
+    } else {
+      if (prevEndNodeId === edge.from) {
+        forward = true;
+      } else if (prevEndNodeId === edge.to) {
+        forward = false;
+      } else if (nextEdge) {
+        const nextEndpoints = new Set([nextEdge.from, nextEdge.to]);
+        const forwardMatchesNext = nextEndpoints.has(edge.to);
+        const reverseMatchesNext = nextEndpoints.has(edge.from);
+        if (!forwardMatchesNext && reverseMatchesNext) {
+          forward = false;
+        } else if (forwardMatchesNext && !reverseMatchesNext) {
+          forward = true;
+        }
+      } else if (firstStartNodeId) {
+        if (edge.to === firstStartNodeId) forward = true;
+        else if (edge.from === firstStartNodeId) forward = false;
+      }
+
+      prevEndNodeId = forward ? edge.to : edge.from;
+    }
+
+    oriented.push({ edge, forward });
+  }
+
+  const out: Vec2[] = [];
+  for (const seg of oriented) {
+    const edgePts = edgeLocalPoints(
+      figure,
+      seg.edge,
+      seg.edge.kind === "line" ? 2 : cubicSteps
+    );
+    if (edgePts.length < 2) continue;
+    const ordered = seg.forward ? edgePts : [...edgePts].reverse();
+    const from = out.length === 0 ? 0 : 1;
+    out.push(...ordered.slice(from));
+  }
+
+  if (out.length < 3) return [];
+  if (dist(out[0], out[out.length - 1]) < 1e-6) {
+    out.pop();
+  }
+  return out.length >= 3 ? out : [];
 }
 
 /**
@@ -861,7 +945,16 @@ export function getOuterLoopPolygon(figure: Figure): Vec2[] {
       outerLoop = loop;
     }
   }
-  
+
+  const sampled = sampleLoopPointsFromEdges(
+    figure,
+    getOuterLoopEdgeSequence(figure),
+    30
+  );
+  if (sampled.length >= 3) {
+    return sampled;
+  }
+
   // console.log("[getOuterLoopPolygon] returning outer loop with", outerLoop.points.length, "points");
   return outerLoop.points;
 }
@@ -1700,6 +1793,7 @@ export function makeSeamFigure(
       id: id("fig"),
       kind: "seam",
       parentId: base.id,
+      name: "",
       closed: true,
       offsetCm: offsetValueCm,
       sourceSignature,
@@ -1759,6 +1853,7 @@ export function makeSeamFigure(
     id: id("fig"),
     kind: "seam",
     parentId: base.id,
+    name: "",
     offsetCm: offsetValueCm,
     seamSegments,
     seamSegmentEdgeIds,

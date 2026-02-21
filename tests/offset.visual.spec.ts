@@ -15,6 +15,7 @@ type TestFigure = {
   id: string;
   tool: "line" | "rectangle";
   kind?: "mold";
+  name?: string;
   x: number;
   y: number;
   rotation: number;
@@ -34,9 +35,9 @@ type TestFigure = {
 
 function createRectFigure(
   id: string,
-  opts: { kind?: "mold"; x: number; y: number; w: number; h: number }
+  opts: { kind?: "mold"; name?: string; x: number; y: number; w: number; h: number }
 ): TestFigure {
-  const { kind, x, y, w, h } = opts;
+  const { kind, name, x, y, w, h } = opts;
   const n1 = `${id}_n1`;
   const n2 = `${id}_n2`;
   const n3 = `${id}_n3`;
@@ -46,6 +47,7 @@ function createRectFigure(
     id,
     tool: "line",
     kind,
+    name,
     x: 0,
     y: 0,
     rotation: 0,
@@ -108,6 +110,14 @@ async function getSnapshot(
   });
 }
 
+async function countFigureNameNodes(
+  page: import("@playwright/test").Page
+): Promise<number> {
+  return await page.evaluate(() => {
+    return window.__INAA_DEBUG__?.countStageNodesByName?.("inaa-figure-name") ?? 0;
+  });
+}
+
 async function selectOffsetTool(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: "Margem de costura" }).click();
   await expect
@@ -124,6 +134,7 @@ test.describe("Offset Tool Visual (moldes)", () => {
 
     const mold = createRectFigure("mold_full", {
       kind: "mold",
+      name: "Molde 4",
       x: 200,
       y: 200,
       w: 140,
@@ -149,6 +160,8 @@ test.describe("Offset Tool Visual (moldes)", () => {
 
     const seam = (await getSnapshot(page)).find((f) => f.kind === "seam") ?? null;
     expect(seam?.parentId).toBe("mold_full");
+
+    await expect.poll(async () => await countFigureNameNodes(page)).toBe(1);
   });
 
   test("nao gera margem para figura convencional", async ({ page }) => {
@@ -184,6 +197,7 @@ test.describe("Offset Tool Visual (moldes)", () => {
 
     const mold = createRectFigure("mold_edge", {
       kind: "mold",
+      name: "Molde 4",
       x: 200,
       y: 200,
       w: 140,
@@ -215,6 +229,8 @@ test.describe("Offset Tool Visual (moldes)", () => {
     expect(seam).toBeTruthy();
     expect(typeof seam?.offsetCm).toBe("object");
     expect((seam?.seamSegmentEdgeIds ?? []).length).toBeGreaterThan(0);
+
+    await expect.poll(async () => await countFigureNameNodes(page)).toBe(1);
   });
 
   test("ctrl+clique remove margem do molde", async ({ page }) => {

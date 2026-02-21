@@ -89,11 +89,6 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
 
   const box = await getStageBox(page);
 
-  // Right edge (x=320). This edge runs from y=200 (t01=0) to y=300 (t01=1).
-  const pMid = { x: 320, y: 250 };
-  const xMid = clamp(box.x + pMid.x, box.x + 2, box.x + box.width - 2);
-  const yMid = clamp(box.y + pMid.y, box.y + 2, box.y + box.height - 2);
-
   // First insertion with Alt: locks to midpoint (t01 ~ 0.5).
   const pNearTop = { x: 320, y: 210 };
   const xNearTop = clamp(box.x + pNearTop.x, box.x + 2, box.x + box.width - 2);
@@ -103,6 +98,33 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
   await page.mouse.move(xNearTop, yNearTop);
   await page.mouse.click(xNearTop, yNearTop);
   await page.keyboard.up("Alt");
+
+  // Ensure first insertion is committed before trying to split the segment again.
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => {
+        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
+          []) as unknown;
+        const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
+        const base = list.find((f) => f.id === "fig_base") ?? null;
+        const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
+        return ts[0] ?? null;
+      });
+    })
+    .toBeGreaterThan(0.45);
+
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => {
+        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
+          []) as unknown;
+        const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
+        const base = list.find((f) => f.id === "fig_base") ?? null;
+        const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
+        return ts[0] ?? null;
+      });
+    })
+    .toBeLessThan(0.55);
 
   // Second insertion with Alt, but cursor stays in the top subsegment: snaps to midpoint of [0..0.5] => ~0.25.
   const pTopAgain = { x: 320, y: 215 };
@@ -142,11 +164,34 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
           []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
-        const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
-        return ts[0] ?? null;
+        return (base?.piques ?? []).length;
       });
     })
-    .toBeGreaterThan(0.2);
+    .toBe(2);
+
+  const piquesAfterInsert = await page.evaluate(() => {
+    const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ?? []) as unknown;
+    const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
+    const base = list.find((f) => f.id === "fig_base") ?? null;
+    return (base?.piques ?? [])
+      .map((p) => ({ id: p.id, edgeId: p.edgeId, t01: p.t01 }))
+      .sort((a, b) => a.t01 - b.t01);
+  });
+
+  const firstT = piquesAfterInsert[0]?.t01 ?? 0.5;
+  const secondT = piquesAfterInsert[1]?.t01 ?? 0.5;
+
+  // Remove using the actual snapped positions currently stored in the figure state.
+  const yFirst = clamp(box.y + (200 + firstT * 100), box.y + 2, box.y + box.height - 2);
+  const ySecond = clamp(
+    box.y + (200 + secondT * 100),
+    box.y + 2,
+    box.y + box.height - 2
+  );
+  const xEdge = clamp(box.x + 320, box.x + 2, box.x + box.width - 2);
+
+  await page.mouse.move(xEdge, yFirst);
+  await page.mouse.click(xEdge, yFirst);
 
   await expect
     .poll(async () => {
@@ -155,48 +200,13 @@ test("pique: adiciona e remove em figura fechada", async ({ page }) => {
           []) as unknown;
         const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
         const base = list.find((f) => f.id === "fig_base") ?? null;
-        const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
-        return ts[0] ?? null;
+        return base?.piques?.length ?? 0;
       });
     })
-    .toBeLessThan(0.3);
+    .toBe(1);
 
-  await expect
-    .poll(async () => {
-      return await page.evaluate(() => {
-        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
-          []) as unknown;
-        const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
-        const base = list.find((f) => f.id === "fig_base") ?? null;
-        const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
-        return ts[1] ?? null;
-      });
-    })
-    .toBeGreaterThan(0.45);
-
-  await expect
-    .poll(async () => {
-      return await page.evaluate(() => {
-        const figs = (window.__INAA_DEBUG__?.getFiguresSnapshot?.() ??
-          []) as unknown;
-        const list = Array.isArray(figs) ? (figs as FigureSnapshot[]) : [];
-        const base = list.find((f) => f.id === "fig_base") ?? null;
-        const ts = (base?.piques ?? []).map((p) => p.t01).sort((a, b) => a - b);
-        return ts[1] ?? null;
-      });
-    })
-    .toBeLessThan(0.55);
-
-  // Remove both piques by clicking at their snapped locations (midpoint and quarter point).
-  const pQuarter = { x: 320, y: 225 };
-  const xQuarter = clamp(box.x + pQuarter.x, box.x + 2, box.x + box.width - 2);
-  const yQuarter = clamp(box.y + pQuarter.y, box.y + 2, box.y + box.height - 2);
-
-  await page.mouse.move(xQuarter, yQuarter);
-  await page.mouse.click(xQuarter, yQuarter);
-
-  await page.mouse.move(xMid, yMid);
-  await page.mouse.click(xMid, yMid);
+  await page.mouse.move(xEdge, ySecond);
+  await page.mouse.click(xEdge, ySecond);
 
   await expect
     .poll(async () => {

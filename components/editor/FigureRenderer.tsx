@@ -11,7 +11,11 @@ import { MemoizedSeamLabel } from "./SeamLabel";
 import { MemoizedDartOverlay } from "./DartOverlay";
 import { SelectedEdge } from "./EditorContext";
 import type { PointLabelsMode } from "./types";
-import { hasClosedLoop } from "./seamFigure";
+import {
+  getOuterLoopEdgeSequence,
+  getOuterLoopPolygon,
+  hasClosedLoop,
+} from "./seamFigure";
 
 interface FigureRendererProps {
   figure: Figure;
@@ -143,6 +147,104 @@ function resolveStrokeColor(
   return stroke;
 }
 
+function hasVisibleFill(fill: string | undefined): boolean {
+  if (!fill) return false;
+  const s = fill.trim().toLowerCase();
+  if (s === "transparent") return false;
+  if (/^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0(\.0+)?\s*\)$/.test(s)) {
+    return false;
+  }
+  if (/^#([0-9a-f]{8})$/.test(s) && s.endsWith("00")) {
+    return false;
+  }
+  return true;
+}
+
+function buildSampledOuterLoopContour(
+  figure: Figure,
+  cubicSteps: number
+): number[] {
+  const orderedEdgeIds = getOuterLoopEdgeSequence(figure);
+  if (orderedEdgeIds.length < 3) return [];
+
+  const edgeById = new Map(figure.edges.map((e) => [e.id, e]));
+  const orderedEdges = orderedEdgeIds
+    .map((id) => edgeById.get(id) ?? null)
+    .filter((e): e is NonNullable<typeof e> => !!e);
+  if (orderedEdges.length < 3) return [];
+
+  const oriented: Array<{ edge: Figure["edges"][number]; forward: boolean }> =
+    [];
+  let firstStartNodeId: string | null = null;
+  let prevEndNodeId: string | null = null;
+
+  for (let i = 0; i < orderedEdges.length; i++) {
+    const edge = orderedEdges[i]!;
+    const nextEdge = i + 1 < orderedEdges.length ? orderedEdges[i + 1]! : null;
+
+    let forward = true;
+    if (i === 0) {
+      if (nextEdge) {
+        const nextEndpoints = new Set([nextEdge.from, nextEdge.to]);
+        const forwardMatchesNext = nextEndpoints.has(edge.to);
+        const reverseMatchesNext = nextEndpoints.has(edge.from);
+        if (!forwardMatchesNext && reverseMatchesNext) {
+          forward = false;
+        }
+      }
+      firstStartNodeId = forward ? edge.from : edge.to;
+      prevEndNodeId = forward ? edge.to : edge.from;
+    } else {
+      if (prevEndNodeId === edge.from) {
+        forward = true;
+      } else if (prevEndNodeId === edge.to) {
+        forward = false;
+      } else if (nextEdge) {
+        const nextEndpoints = new Set([nextEdge.from, nextEdge.to]);
+        const forwardMatchesNext = nextEndpoints.has(edge.to);
+        const reverseMatchesNext = nextEndpoints.has(edge.from);
+        if (!forwardMatchesNext && reverseMatchesNext) {
+          forward = false;
+        } else if (forwardMatchesNext && !reverseMatchesNext) {
+          forward = true;
+        }
+      } else if (firstStartNodeId) {
+        if (edge.to === firstStartNodeId) forward = true;
+        else if (edge.from === firstStartNodeId) forward = false;
+      }
+
+      prevEndNodeId = forward ? edge.to : edge.from;
+    }
+
+    oriented.push({ edge, forward });
+  }
+
+  const out: number[] = [];
+  for (const seg of oriented) {
+    const edgePts = edgeLocalPoints(
+      figure,
+      seg.edge,
+      seg.edge.kind === "line" ? 2 : cubicSteps
+    );
+    if (edgePts.length < 2) continue;
+    const ordered = seg.forward ? edgePts : [...edgePts].reverse();
+    const from = out.length === 0 ? 0 : 1;
+    for (let i = from; i < ordered.length; i++) {
+      out.push(ordered[i]!.x, ordered[i]!.y);
+    }
+  }
+
+  if (out.length < 6) return [];
+  const fx = out[0]!;
+  const fy = out[1]!;
+  const lx = out[out.length - 2]!;
+  const ly = out[out.length - 1]!;
+  if (Math.hypot(fx - lx, fy - ly) < 1e-6) {
+    out.splice(out.length - 2, 2);
+  }
+  return out.length >= 6 ? out : [];
+}
+
 const FigureRenderer = ({
   figure,
   x,
@@ -195,11 +297,21 @@ const FigureRenderer = ({
   // Compute polyline data. For figures with branches (e.g., merged figures
   // with a line coming off an edge), we need to render edge-by-edge instead
   // of a single polyline.
-  const { pts, isSimpleContour, edgeSegments } = React.useMemo(() => {
+  const { pts, contourPts, isSimpleContour, edgeSegments } = React.useMemo(() => {
     if (isTextFigure) {
-      return { pts: [], isSimpleContour: true, edgeSegments: [] };
+      return { pts: [], contourPts: [], isSimpleContour: true, edgeSegments: [] };
     }
     const polyPts = figureLocalPolyline(figure, 60);
+    const outerLoopPts = (() => {
+      if (!figure.closed) return [] as number[];
+      const sampled = buildSampledOuterLoopContour(figure, 60);
+      if (sampled.length >= 6) return sampled;
+      const outer = getOuterLoopPolygon(figure);
+      if (outer.length < 3) return [] as number[];
+      const flat: number[] = [];
+      for (const p of outer) flat.push(p.x, p.y);
+      return flat.length >= 6 ? flat : [];
+    })();
 
     // Check if any node has degree > 2 (branching). If so, the standard
     // polyline traversal will fail, so we render edge-by-edge instead.
@@ -227,7 +339,12 @@ const FigureRenderer = ({
         figure.edges[0].from;
 
     if (!forceSegments && !hasBranch && (isOrderedOpen || isOrderedClosed)) {
-      return { pts: polyPts, isSimpleContour: true, edgeSegments: [] };
+      return {
+        pts: polyPts,
+        contourPts: outerLoopPts.length >= 6 ? outerLoopPts : polyPts,
+        isSimpleContour: true,
+        edgeSegments: [],
+      };
     }
 
     // Figure has branches - render each edge separately
@@ -242,7 +359,12 @@ const FigureRenderer = ({
         segments.push(flat);
       }
     }
-    return { pts: [], isSimpleContour: false, edgeSegments: segments };
+    return {
+      pts: [],
+      contourPts: outerLoopPts.length >= 6 ? outerLoopPts : polyPts,
+      isSimpleContour: false,
+      edgeSegments: segments,
+    };
   }, [figure, isTextFigure]);
 
   const pointLabelFill = resolveAci7(isDark);
@@ -250,7 +372,8 @@ const FigureRenderer = ({
   const pointLabelFontSize = 15 / scale;
   const pointLabelOffsetDist = 14 / scale;
 
-  const figureName = (figure.name ?? "").trim();
+  const figureName =
+    figure.kind === "seam" ? "" : (figure.name ?? "").trim();
   const nameFontSizePx = (() => {
     const v = figure.nameFontSizePx;
     if (!Number.isFinite(v ?? NaN)) return 24;
@@ -545,25 +668,45 @@ const FigureRenderer = ({
           />
         ))
       ) : !isSimpleContour && edgeSegments.length > 0 ? (
-        // Render edge-by-edge for branched figures
-        edgeSegments.map((segment, idx) => (
-          <Line
-            key={`edge-seg:${figure.id}:${idx}`}
-            points={segment}
-            stroke={stroke}
-            strokeWidth={strokeWidth}
-            fill={"transparent"}
-            fillEnabled={false}
-            closed={false}
-            dash={dash}
-            lineCap="round"
-            lineJoin="round"
-            hitStrokeWidth={hitStrokeWidth}
-            perfectDrawEnabled={false}
-            shadowForStrokeEnabled={false}
-            listening={listening}
-          />
-        ))
+        <>
+          {figure.closed &&
+          contourPts.length >= 6 &&
+          hasVisibleFill(figure.fill) ? (
+            <Line
+              points={contourPts}
+              strokeWidth={0}
+              stroke={"transparent"}
+              strokeEnabled={false}
+              fill={figure.fill ?? "transparent"}
+              fillEnabled={hitFillEnabled}
+              closed={true}
+              listening={false}
+              perfectDrawEnabled={false}
+              shadowForStrokeEnabled={false}
+              name="inaa-fill-fallback"
+            />
+          ) : null}
+
+          {/* Render edge-by-edge for branched/unordered figures */}
+          {edgeSegments.map((segment, idx) => (
+            <Line
+              key={`edge-seg:${figure.id}:${idx}`}
+              points={segment}
+              stroke={stroke}
+              strokeWidth={strokeWidth}
+              fill={"transparent"}
+              fillEnabled={false}
+              closed={false}
+              dash={dash}
+              lineCap="round"
+              lineJoin="round"
+              hitStrokeWidth={hitStrokeWidth}
+              perfectDrawEnabled={false}
+              shadowForStrokeEnabled={false}
+              listening={listening}
+            />
+          ))}
+        </>
       ) : (
         <Line
           points={pts}
@@ -700,7 +843,7 @@ const FigureRenderer = ({
         />
       )}
 
-      {nameLayout && (
+      {figure.kind !== "seam" && nameLayout && (
         <Text
           x={nameLayout.x}
           y={nameLayout.y}
@@ -720,7 +863,7 @@ const FigureRenderer = ({
         />
       )}
 
-      {nameLayout && showNameHandle && (
+      {figure.kind !== "seam" && nameLayout && showNameHandle && (
         <Group
           x={nameLayout.x}
           y={nameLayout.y}
