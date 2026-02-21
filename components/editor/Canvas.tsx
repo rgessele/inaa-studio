@@ -503,6 +503,33 @@ function mergeCoincidentNodes(figure: Figure, eps = 1): Figure {
   return { ...figure, nodes: uniqueNodes, edges: newEdges };
 }
 
+function mergeFigureNodeIds(
+  figure: Figure,
+  fromNodeId: string,
+  toNodeId: string
+): Figure {
+  if (fromNodeId === toNodeId) return figure;
+  const hasFrom = figure.nodes.some((n) => n.id === fromNodeId);
+  const hasTo = figure.nodes.some((n) => n.id === toNodeId);
+  if (!hasFrom || !hasTo) return figure;
+
+  const nextEdges = figure.edges
+    .map((edge) => ({
+      ...edge,
+      from: edge.from === fromNodeId ? toNodeId : edge.from,
+      to: edge.to === fromNodeId ? toNodeId : edge.to,
+    }))
+    .filter((edge) => edge.from !== edge.to);
+
+  return markCurveCustomSnapshotDirtyIfPresent(
+    breakStyledLinkIfNeeded({
+      ...figure,
+      nodes: figure.nodes.filter((n) => n.id !== fromNodeId),
+      edges: nextEdges,
+    })
+  );
+}
+
 /**
  * Check if a point is inside a closed figure.
  * For simple figures, uses ray-casting. For figures with complex topology
@@ -1342,6 +1369,229 @@ function edgeWorldSamples(figure: Figure, edge: FigureEdge): Vec2[] {
   const steps = edge.kind === "line" ? 1 : 60;
   const local = edgeLocalPoints(figure, edge, steps);
   return local.map((p) => figureLocalToWorld(figure, p));
+}
+
+function cross2(a: Vec2, b: Vec2): number {
+  return a.x * b.y - a.y * b.x;
+}
+
+function dot2(a: Vec2, b: Vec2): number {
+  return a.x * b.x + a.y * b.y;
+}
+
+type SegmentIntersectionResult =
+  | { kind: "none" }
+  | { kind: "overlap" }
+  | { kind: "point"; pointWorld: Vec2; tA: number; tB: number };
+
+function intersectSegmentsWorld(
+  a0: Vec2,
+  a1: Vec2,
+  b0: Vec2,
+  b1: Vec2,
+  eps = 1e-9
+): SegmentIntersectionResult {
+  const r = sub(a1, a0);
+  const s = sub(b1, b0);
+  const qmp = sub(b0, a0);
+
+  const rxs = cross2(r, s);
+  const qmpxr = cross2(qmp, r);
+
+  if (Math.abs(rxs) <= eps && Math.abs(qmpxr) <= eps) {
+    // Collinear: check 1D overlap on segment A parameterization.
+    const rr = dot2(r, r);
+    if (rr <= eps) return { kind: "none" };
+    const t0 = dot2(qmp, r) / rr;
+    const t1 = t0 + dot2(s, r) / rr;
+    const minT = Math.min(t0, t1);
+    const maxT = Math.max(t0, t1);
+    const overlapStart = Math.max(0, minT);
+    const overlapEnd = Math.min(1, maxT);
+    if (overlapEnd - overlapStart > 1e-6) {
+      return { kind: "overlap" };
+    }
+    if (overlapEnd >= -1e-6 && overlapStart <= 1 + 1e-6) {
+      const t = clamp((overlapStart + overlapEnd) * 0.5, 0, 1);
+      const pointWorld = add(a0, mul(r, t));
+      return { kind: "point", pointWorld, tA: t, tB: 0 };
+    }
+    return { kind: "none" };
+  }
+
+  if (Math.abs(rxs) <= eps) return { kind: "none" };
+
+  const t = cross2(qmp, s) / rxs;
+  const u = cross2(qmp, r) / rxs;
+  if (t < -1e-6 || t > 1 + 1e-6 || u < -1e-6 || u > 1 + 1e-6) {
+    return { kind: "none" };
+  }
+
+  const tSafe = clamp(t, 0, 1);
+  const uSafe = clamp(u, 0, 1);
+  return {
+    kind: "point",
+    pointWorld: add(a0, mul(r, tSafe)),
+    tA: tSafe,
+    tB: uSafe,
+  };
+}
+
+type NodeIntersectionEdgeHit = {
+  figureId: string;
+  edgeId: string;
+  t: number;
+  distance: number;
+};
+
+type NodeIntersectionProbeResult =
+  | { kind: "none" }
+  | { kind: "ambiguous" }
+  | {
+      kind: "ok";
+      pointWorld: Vec2;
+      hits: NodeIntersectionEdgeHit[];
+    };
+
+type IntersectionEdgeSample = {
+  figureId: string;
+  figure: Figure;
+  edge: FigureEdge;
+  pointsWorld: Vec2[];
+};
+
+function findNodeIntersectionProbe(
+  figures: Figure[],
+  clickWorld: Vec2,
+  thresholdWorld: number,
+  anchorFigureId: string | null
+): NodeIntersectionProbeResult {
+  if (!Number.isFinite(thresholdWorld) || thresholdWorld <= 0) {
+    return { kind: "none" };
+  }
+
+  const edgeSamples: IntersectionEdgeSample[] = [];
+  for (const figure of figures) {
+    if (!isFigureEligibleForContourTools(figure)) continue;
+    for (const edge of figure.edges) {
+      const pointsWorld = edgeWorldSamples(figure, edge);
+      if (pointsWorld.length < 2) continue;
+      edgeSamples.push({ figureId: figure.id, figure, edge, pointsWorld });
+    }
+  }
+
+  if (edgeSamples.length < 2) return { kind: "none" };
+
+  let bestCandidate:
+    | {
+        pointWorld: Vec2;
+        distance: number;
+      }
+    | null = null;
+  let overlapNearClick = false;
+
+  for (let i = 0; i < edgeSamples.length; i++) {
+    const a = edgeSamples[i]!;
+    for (let j = i + 1; j < edgeSamples.length; j++) {
+      const b = edgeSamples[j]!;
+
+      if (
+        anchorFigureId &&
+        a.figureId !== anchorFigureId &&
+        b.figureId !== anchorFigureId
+      ) {
+        continue;
+      }
+
+      if (a.figureId === b.figureId) {
+        const sharesNode =
+          a.edge.from === b.edge.from ||
+          a.edge.from === b.edge.to ||
+          a.edge.to === b.edge.from ||
+          a.edge.to === b.edge.to;
+        if (sharesNode) continue;
+      }
+
+      const aPts = a.pointsWorld;
+      const bPts = b.pointsWorld;
+      for (let ai = 0; ai < aPts.length - 1; ai++) {
+        const a0 = aPts[ai]!;
+        const a1 = aPts[ai + 1]!;
+        for (let bi = 0; bi < bPts.length - 1; bi++) {
+          const b0 = bPts[bi]!;
+          const b1 = bPts[bi + 1]!;
+          const inter = intersectSegmentsWorld(a0, a1, b0, b1);
+          if (inter.kind === "none") continue;
+          if (inter.kind === "overlap") {
+            const nearA = pointToSegmentDistance(clickWorld, a0, a1).d <= thresholdWorld;
+            const nearB = pointToSegmentDistance(clickWorld, b0, b1).d <= thresholdWorld;
+            if (nearA && nearB) overlapNearClick = true;
+            continue;
+          }
+
+          const d = dist(inter.pointWorld, clickWorld);
+          if (d > thresholdWorld * 1.35) continue;
+          if (!bestCandidate || d < bestCandidate.distance) {
+            bestCandidate = { pointWorld: inter.pointWorld, distance: d };
+          }
+        }
+      }
+    }
+  }
+
+  if (overlapNearClick) return { kind: "ambiguous" };
+  if (!bestCandidate) return { kind: "none" };
+
+  const pointWorld = bestCandidate.pointWorld;
+  const dedupHits = new Map<string, NodeIntersectionEdgeHit>();
+
+  for (const figure of figures) {
+    if (!isFigureEligibleForContourTools(figure)) continue;
+    const localPoint = worldToFigureLocal(figure, pointWorld);
+    for (const edge of figure.edges) {
+      const hit = nearestOnEdgeLocal(figure, edge, localPoint);
+      if (!hit || hit.d > thresholdWorld) continue;
+      const key = `${figure.id}:${edge.id}`;
+      const current = dedupHits.get(key);
+      if (!current || hit.d < current.distance) {
+        dedupHits.set(key, {
+          figureId: figure.id,
+          edgeId: edge.id,
+          t: hit.t,
+          distance: hit.d,
+        });
+      }
+    }
+  }
+
+  const hits = Array.from(dedupHits.values()).sort(
+    (aHit, bHit) => aHit.distance - bHit.distance
+  );
+  if (anchorFigureId && !hits.some((h) => h.figureId === anchorFigureId)) {
+    return { kind: "none" };
+  }
+  if (hits.length < 2) return { kind: "none" };
+
+  return { kind: "ok", pointWorld, hits };
+}
+
+function findFigureNodeIdNearWorldPoint(
+  figure: Figure,
+  pointWorld: Vec2,
+  toleranceWorld: number
+): string | null {
+  let bestId: string | null = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const node of figure.nodes) {
+    const world = figureLocalToWorld(figure, { x: node.x, y: node.y });
+    const d = dist(world, pointWorld);
+    if (d < bestDist) {
+      bestDist = d;
+      bestId = node.id;
+    }
+  }
+  if (!bestId || bestDist > toleranceWorld) return null;
+  return bestId;
 }
 
 type OrientedEdgeWorldGeometry = {
@@ -2865,6 +3115,91 @@ function mergeFiguresWithNewFigure(
   ];
 }
 
+function mergeFiguresByIdsAsSingle(
+  figures: Figure[],
+  touchedIds: Set<string>,
+  styleSourceId: string | null
+): { nextFigures: Figure[]; mergedFigure: Figure } | null {
+  const touchedTargets = figures.filter(
+    (f) => touchedIds.has(f.id) && f.kind !== "seam" && f.tool !== "text"
+  );
+  if (touchedTargets.length < 2) return null;
+
+  const styleSource =
+    touchedTargets.find((f) => f.id === styleSourceId) ??
+    touchedTargets.find((f) => f.kind === "mold") ??
+    touchedTargets[0];
+
+  const mergedNodes: FigureNode[] = [];
+  const mergedEdges: FigureEdge[] = [];
+
+  for (const figure of touchedTargets) {
+    const clone = cloneFigureToWorld(figure);
+    mergedNodes.push(...clone.nodes);
+    mergedEdges.push(...clone.edges);
+  }
+
+  const mergedFigureBase: Figure = {
+    id: id("fig"),
+    name: styleSource.name,
+    nameFontSizePx: styleSource.nameFontSizePx,
+    nameRotationDeg: styleSource.nameRotationDeg,
+    nameOffsetLocal: styleSource.nameOffsetLocal
+      ? { ...styleSource.nameOffsetLocal }
+      : undefined,
+    tool: styleSource.tool,
+    kind: styleSource.kind,
+    x: 0,
+    y: 0,
+    rotation: 0,
+    closed: false,
+    nodes: mergedNodes,
+    edges: mergedEdges,
+    stroke: styleSource.stroke,
+    strokeWidth: styleSource.strokeWidth,
+    fill:
+      styleSource.kind === "mold"
+        ? styleSource.fill ?? "rgba(96,165,250,0.22)"
+        : styleSource.fill ?? "transparent",
+    opacity: styleSource.opacity ?? 1,
+    dash: styleSource.dash ? [...styleSource.dash] : undefined,
+    moldMeta: styleSource.moldMeta
+      ? {
+          ...styleSource.moldMeta,
+          grainline: styleSource.moldMeta.grainline
+            ? { ...styleSource.moldMeta.grainline }
+            : undefined,
+          sourceSegments: styleSource.moldMeta.sourceSegments?.map((seg) => ({
+            ...seg,
+          })),
+          lineage: styleSource.moldMeta.lineage
+            ? { ...styleSource.moldMeta.lineage }
+            : undefined,
+        }
+      : undefined,
+  };
+
+  const normalizedBase = normalizeLineEdgesAtNodes(
+    mergeCoincidentNodes(mergedFigureBase)
+  );
+  const normalizedMerged: Figure = {
+    ...normalizedBase,
+    closed: hasClosedLoop(normalizedBase),
+  };
+
+  const nextFigures = [
+    ...figures.filter((f) => {
+      if (touchedIds.has(f.id)) return false;
+      if (f.kind === "seam" && f.parentId && touchedIds.has(f.parentId))
+        return false;
+      return true;
+    }),
+    normalizedMerged,
+  ];
+
+  return { nextFigures, mergedFigure: normalizedMerged };
+}
+
 export default function Canvas() {
   const {
     tool,
@@ -4216,6 +4551,217 @@ export default function Canvas() {
       };
     },
     []
+  );
+
+  const fuseNodeIntersectionAtWorld = useCallback(
+    (
+      pointWorld: Vec2,
+      edgeThresholdWorld: number,
+      nodeThresholdWorld: number
+    ): boolean => {
+      const probe = findNodeIntersectionProbe(
+        figures,
+        pointWorld,
+        edgeThresholdWorld,
+        selectedFigureId ?? null
+      );
+      if (probe.kind === "ambiguous") {
+        toast(
+          "Interseção ambígua: ajuste o desenho ou zoom para fundir.",
+          "error"
+        );
+        return true;
+      }
+      if (probe.kind !== "ok") return false;
+
+      let didMutate = false;
+      let nextSelectedFigureId: string | null = null;
+      let nextSelectedNodeId: string | null = null;
+
+      setFigures((prev) => {
+        let working = prev;
+        let mutated = false;
+        const touchedIds = new Set<string>();
+        const resolvedNodeIdByFigure = new Map<string, string>();
+
+        const hitsByFigure = new Map<string, NodeIntersectionEdgeHit[]>();
+        for (const hit of probe.hits) {
+          const list = hitsByFigure.get(hit.figureId) ?? [];
+          list.push(hit);
+          hitsByFigure.set(hit.figureId, list);
+        }
+
+        for (const [figureId, hits] of hitsByFigure) {
+          let currentFigure = working.find((f) => f.id === figureId) ?? null;
+          if (!currentFigure || !isFigureEligibleForContourTools(currentFigure)) {
+            continue;
+          }
+          touchedIds.add(figureId);
+
+          const candidateNodeIds: string[] = [];
+          for (const hit of hits) {
+            currentFigure = working.find((f) => f.id === figureId) ?? null;
+            if (!currentFigure) break;
+
+            const edge = currentFigure.edges.find((e) => e.id === hit.edgeId) ?? null;
+            if (!edge) continue;
+
+            const fromNode = getNodeById(currentFigure.nodes, edge.from);
+            const toNode = getNodeById(currentFigure.nodes, edge.to);
+            const fromNodeWorld = fromNode
+              ? figureLocalToWorld(currentFigure, { x: fromNode.x, y: fromNode.y })
+              : null;
+            const toNodeWorld = toNode
+              ? figureLocalToWorld(currentFigure, { x: toNode.x, y: toNode.y })
+              : null;
+
+            if (
+              fromNode &&
+              fromNodeWorld &&
+              dist(fromNodeWorld, probe.pointWorld) <= nodeThresholdWorld
+            ) {
+              candidateNodeIds.push(fromNode.id);
+              continue;
+            }
+            if (
+              toNode &&
+              toNodeWorld &&
+              dist(toNodeWorld, probe.pointWorld) <= nodeThresholdWorld
+            ) {
+              candidateNodeIds.push(toNode.id);
+              continue;
+            }
+
+            const split = splitFigureEdge(currentFigure, edge.id, hit.t);
+            const nextWorking = applySplitResultToFigureSet(
+              working,
+              figureId,
+              split
+            );
+            if (nextWorking !== working) {
+              working = nextWorking;
+              mutated = true;
+            }
+
+            currentFigure = working.find((f) => f.id === figureId) ?? null;
+            if (!currentFigure) break;
+
+            const splitNodeId =
+              split.newNodeId ??
+              findFigureNodeIdNearWorldPoint(
+                currentFigure,
+                probe.pointWorld,
+                nodeThresholdWorld * 2
+              );
+            if (splitNodeId) candidateNodeIds.push(splitNodeId);
+          }
+
+          currentFigure = working.find((f) => f.id === figureId) ?? null;
+          if (!currentFigure || candidateNodeIds.length === 0) continue;
+
+          const uniqueNodeIds = Array.from(new Set(candidateNodeIds));
+          let nextFigure = currentFigure;
+          let keepNodeId = uniqueNodeIds[0]!;
+
+          for (const nodeId of uniqueNodeIds.slice(1)) {
+            if (nodeId === keepNodeId) continue;
+            nextFigure = mergeFigureNodeIds(nextFigure, nodeId, keepNodeId);
+            mutated = true;
+          }
+
+          const mergedCoincident = mergeCoincidentNodes(nextFigure, 1);
+          if (mergedCoincident !== nextFigure) {
+            nextFigure = mergedCoincident;
+            mutated = true;
+          }
+
+          if (nextFigure !== currentFigure) {
+            working = working.map((f) => (f.id === figureId ? nextFigure : f));
+          }
+
+          const nearestNodeId =
+            findFigureNodeIdNearWorldPoint(
+              nextFigure,
+              probe.pointWorld,
+              Math.max(1, nodeThresholdWorld * 2)
+            ) ?? keepNodeId;
+          keepNodeId = nearestNodeId;
+          resolvedNodeIdByFigure.set(figureId, keepNodeId);
+        }
+
+        if (touchedIds.size === 0) return prev;
+
+        if (touchedIds.size > 1) {
+          const merged = mergeFiguresByIdsAsSingle(
+            working,
+            touchedIds,
+            selectedFigureId ?? null
+          );
+          if (!merged) return prev;
+          working = merged.nextFigures;
+          mutated = true;
+          nextSelectedFigureId = merged.mergedFigure.id;
+          nextSelectedNodeId = findFigureNodeIdNearWorldPoint(
+            merged.mergedFigure,
+            probe.pointWorld,
+            Math.max(1, nodeThresholdWorld * 2)
+          );
+        } else {
+          const onlyId = Array.from(touchedIds)[0]!;
+          const onlyFigure = working.find((f) => f.id === onlyId) ?? null;
+          nextSelectedFigureId = onlyId;
+          nextSelectedNodeId =
+            resolvedNodeIdByFigure.get(onlyId) ??
+            (onlyFigure
+              ? findFigureNodeIdNearWorldPoint(
+                  onlyFigure,
+                  probe.pointWorld,
+                  Math.max(1, nodeThresholdWorld * 2)
+                )
+              : null);
+        }
+
+        if (!mutated) return prev;
+        didMutate = true;
+        return working;
+      });
+
+      if (!didMutate) return false;
+      if (nextSelectedFigureId) {
+        setSelectedFigureIds([nextSelectedFigureId]);
+      }
+      if (nextSelectedFigureId && nextSelectedNodeId) {
+        setNodeSelection({
+          figureId: nextSelectedFigureId,
+          nodeId: nextSelectedNodeId,
+          handle: null,
+        });
+      }
+      setHoveredEdge(null);
+      sendDebugLog({
+        type: "node-click",
+        payload: {
+          action: "fuse-intersection",
+          pointWorld: probe.pointWorld,
+          hits: probe.hits.map((h) => ({
+            figureId: h.figureId,
+            edgeId: h.edgeId,
+            t: h.t,
+          })),
+          selectedFigureId: nextSelectedFigureId,
+          selectedNodeId: nextSelectedNodeId,
+        },
+      });
+      return true;
+    },
+    [
+      figures,
+      selectedFigureId,
+      setFigures,
+      setNodeSelection,
+      setSelectedFigureIds,
+      setHoveredEdge,
+    ]
   );
 
   const dragHandleRef = useRef<{
@@ -6509,6 +7055,10 @@ export default function Canvas() {
       const local = worldToFigureLocal(selectedFigure, world);
       const nodeThreshold = 10 / scale;
       const edgeThreshold = 12 / scale;
+
+      if (fuseNodeIntersectionAtWorld(world, edgeThreshold, nodeThreshold)) {
+        return;
+      }
 
       if (hoveredEdge && hoveredEdge.figureId === selectedFigureId) {
         const hoverDist = dist(local, hoveredEdge.pointLocal);
