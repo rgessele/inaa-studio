@@ -903,3 +903,430 @@ export async function adminImportUsersCsv(formData: FormData) {
   revalidatePath("/admin/import");
   redirect(`/admin/import?job=${job.id}`);
 }
+
+type NotificationType = "info" | "warning" | "urgent";
+type NotificationDeliveryMode = "now" | "schedule";
+
+const NOTIFICATION_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const NOTIFICATION_ALLOWED_IMAGE_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+function normalizeNotificationType(raw: string | null | undefined): NotificationType {
+  const value = (raw ?? "").trim().toLowerCase();
+  if (value === "warning") return "warning";
+  if (value === "urgent") return "urgent";
+  return "info";
+}
+
+function normalizeNotificationDeliveryMode(
+  raw: string | null | undefined
+): NotificationDeliveryMode {
+  const value = (raw ?? "").trim().toLowerCase();
+  return value === "schedule" ? "schedule" : "now";
+}
+
+function sanitizeStorageFileName(input: string): string {
+  const trimmed = input.trim().toLowerCase();
+  const base = trimmed.replace(/[^a-z0-9._-]+/g, "-").replace(/-+/g, "-");
+  return base.slice(0, 120) || "image";
+}
+
+function normalizeOptionalHttpUrl(raw: string | null | undefined): string | null {
+  const value = (raw ?? "").trim();
+  if (!value) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("URL de ação inválida");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("URL de ação deve usar http ou https");
+  }
+  return parsed.toString();
+}
+
+function extractAdminNotificationStoragePath(
+  imageUrl: string | null | undefined
+): string | null {
+  const value = (imageUrl ?? "").trim();
+  if (!value) return null;
+
+  const marker = "/storage/v1/object/public/admin-notifications/";
+  const idx = value.indexOf(marker);
+  if (idx < 0) return null;
+
+  const tail = value.slice(idx + marker.length);
+  const path = tail.split("?")[0] ?? "";
+  if (!path) return null;
+
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
+async function uploadAdminNotificationImage(params: {
+  notificationId: string;
+  file: File;
+}) {
+  if (!NOTIFICATION_ALLOWED_IMAGE_MIME.has(params.file.type)) {
+    throw new Error("Imagem inválida. Formatos aceitos: JPG, PNG, WEBP");
+  }
+  if (params.file.size > NOTIFICATION_IMAGE_MAX_BYTES) {
+    throw new Error("A imagem deve ter no máximo 5MB");
+  }
+
+  const admin = createAdminClient();
+  const baseName = sanitizeStorageFileName(params.file.name || "image");
+  const path = `admin/${params.notificationId}/${Date.now()}-${baseName}`;
+
+  const uploadRes = await admin.storage
+    .from("admin-notifications")
+    .upload(path, params.file, {
+      upsert: false,
+      contentType: params.file.type,
+    });
+
+  if (uploadRes.error) {
+    throw new Error(`Falha ao enviar imagem: ${uploadRes.error.message}`);
+  }
+
+  const { data: publicData } = admin.storage
+    .from("admin-notifications")
+    .getPublicUrl(path);
+
+  const imageUrl = publicData.publicUrl;
+  if (!imageUrl) {
+    throw new Error("Falha ao gerar URL pública da imagem");
+  }
+
+  return {
+    imageUrl,
+    imageMimeType: params.file.type,
+    imageSizeBytes: params.file.size,
+  };
+}
+
+export async function adminCreateNotification(params: {
+  title: string;
+  body: string;
+  type?: string | null;
+  actionUrl?: string | null;
+  deliveryMode?: string | null;
+  scheduledAtIso?: string | null;
+  imageFile?: File | null;
+  imageAlt?: string | null;
+}) {
+  const { user, supabase } = await requireAdmin();
+
+  const title = params.title.trim();
+  const body = params.body.trim();
+  const type = normalizeNotificationType(params.type);
+  const deliveryMode = normalizeNotificationDeliveryMode(params.deliveryMode);
+  const actionUrl = normalizeOptionalHttpUrl(params.actionUrl);
+  const imageAlt = (params.imageAlt ?? "").trim() || null;
+
+  if (!title) throw new Error("Título é obrigatório");
+  if (!body) throw new Error("Conteúdo é obrigatório");
+
+  let scheduledAtIso: string | null = null;
+  if (deliveryMode === "schedule") {
+    const raw = (params.scheduledAtIso ?? "").trim();
+    if (!raw) {
+      throw new Error("Data/hora de agendamento é obrigatória");
+    }
+    const parsed = new Date(raw);
+    if (!Number.isFinite(parsed.getTime())) {
+      throw new Error("Data/hora de agendamento inválida");
+    }
+    if (parsed.getTime() <= Date.now()) {
+      throw new Error("Data/hora de agendamento deve estar no futuro");
+    }
+    scheduledAtIso = parsed.toISOString();
+  }
+
+  const admin = createAdminClient();
+  const { data: inserted, error: insertError } = await admin
+    .from("admin_notifications")
+    .insert({
+      title,
+      body,
+      type,
+      action_url: actionUrl,
+      status: "draft",
+      created_by: user.id,
+      image_alt: imageAlt,
+    })
+    .select("id")
+    .single();
+
+  if (insertError || !inserted?.id) {
+    throw new Error(insertError?.message ?? "Falha ao criar notificação");
+  }
+
+  const notificationId = inserted.id as string;
+
+  const maybeImage = params.imageFile;
+  if (maybeImage && maybeImage.size > 0) {
+    const image = await uploadAdminNotificationImage({
+      notificationId,
+      file: maybeImage,
+    });
+
+    const { error: imageUpdateError } = await admin
+      .from("admin_notifications")
+      .update({
+        image_url: image.imageUrl,
+        image_mime_type: image.imageMimeType,
+        image_size_bytes: image.imageSizeBytes,
+        image_alt: imageAlt,
+      })
+      .eq("id", notificationId);
+
+    if (imageUpdateError) {
+      throw new Error(imageUpdateError.message);
+    }
+  }
+
+  if (deliveryMode === "schedule") {
+    const { error: scheduleError } = await supabase.rpc(
+      "schedule_admin_notification",
+      {
+        p_notification_id: notificationId,
+        p_scheduled_at: scheduledAtIso,
+      }
+    );
+    if (scheduleError) {
+      throw new Error(scheduleError.message);
+    }
+  } else {
+    const { error: publishError } = await supabase.rpc(
+      "publish_admin_notification",
+      {
+        p_notification_id: notificationId,
+      }
+    );
+    if (publishError) {
+      throw new Error(publishError.message);
+    }
+  }
+
+  await audit({
+    actorUserId: user.id,
+    action: "admin_notification_create",
+    payload: {
+      notification_id: notificationId,
+      title,
+      type,
+      delivery_mode: deliveryMode,
+      scheduled_at: scheduledAtIso,
+      has_image: Boolean(maybeImage && maybeImage.size > 0),
+    },
+  });
+
+  revalidatePath("/admin/notifications");
+  revalidatePath("/dashboard");
+
+  return { notificationId };
+}
+
+export async function adminPublishNotification(notificationId: string) {
+  const { user, supabase } = await requireAdmin();
+  const id = notificationId.trim();
+  if (!id) throw new Error("Notificação inválida");
+
+  const { error } = await supabase.rpc("publish_admin_notification", {
+    p_notification_id: id,
+  });
+
+  if (error) throw new Error(error.message);
+
+  await audit({
+    actorUserId: user.id,
+    action: "admin_notification_publish",
+    payload: { notification_id: id },
+  });
+
+  revalidatePath("/admin/notifications");
+  revalidatePath("/dashboard");
+}
+
+export async function adminCancelNotification(notificationId: string) {
+  const { user, supabase } = await requireAdmin();
+  const id = notificationId.trim();
+  if (!id) throw new Error("Notificação inválida");
+
+  const { error } = await supabase.rpc("cancel_admin_notification", {
+    p_notification_id: id,
+  });
+
+  if (error) throw new Error(error.message);
+
+  await audit({
+    actorUserId: user.id,
+    action: "admin_notification_cancel",
+    payload: { notification_id: id },
+  });
+
+  revalidatePath("/admin/notifications");
+}
+
+export async function adminDeleteNotification(notificationId: string) {
+  const { user } = await requireAdmin();
+  const id = notificationId.trim();
+  if (!id) throw new Error("Notificação inválida");
+
+  const admin = createAdminClient();
+
+  const { data: existing, error: fetchError } = await admin
+    .from("admin_notifications")
+    .select("id, status, image_url")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (fetchError) throw new Error(fetchError.message);
+  if (!existing?.id) throw new Error("Notificação não encontrada");
+
+  const storagePath = extractAdminNotificationStoragePath(
+    (existing.image_url as string | null) ?? null
+  );
+  if (storagePath) {
+    try {
+      await admin.storage.from("admin-notifications").remove([storagePath]);
+    } catch {
+      // best-effort: a notificação ainda será removida do banco.
+    }
+  }
+
+  const { error: deleteError } = await admin
+    .from("admin_notifications")
+    .delete()
+    .eq("id", id);
+
+  if (deleteError) throw new Error(deleteError.message);
+
+  await audit({
+    actorUserId: user.id,
+    action: "admin_notification_delete",
+    payload: {
+      notification_id: id,
+      status: existing.status ?? null,
+    },
+  });
+
+  revalidatePath("/admin/notifications");
+  revalidatePath("/dashboard");
+}
+
+export async function adminApplyBulkNotificationAction(params: {
+  action: string;
+  notificationIds: string[];
+}) {
+  const { user, supabase } = await requireAdmin();
+
+  const action = (params.action ?? "").trim().toLowerCase();
+  const allowedActions = new Set(["publish", "cancel", "delete"]);
+  if (!allowedActions.has(action)) {
+    throw new Error("Ação em massa inválida");
+  }
+
+  const ids = Array.from(
+    new Set(
+      (params.notificationIds ?? [])
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (ids.length === 0) {
+    throw new Error("Selecione ao menos uma notificação");
+  }
+
+  if (ids.length > 300) {
+    throw new Error("Selecione no máximo 300 notificações por vez");
+  }
+
+  let ok = 0;
+  let failed = 0;
+
+  if (action === "publish") {
+    for (const id of ids) {
+      const { error } = await supabase.rpc("publish_admin_notification", {
+        p_notification_id: id,
+      });
+      if (error) failed++;
+      else ok++;
+    }
+  } else if (action === "cancel") {
+    for (const id of ids) {
+      const { error } = await supabase.rpc("cancel_admin_notification", {
+        p_notification_id: id,
+      });
+      if (error) failed++;
+      else ok++;
+    }
+  } else {
+    // Bulk delete with best-effort storage cleanup.
+    const admin = createAdminClient();
+
+    const { data: existing, error: fetchError } = await admin
+      .from("admin_notifications")
+      .select("id, image_url")
+      .in("id", ids);
+
+    if (fetchError) throw new Error(fetchError.message);
+
+    const byId = new Map(
+      ((existing ?? []) as Array<{ id: string; image_url: string | null }>).map(
+        (row) => [row.id, row]
+      )
+    );
+    const existingIds = ids.filter((id) => byId.has(id));
+
+    if (existingIds.length === 0) {
+      throw new Error("Nenhuma notificação válida selecionada");
+    }
+
+    const paths = existingIds
+      .map((id) => extractAdminNotificationStoragePath(byId.get(id)?.image_url))
+      .filter((value): value is string => Boolean(value));
+    if (paths.length > 0) {
+      try {
+        await admin.storage.from("admin-notifications").remove(paths);
+      } catch {
+        // best-effort only
+      }
+    }
+
+    const { error: deleteError } = await admin
+      .from("admin_notifications")
+      .delete()
+      .in("id", existingIds);
+
+    if (deleteError) throw new Error(deleteError.message);
+
+    ok = existingIds.length;
+    failed = ids.length - ok;
+  }
+
+  await audit({
+    actorUserId: user.id,
+    action: "admin_notification_bulk_action",
+    payload: {
+      bulk_action: action,
+      requested: ids.length,
+      ok,
+      failed,
+    },
+  });
+
+  revalidatePath("/admin/notifications");
+  revalidatePath("/dashboard");
+
+  return { action, requested: ids.length, ok, failed };
+}

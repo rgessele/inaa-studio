@@ -7,6 +7,7 @@ import type { Project } from "@/lib/projects";
 import { PresenceHeartbeat } from "@/components/PresenceHeartbeat";
 import Link from "next/link";
 import { UserAvatarMenu } from "@/components/UserAvatarMenu";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -117,6 +118,7 @@ export default async function DashboardPage() {
                   Admin
                 </Link>
               ) : null}
+              <NotificationBell />
               <ThemeToggleButton />
 
               <div className="flex items-center gap-3 pl-4 border-l border-gray-200 dark:border-gray-700">

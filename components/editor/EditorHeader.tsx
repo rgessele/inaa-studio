@@ -12,6 +12,7 @@ import { FileMenu } from "./FileMenu";
 import { EditMenu } from "./EditMenu";
 import { createClient } from "@/lib/supabase/client";
 import { ThemeToggleButton } from "@/components/theme/ThemeToggleButton";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 function isE2EAutomationActive(): boolean {
   return (
@@ -841,6 +842,9 @@ export function EditorHeader() {
             </span>
             Dashboard
           </button>
+          <div className="flex items-center">
+            <NotificationBell />
+          </div>
           <div className="flex items-center">
             <ThemeToggleButton
               onMouseEnter={themeTooltip.onMouseEnter}

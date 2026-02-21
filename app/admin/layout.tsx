@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ThemeToggleButton } from "@/components/dashboard/ThemeToggleButton";
 import { PresenceHeartbeat } from "@/components/PresenceHeartbeat";
 import { UserAvatarMenu } from "@/components/UserAvatarMenu";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 export default async function AdminLayout({
   children,
@@ -90,6 +91,7 @@ export default async function AdminLayout({
               <div className="hidden sm:flex items-center gap-1">
                 {navLink("/admin", "Visão Geral")}
                 {navLink("/admin/users", "Usuários")}
+                {navLink("/admin/notifications", "Notificações")}
               </div>
             </div>
 
@@ -104,6 +106,7 @@ export default async function AdminLayout({
                 </span>
                 Dashboard
               </Link>
+              <NotificationBell />
               <ThemeToggleButton />
 
               <div className="flex items-center gap-3 pl-4 border-l border-gray-200 dark:border-gray-700">
@@ -144,6 +147,7 @@ export default async function AdminLayout({
           <div className="sm:hidden pb-3 flex gap-2">
             {navLink("/admin", "Visão Geral")}
             {navLink("/admin/users", "Usuários")}
+            {navLink("/admin/notifications", "Notificações")}
             {navLink("/dashboard", "Dashboard")}
           </div>
         </div>
