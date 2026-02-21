@@ -13,6 +13,7 @@ import { EditMenu } from "./EditMenu";
 import { createClient } from "@/lib/supabase/client";
 import { ThemeToggleButton } from "@/components/theme/ThemeToggleButton";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { SupportHelpButton } from "@/components/support/SupportHelpButton";
 
 function isE2EAutomationActive(): boolean {
   return (
@@ -844,6 +845,9 @@ export function EditorHeader() {
           </button>
           <div className="flex items-center">
             <NotificationBell />
+          </div>
+          <div className="flex items-center">
+            <SupportHelpButton />
           </div>
           <div className="flex items-center">
             <ThemeToggleButton

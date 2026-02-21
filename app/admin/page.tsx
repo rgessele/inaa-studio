@@ -217,6 +217,17 @@ export default async function AdminOverviewPage() {
                 Publicação imediata, agendada e leitura
               </p>
             </Link>
+            <Link
+              href="/admin/settings"
+              className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-white/5 p-4 hover:bg-white/70 dark:hover:bg-white/10 transition-colors"
+            >
+              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                Configurações
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Parâmetros globais da plataforma
+              </p>
+            </Link>
           </div>
         </div>
       </div>

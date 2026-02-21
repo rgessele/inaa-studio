@@ -5,6 +5,10 @@ import { redirect } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  SUPPORT_WHATSAPP_URL_SETTING_KEY,
+  normalizeHttpUrl,
+} from "@/lib/app-settings";
 
 type Role = "admin" | "assinante";
 type Status = "active" | "inactive";
@@ -1360,4 +1364,39 @@ export async function adminApplyBulkNotificationAction(params: {
   revalidatePath("/dashboard");
 
   return { action, requested: ids.length, ok, failed };
+}
+
+export async function adminSetSupportWhatsappUrl(rawUrl: string) {
+  const { user, supabase } = await requireAdmin();
+
+  const normalizedUrl = normalizeHttpUrl(rawUrl);
+  if (!normalizedUrl) {
+    throw new Error("URL de suporte inválida");
+  }
+
+  const { error } = await supabase.from("app_settings").upsert(
+    {
+      key: SUPPORT_WHATSAPP_URL_SETTING_KEY,
+      value: normalizedUrl,
+      is_public: true,
+      updated_by: user.id,
+    },
+    {
+      onConflict: "key",
+    }
+  );
+  if (error) throw new Error(error.message);
+
+  await audit({
+    actorUserId: user.id,
+    action: "app_setting_update",
+    payload: {
+      key: SUPPORT_WHATSAPP_URL_SETTING_KEY,
+      value: normalizedUrl,
+    },
+  });
+
+  revalidatePath("/admin/settings");
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
 }

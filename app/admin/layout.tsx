@@ -5,6 +5,7 @@ import { ThemeToggleButton } from "@/components/dashboard/ThemeToggleButton";
 import { PresenceHeartbeat } from "@/components/PresenceHeartbeat";
 import { UserAvatarMenu } from "@/components/UserAvatarMenu";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { SupportHelpButton } from "@/components/support/SupportHelpButton";
 
 export default async function AdminLayout({
   children,
@@ -92,6 +93,7 @@ export default async function AdminLayout({
                 {navLink("/admin", "Visão Geral")}
                 {navLink("/admin/users", "Usuários")}
                 {navLink("/admin/notifications", "Notificações")}
+                {navLink("/admin/settings", "Configurações")}
               </div>
             </div>
 
@@ -107,6 +109,7 @@ export default async function AdminLayout({
                 Dashboard
               </Link>
               <NotificationBell />
+              <SupportHelpButton />
               <ThemeToggleButton />
 
               <div className="flex items-center gap-3 pl-4 border-l border-gray-200 dark:border-gray-700">
@@ -148,6 +151,7 @@ export default async function AdminLayout({
             {navLink("/admin", "Visão Geral")}
             {navLink("/admin/users", "Usuários")}
             {navLink("/admin/notifications", "Notificações")}
+            {navLink("/admin/settings", "Configurações")}
             {navLink("/dashboard", "Dashboard")}
           </div>
         </div>
