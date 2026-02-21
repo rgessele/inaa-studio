@@ -1336,6 +1336,166 @@ function edgeWorldSamples(figure: Figure, edge: FigureEdge): Vec2[] {
   return local.map((p) => figureLocalToWorld(figure, p));
 }
 
+type OrientedEdgeWorldGeometry = {
+  kind: "line" | "cubic";
+  startWorld: Vec2;
+  endWorld: Vec2;
+  startOutHandleWorld?: Vec2;
+  endInHandleWorld?: Vec2;
+};
+
+function resolveOrientedEdgeWorldGeometry(
+  figure: Figure,
+  edge: FigureEdge,
+  reversed: boolean
+): OrientedEdgeWorldGeometry | null {
+  const fromNode = figure.nodes.find((n) => n.id === edge.from) ?? null;
+  const toNode = figure.nodes.find((n) => n.id === edge.to) ?? null;
+  if (!fromNode || !toNode) return null;
+
+  const fromWorld = figureLocalToWorld(figure, { x: fromNode.x, y: fromNode.y });
+  const toWorld = figureLocalToWorld(figure, { x: toNode.x, y: toNode.y });
+
+  const fromOutWorld = fromNode.outHandle
+    ? figureLocalToWorld(figure, {
+        x: fromNode.outHandle.x,
+        y: fromNode.outHandle.y,
+      })
+    : undefined;
+  const toInWorld = toNode.inHandle
+    ? figureLocalToWorld(figure, {
+        x: toNode.inHandle.x,
+        y: toNode.inHandle.y,
+      })
+    : undefined;
+
+  if (!reversed) {
+    return {
+      kind: edge.kind,
+      startWorld: fromWorld,
+      endWorld: toWorld,
+      startOutHandleWorld: fromOutWorld,
+      endInHandleWorld: toInWorld,
+    };
+  }
+
+  // Reverse cubic direction: p0'=p3, p1'=p2, p2'=p1, p3'=p0.
+  return {
+    kind: edge.kind,
+    startWorld: toWorld,
+    endWorld: fromWorld,
+    startOutHandleWorld: toInWorld,
+    endInHandleWorld: fromOutWorld,
+  };
+}
+
+function isWholeEdgeSegment(seg: ExtractSegmentDraft): boolean {
+  const eps = 1e-6;
+  const isForward = Math.abs(seg.t0 - 0) <= eps && Math.abs(seg.t1 - 1) <= eps;
+  const isReverse = Math.abs(seg.t0 - 1) <= eps && Math.abs(seg.t1 - 0) <= eps;
+  return isForward || isReverse;
+}
+
+function buildClosedMoldGeometryFromSegments(
+  segments: ExtractSegmentDraft[],
+  figuresById: Map<string, Figure>,
+  closeToleranceWorld: number
+): { nodes: FigureNode[]; edges: FigureEdge[] } | null {
+  if (segments.length === 0) return null;
+
+  const nodes: FigureNode[] = [];
+  const edges: FigureEdge[] = [];
+
+  const makeNode = (p: Vec2): FigureNode => ({
+    id: id("n"),
+    x: p.x,
+    y: p.y,
+    mode: "corner",
+  });
+
+  let firstNode: FigureNode | null = null;
+  let currentNode: FigureNode | null = null;
+
+  for (let idx = 0; idx < segments.length; idx++) {
+    const seg = segments[idx]!;
+    if (!isWholeEdgeSegment(seg)) return null;
+
+    const sourceFigure = figuresById.get(seg.sourceId) ?? null;
+    if (!sourceFigure) return null;
+    const sourceEdge = sourceFigure.edges.find((e) => e.id === seg.edgeId) ?? null;
+    if (!sourceEdge) return null;
+
+    const reversed = seg.t0 > seg.t1;
+    const edgeGeom = resolveOrientedEdgeWorldGeometry(
+      sourceFigure,
+      sourceEdge,
+      reversed
+    );
+    if (!edgeGeom) return null;
+
+    let startNode: FigureNode;
+    if (idx === 0) {
+      startNode = makeNode(edgeGeom.startWorld);
+      nodes.push(startNode);
+      firstNode = startNode;
+      currentNode = startNode;
+    } else {
+      if (!currentNode) return null;
+      const dStart = dist(
+        { x: currentNode.x, y: currentNode.y },
+        edgeGeom.startWorld
+      );
+      if (!Number.isFinite(dStart) || dStart > closeToleranceWorld) return null;
+      startNode = currentNode;
+    }
+
+    if (edgeGeom.kind === "cubic" && edgeGeom.startOutHandleWorld) {
+      startNode.outHandle = {
+        x: edgeGeom.startOutHandleWorld.x,
+        y: edgeGeom.startOutHandleWorld.y,
+      };
+      startNode.mode = "smooth";
+    }
+
+    const isLast = idx === segments.length - 1;
+    const canCloseOnFirst =
+      isLast &&
+      firstNode &&
+      dist({ x: firstNode.x, y: firstNode.y }, edgeGeom.endWorld) <=
+        closeToleranceWorld;
+
+    let endNode: FigureNode;
+    if (canCloseOnFirst) {
+      endNode = firstNode;
+    } else {
+      endNode = makeNode(edgeGeom.endWorld);
+      nodes.push(endNode);
+    }
+
+    if (edgeGeom.kind === "cubic" && edgeGeom.endInHandleWorld) {
+      endNode.inHandle = {
+        x: edgeGeom.endInHandleWorld.x,
+        y: edgeGeom.endInHandleWorld.y,
+      };
+      endNode.mode = "smooth";
+    }
+
+    edges.push({
+      id: id("e"),
+      from: startNode.id,
+      to: endNode.id,
+      kind: edgeGeom.kind,
+    });
+
+    currentNode = endNode;
+  }
+
+  if (nodes.length < 3 || edges.length < 3) return null;
+  if (!firstNode || !currentNode || firstNode.id !== currentNode.id) return null;
+
+  return { nodes, edges };
+}
+
 function buildPathFromExtractSegments(segments: ExtractSegmentDraft[]): Vec2[] {
   if (!segments.length) return [];
   const out: Vec2[] = [];
@@ -3141,19 +3301,30 @@ export default function Canvas() {
       return;
     }
 
-    const nodes = path.map((p) => ({
+    const closeTolWorld = 8 / Math.max(0.1, scale);
+    const sourceFiguresById = new Map(figures.map((f) => [f.id, f]));
+    const curveGeometry = buildClosedMoldGeometryFromSegments(
+      draft.segments,
+      sourceFiguresById,
+      closeTolWorld
+    );
+
+    const fallbackNodes = path.map((p) => ({
       id: id("n"),
       x: p.x,
       y: p.y,
       mode: "corner" as const,
     }));
 
-    const edges = nodes.map((n, idx) => ({
+    const fallbackEdges = fallbackNodes.map((n, idx) => ({
       id: id("e"),
       from: n.id,
-      to: nodes[(idx + 1) % nodes.length]!.id,
+      to: fallbackNodes[(idx + 1) % fallbackNodes.length]!.id,
       kind: "line" as const,
     }));
+
+    const nodes = curveGeometry?.nodes ?? fallbackNodes;
+    const edges = curveGeometry?.edges ?? fallbackEdges;
 
     const qty = Math.max(1, Math.round(Number(form.cutQuantity) || 1));
     const sourceSegments: MoldSourceSegmentRef[] = draft.segments.map((seg) => ({
@@ -3164,10 +3335,10 @@ export default function Canvas() {
       t1: seg.t1,
     }));
 
-    const minX = Math.min(...path.map((p) => p.x));
-    const minY = Math.min(...path.map((p) => p.y));
-    const maxX = Math.max(...path.map((p) => p.x));
-    const maxY = Math.max(...path.map((p) => p.y));
+    const minX = Math.min(...nodes.map((p) => p.x));
+    const minY = Math.min(...nodes.map((p) => p.y));
+    const maxX = Math.max(...nodes.map((p) => p.x));
+    const maxY = Math.max(...nodes.map((p) => p.y));
     const width = maxX - minX;
     const height = maxY - minY;
     const grainAngleDeg = width >= height ? 0 : 90;
@@ -3226,6 +3397,7 @@ export default function Canvas() {
     toast("Molde gerado com sucesso.", "success");
   }, [
     clearMoldExtractionState,
+    figures,
     moldConfirmDialog,
     moldCount,
     scale,
