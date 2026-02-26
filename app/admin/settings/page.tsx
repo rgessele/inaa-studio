@@ -1,9 +1,14 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { FormSubmitButton } from "@/components/admin/FormSubmitButton";
-import { adminSetSupportWhatsappUrl } from "@/app/admin/actions";
 import {
+  adminSetMembersAreaUrl,
+  adminSetSupportWhatsappUrl,
+} from "@/app/admin/actions";
+import {
+  MEMBERS_AREA_URL_SETTING_KEY,
   SUPPORT_WHATSAPP_URL_SETTING_KEY,
+  resolveMembersAreaUrl,
   resolveSupportWhatsappUrl,
 } from "@/lib/app-settings";
 
@@ -35,12 +40,21 @@ export default async function AdminSettingsPage({
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("app_settings")
-    .select("value")
-    .eq("key", SUPPORT_WHATSAPP_URL_SETTING_KEY)
-    .maybeSingle();
+    .select("key, value")
+    .in("key", [SUPPORT_WHATSAPP_URL_SETTING_KEY, MEMBERS_AREA_URL_SETTING_KEY]);
+
+  const byKey = new Map(
+    ((data ?? []) as Array<{ key: string; value: string | null }>).map((row) => [
+      row.key,
+      row.value,
+    ])
+  );
 
   const supportUrl = resolveSupportWhatsappUrl(
-    (data?.value as string | null) ?? null
+    (byKey.get(SUPPORT_WHATSAPP_URL_SETTING_KEY) as string | null) ?? null
+  );
+  const membersAreaUrl = resolveMembersAreaUrl(
+    (byKey.get(MEMBERS_AREA_URL_SETTING_KEY) as string | null) ?? null
   );
 
   return (
@@ -107,6 +121,44 @@ export default async function AdminSettingsPage({
           />
         </form>
       </div>
+
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-surface-light dark:bg-surface-dark shadow-subtle p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          Área de membros
+        </h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          URL usada no ícone de área de membros (ao lado do modo escuro).
+        </p>
+
+        <form action={updateMembersAreaUrlFormAction} className="mt-5 space-y-4">
+          <div className="space-y-2">
+            <label
+              htmlFor="members_area_url"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+            >
+              URL da área de membros
+            </label>
+            <input
+              id="members_area_url"
+              name="members_area_url"
+              type="url"
+              required
+              defaultValue={membersAreaUrl}
+              placeholder="https://hotmart.com/pt-br/club/comunidadeinaa"
+              className="w-full h-10 rounded-md border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-white/5 px-3 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Exemplo: https://hotmart.com/pt-br/club/comunidadeinaa
+            </p>
+          </div>
+
+          <FormSubmitButton
+            idleText="Salvar configuração"
+            pendingText="Salvando..."
+            className="h-9 px-4 rounded-md bg-primary hover:bg-primary-hover text-white text-sm font-medium"
+          />
+        </form>
+      </div>
     </div>
   );
 }
@@ -118,6 +170,23 @@ async function updateSupportWhatsappUrlFormAction(formData: FormData) {
 
   try {
     await adminSetSupportWhatsappUrl(rawUrl);
+    redirect(
+      `/admin/settings?ok=${encodeURIComponent("Configuração salva com sucesso.")}`
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Falha ao salvar configuração.";
+    redirect(`/admin/settings?error=${encodeURIComponent(message)}`);
+  }
+}
+
+async function updateMembersAreaUrlFormAction(formData: FormData) {
+  "use server";
+
+  const rawUrl = String(formData.get("members_area_url") ?? "");
+
+  try {
+    await adminSetMembersAreaUrl(rawUrl);
     redirect(
       `/admin/settings?ok=${encodeURIComponent("Configuração salva com sucesso.")}`
     );

@@ -14,6 +14,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ThemeToggleButton } from "@/components/theme/ThemeToggleButton";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { SupportHelpButton } from "@/components/support/SupportHelpButton";
+import { MembersAreaButton } from "@/components/support/MembersAreaButton";
 
 function isE2EAutomationActive(): boolean {
   return (
@@ -848,6 +849,9 @@ export function EditorHeader() {
           </div>
           <div className="flex items-center">
             <SupportHelpButton />
+          </div>
+          <div className="flex items-center">
+            <MembersAreaButton />
           </div>
           <div className="flex items-center">
             <ThemeToggleButton

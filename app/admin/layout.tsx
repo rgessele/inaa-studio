@@ -6,6 +6,7 @@ import { PresenceHeartbeat } from "@/components/PresenceHeartbeat";
 import { UserAvatarMenu } from "@/components/UserAvatarMenu";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { SupportHelpButton } from "@/components/support/SupportHelpButton";
+import { MembersAreaButton } from "@/components/support/MembersAreaButton";
 
 export default async function AdminLayout({
   children,
@@ -110,6 +111,7 @@ export default async function AdminLayout({
               </Link>
               <NotificationBell />
               <SupportHelpButton />
+              <MembersAreaButton />
               <ThemeToggleButton />
 
               <div className="flex items-center gap-3 pl-4 border-l border-gray-200 dark:border-gray-700">

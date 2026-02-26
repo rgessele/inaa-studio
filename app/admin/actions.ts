@@ -6,6 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  MEMBERS_AREA_URL_SETTING_KEY,
   SUPPORT_WHATSAPP_URL_SETTING_KEY,
   normalizeHttpUrl,
 } from "@/lib/app-settings";
@@ -1392,6 +1393,41 @@ export async function adminSetSupportWhatsappUrl(rawUrl: string) {
     action: "app_setting_update",
     payload: {
       key: SUPPORT_WHATSAPP_URL_SETTING_KEY,
+      value: normalizedUrl,
+    },
+  });
+
+  revalidatePath("/admin/settings");
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
+}
+
+export async function adminSetMembersAreaUrl(rawUrl: string) {
+  const { user, supabase } = await requireAdmin();
+
+  const normalizedUrl = normalizeHttpUrl(rawUrl);
+  if (!normalizedUrl) {
+    throw new Error("URL da área de membros inválida");
+  }
+
+  const { error } = await supabase.from("app_settings").upsert(
+    {
+      key: MEMBERS_AREA_URL_SETTING_KEY,
+      value: normalizedUrl,
+      is_public: true,
+      updated_by: user.id,
+    },
+    {
+      onConflict: "key",
+    }
+  );
+  if (error) throw new Error(error.message);
+
+  await audit({
+    actorUserId: user.id,
+    action: "app_setting_update",
+    payload: {
+      key: MEMBERS_AREA_URL_SETTING_KEY,
       value: normalizedUrl,
     },
   });
