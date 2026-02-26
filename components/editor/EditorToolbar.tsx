@@ -959,22 +959,6 @@ export function EditorToolbar() {
             />
 
             <ToolButton
-              active={tool === "pique"}
-              onClick={() => handleToolChange("pique")}
-              icon="north" // fallback Material icon
-              isMac={isMac}
-              title="Pique"
-              shortcuts={[{ key: "P" }]}
-              details={[
-                "Passe o mouse na aresta para pré-visualizar o pique.",
-                "Clique para adicionar um pique (0,5 cm, perpendicular, para dentro).",
-                "Segure Cmd/Ctrl para alta precisão.",
-                "Passe em cima de um pique para remover.",
-              ]}
-              customIcon={getToolIcon("pique", "toolbar")}
-            />
-
-            <ToolButton
               active={measureDisplayMode !== "never"}
               onClick={() => {
                 const next =
@@ -1110,6 +1094,22 @@ export function EditorToolbar() {
                 "3º clique: ápice (vértice) da pence.",
               ]}
               customIcon={getToolIcon("dart", "toolbar")}
+            />
+
+            <ToolButton
+              active={tool === "pique"}
+              onClick={() => handleToolChange("pique")}
+              icon="north" // fallback Material icon
+              isMac={isMac}
+              title="Pique"
+              shortcuts={[{ key: "P" }]}
+              details={[
+                "Passe o mouse na aresta para pré-visualizar o pique.",
+                "Clique para adicionar um pique (0,5 cm, perpendicular, para dentro).",
+                "Segure Cmd/Ctrl para alta precisão.",
+                "Passe em cima de um pique para remover.",
+              ]}
+              customIcon={getToolIcon("pique", "toolbar")}
             />
 
             <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
