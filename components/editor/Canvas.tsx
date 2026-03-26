@@ -81,8 +81,18 @@ import {
   hasClosedLoop,
   makeSeamFigure,
   recomputeSeamFigure,
+  SEAM_ALLOWANCE_STROKE,
   seamSourceSignature,
 } from "./seamFigure";
+import {
+  HEM_DASH,
+  HEM_STROKE,
+  hemSourceSignature,
+  makeHemFigure,
+  normalizeHemMeta,
+  recomputeHemFigure,
+  resolveHemSelectedOuterEdgeIds,
+} from "./hemFigure";
 
 const MIN_ZOOM_SCALE = 0.1;
 const MAX_ZOOM_SCALE = 10;
@@ -349,6 +359,11 @@ type MoldExtractionDraft = {
   pathWorld: Vec2[];
   closed: boolean;
 };
+
+type HemDraft = {
+  baseId: string;
+  anchorEdgeId: string | null;
+} | null;
 
 function id(prefix: string): string {
   // crypto.randomUUID() is available in modern browsers; fallback for safety.
@@ -1378,6 +1393,14 @@ function isFigureEligibleForExtractSource(
   if (figure.kind === "seam") return false;
   if (!figure.edges.length) return false;
   return figure.tool !== "text";
+}
+
+function isHemFigure(figure: Figure): boolean {
+  return figure.kind === "seam" && figure.derivedRole === "hem";
+}
+
+function isSeamAllowanceFigure(figure: Figure): boolean {
+  return figure.kind === "seam" && figure.derivedRole !== "hem";
 }
 
 function isFigureEligibleForContourTools(figure: Figure): boolean {
@@ -3365,6 +3388,10 @@ export default function Canvas() {
     getEdgeAnchorPreference,
     offsetValueCm,
     setOffsetTargetId,
+    hemWidthCm,
+    hemFolds,
+    hemNotchesEnabled,
+    hemNotchType,
     modifierKeys,
     measureSnapStrengthPx,
     measureDisplayMode,
@@ -3647,6 +3674,15 @@ export default function Canvas() {
     edgeId: string;
   } | null>(null);
   const [offsetRemoveMode, setOffsetRemoveMode] = useState(false);
+  const [hoveredHemBaseId, setHoveredHemBaseId] = useState<string | null>(null);
+  const [hoveredHemEdge, setHoveredHemEdge] = useState<{
+    figureId: string;
+    edgeId: string;
+  } | null>(null);
+  const [hemDraft, setHemDraft] = useState<HemDraft>(null);
+  const [hemControlNodeIdsByFigure, setHemControlNodeIdsByFigure] = useState<
+    Record<string, string[]>
+  >({});
   const lastOffsetPreviewLogRef = useRef<string | null>(null);
   const lastNodeHoverLogRef = useRef<number>(0);
   const lastNodeClickLogRef = useRef<number>(0);
@@ -3665,6 +3701,34 @@ export default function Canvas() {
     if (tool === "extractMold") return;
     clearMoldExtractionState();
   }, [clearMoldExtractionState, tool]);
+
+  useEffect(() => {
+    if (tool === "hem") return;
+    setHoveredHemBaseId(null);
+    setHoveredHemEdge(null);
+    setHemDraft(null);
+  }, [tool]);
+
+  useEffect(() => {
+    setHemControlNodeIdsByFigure((prev) => {
+      const byId = new Map(figures.map((f) => [f.id, f] as const));
+      let changed = false;
+      const next: Record<string, string[]> = {};
+      for (const [figureId, nodeIds] of Object.entries(prev)) {
+        const figure = byId.get(figureId);
+        if (!figure) {
+          changed = true;
+          continue;
+        }
+        const valid = nodeIds.filter((nodeId) =>
+          figure.nodes.some((node) => node.id === nodeId)
+        );
+        if (valid.length !== nodeIds.length) changed = true;
+        if (valid.length) next[figureId] = valid;
+      }
+      return changed ? next : prev;
+    });
+  }, [figures]);
 
   const moldCount = useMemo(
     () => figures.filter((f) => f.kind === "mold").length,
@@ -3951,6 +4015,70 @@ export default function Canvas() {
     y: number;
   } | null>(null);
 
+  const buildHemMetaForBase = useCallback(
+    (base: Figure, anchorEdgeId?: string | null) => {
+      const controlNodeIds = hemControlNodeIdsByFigure[base.id] ?? [];
+      const selectedOuterEdgeIds = resolveHemSelectedOuterEdgeIds(base, {
+        controlNodeIds,
+        anchorEdgeId: anchorEdgeId ?? null,
+      });
+
+      return normalizeHemMeta({
+        widthCm: hemWidthCm,
+        folds: hemFolds,
+        notchesEnabled: hemNotchesEnabled,
+        notchType: hemNotchType,
+        controlNodeIds,
+        anchorEdgeId: anchorEdgeId ?? null,
+        selectedOuterEdgeIds,
+      });
+    },
+    [
+      hemControlNodeIdsByFigure,
+      hemFolds,
+      hemNotchType,
+      hemNotchesEnabled,
+      hemWidthCm,
+    ]
+  );
+
+  const applyHemToBase = useCallback(
+    (baseId: string, anchorEdgeId?: string | null) => {
+      const base = figures.find((f) => f.id === baseId) ?? null;
+      if (!base) return;
+      if (!isFigureEligibleForOffsetTool(base)) return;
+      if (!base.closed && !hasClosedLoop(base)) return;
+
+      const hemMeta = buildHemMetaForBase(base, anchorEdgeId ?? null);
+      const seamAllowance =
+        figures.find((f) => isSeamAllowanceFigure(f) && f.parentId === baseId) ??
+        null;
+      const hem = makeHemFigure(base, hemMeta, { seamAllowance });
+      if (!hem) return;
+
+      setFigures((prev) => {
+        const withoutCurrentHem = prev.filter(
+          (f) => !(isHemFigure(f) && f.parentId === baseId)
+        );
+        return [...withoutCurrentHem, hem];
+      });
+      setSelectedFigureId(baseId);
+      setHemDraft(null);
+    },
+    [buildHemMetaForBase, figures, setFigures, setSelectedFigureId]
+  );
+
+  const toggleHemControlNode = useCallback((baseId: string, nodeId: string) => {
+    setHemControlNodeIdsByFigure((prev) => {
+      const current = prev[baseId] ?? [];
+      const exists = current.includes(nodeId);
+      const next = exists
+        ? current.filter((id) => id !== nodeId)
+        : [...current.slice(-1), nodeId];
+      return { ...prev, [baseId]: next };
+    });
+  }, []);
+
   const offsetHoverPreview = useMemo(() => {
     if (tool !== "offset") return null;
     if (!hoveredOffsetBaseId) return null;
@@ -3967,7 +4095,7 @@ export default function Canvas() {
     ) {
       const edgeId = hoveredOffsetEdge.edgeId;
       const existingSeam =
-        figures.find((f) => f.kind === "seam" && f.parentId === base.id) ??
+        figures.find((f) => isSeamAllowanceFigure(f) && f.parentId === base.id) ??
         null;
       if (existingSeam) {
         if (typeof existingSeam.offsetCm === "number") return null;
@@ -3996,7 +4124,7 @@ export default function Canvas() {
     }
 
     const hasSeam = figures.some(
-      (f) => f.kind === "seam" && f.parentId === hoveredOffsetBaseId
+      (f) => isSeamAllowanceFigure(f) && f.parentId === hoveredOffsetBaseId
     );
     if (hasSeam) return null;
 
@@ -4031,7 +4159,7 @@ export default function Canvas() {
 
     const existingSeam =
       figures.find(
-        (f) => f.kind === "seam" && f.parentId === hoveredOffsetBaseId
+        (f) => isSeamAllowanceFigure(f) && f.parentId === hoveredOffsetBaseId
       ) ?? null;
     if (!existingSeam) return null;
 
@@ -4131,6 +4259,66 @@ export default function Canvas() {
     hoveredOffsetEdge,
     offsetRemoveMode,
     previewRemoveStroke,
+    tool,
+  ]);
+
+  const hemHoverPreview = useMemo(() => {
+    if (tool !== "hem") return null;
+
+    const baseId = hemDraft?.baseId ?? hoveredHemBaseId;
+    if (!baseId) return null;
+
+    const base = figures.find((f) => f.id === baseId) ?? null;
+    if (!base) return null;
+    if (!isFigureEligibleForOffsetTool(base)) return null;
+    if (!base.closed && !hasClosedLoop(base)) return null;
+
+    const selectedControlNodeIds = hemControlNodeIdsByFigure[baseId] ?? [];
+    const isPreparingPartialSelection =
+      hoveredHemEdge?.figureId === baseId && selectedControlNodeIds.length < 2;
+    if (isPreparingPartialSelection) return null;
+
+    const anchorEdgeId =
+      hemDraft?.baseId === baseId
+        ? hemDraft.anchorEdgeId
+        : hoveredHemEdge?.figureId === baseId
+          ? hoveredHemEdge.edgeId
+          : null;
+
+    const hemMeta = buildHemMetaForBase(base, anchorEdgeId);
+    const seamAllowance =
+      figures.find((f) => isSeamAllowanceFigure(f) && f.parentId === baseId) ??
+      null;
+    const hem = makeHemFigure(base, hemMeta, { seamAllowance });
+    if (!hem) return null;
+
+    const segments =
+      hem.seamSegments?.length && hem.seamSegments.every((s) => s.length >= 4)
+        ? hem.seamSegments
+        : (() => {
+            const pts = figureLocalPolyline(hem, 60);
+            return pts.length >= 4 ? [pts] : [];
+          })();
+    if (!segments.length) return null;
+
+    return {
+      x: hem.x,
+      y: hem.y,
+      rotation: hem.rotation || 0,
+      dash: hem.dash ?? [...HEM_DASH],
+      previewStroke: isDark ? "#fbbf24" : "#d97706",
+      stroke: resolveStrokeColor(hem.stroke, isDark),
+      segments,
+      key: `hem-preview:${baseId}:${anchorEdgeId ?? "all"}:${hemMeta.widthCm}:${hemMeta.folds}:${hemMeta.selectedOuterEdgeIds?.join(",") ?? ""}`,
+    };
+  }, [
+    buildHemMetaForBase,
+    figures,
+    hemControlNodeIdsByFigure,
+    hemDraft,
+    hoveredHemBaseId,
+    hoveredHemEdge,
+    isDark,
     tool,
   ]);
 
@@ -5376,7 +5564,29 @@ export default function Canvas() {
         continue;
       }
 
-      const sig = seamSourceSignature(base, seam.offsetCm ?? 1);
+      const isHem = isHemFigure(seam);
+      const seamAllowance = isHem
+        ? (figures.find(
+            (f) => isSeamAllowanceFigure(f) && f.parentId === base.id
+          ) ?? null)
+        : null;
+      const hemMeta = isHem
+        ? normalizeHemMeta(
+            seam.hemMeta ?? {
+              widthCm:
+                typeof seam.offsetCm === "number" && Number.isFinite(seam.offsetCm)
+                  ? seam.offsetCm
+                  : 1,
+              folds: 1,
+              notchesEnabled: false,
+              notchType: "seta",
+            }
+          )
+        : null;
+
+      const sig = isHem
+        ? hemSourceSignature(base, hemMeta!)
+        : seamSourceSignature(base, seam.offsetCm ?? 1);
 
       const baseRot = base.rotation ?? 0;
       const seamRot = seam.rotation ?? 0;
@@ -5391,7 +5601,9 @@ export default function Canvas() {
 
       // If the base is no longer closed or the seam can't be regenerated,
       // remove it to avoid infinite retries.
-      const regenerated = makeSeamFigure(base, seam.offsetCm ?? 1);
+      const regenerated = isHem
+        ? makeHemFigure(base, hemMeta!, { seamAllowance })
+        : makeSeamFigure(base, seam.offsetCm ?? 1);
       if (!base.closed || !regenerated) {
         toRemove.add(seam.id);
         continue;
@@ -5438,8 +5650,16 @@ export default function Canvas() {
           continue;
         }
 
-        const offsetCm = f.offsetCm ?? 1;
-        const updated = recomputeSeamFigure(base, f, offsetCm);
+        const updated = isHemFigure(f)
+          ? recomputeHemFigure(base, f, {
+              seamAllowance:
+                figures.find(
+                  (candidate) =>
+                    isSeamAllowanceFigure(candidate) &&
+                    candidate.parentId === base.id
+                ) ?? null,
+            })
+          : recomputeSeamFigure(base, f, f.offsetCm ?? 1);
         if (!updated) {
           // If we can't recompute now, keep as-is (but we already gated calls
           // so this should be rare).
@@ -6211,7 +6431,6 @@ export default function Canvas() {
 
   const handleStageDblClick = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
-      if (tool !== "select") return;
       const stage = stageRef.current;
       if (!stage) return;
       stage.setPointersPositions(e.evt);
@@ -6222,6 +6441,56 @@ export default function Canvas() {
         x: (pos.x - position.x) / scale,
         y: (pos.y - position.y) / scale,
       };
+
+      if (tool === "hem") {
+        const thresholdWorld = 10 / scale;
+        const hoveredId =
+          findHoveredFigureId(figures, world, thresholdWorld) ??
+          findHoveredClosedFigureOrSeamBaseId(figures, world, 60, thresholdWorld);
+        const hoveredBase = hoveredId
+          ? (figures.find((f) => f.id === hoveredId) ?? null)
+          : null;
+
+        if (
+          hoveredBase &&
+          isFigureEligibleForOffsetTool(hoveredBase) &&
+          (hoveredBase.closed || hasClosedLoop(hoveredBase))
+        ) {
+          const nodeId = findFigureNodeIdNearWorldPoint(
+            hoveredBase,
+            world,
+            thresholdWorld
+          );
+          if (nodeId) {
+            toggleHemControlNode(hoveredBase.id, nodeId);
+            setSelectedFigureId(hoveredBase.id);
+            setHemDraft({
+              baseId: hoveredBase.id,
+              anchorEdgeId:
+                hoveredHemEdge?.figureId === hoveredBase.id
+                  ? hoveredHemEdge.edgeId
+                  : null,
+            });
+            return;
+          }
+
+          const anchorEdgeId =
+            hemDraft?.baseId === hoveredBase.id
+              ? hemDraft.anchorEdgeId
+              : hoveredHemEdge?.figureId === hoveredBase.id
+                ? hoveredHemEdge.edgeId
+                : null;
+          applyHemToBase(hoveredBase.id, anchorEdgeId);
+          return;
+        }
+
+        if (hemDraft?.baseId) {
+          applyHemToBase(hemDraft.baseId, hemDraft.anchorEdgeId);
+        }
+        return;
+      }
+
+      if (tool !== "select") return;
 
       const thresholdWorld = 10 / scale;
       const figId = findHoveredFigureId(figures, world, thresholdWorld);
@@ -6289,8 +6558,11 @@ export default function Canvas() {
       });
     },
     [
+      applyHemToBase,
       figures,
       getEdgeAnchorPreference,
+      hemDraft,
+      hoveredHemEdge,
       openInlineEdgeEdit,
       openInlineTextEdit,
       position.x,
@@ -6298,7 +6570,10 @@ export default function Canvas() {
       scale,
       selectedEdge,
       setSelectedEdge,
+      setHemDraft,
+      setSelectedFigureId,
       setSelectedFigureIds,
+      toggleHemControlNode,
       tool,
     ]
   );
@@ -6799,7 +7074,9 @@ export default function Canvas() {
       setOffsetTargetId(baseId);
       
       const existingSeam =
-        figures.find((f) => f.kind === "seam" && f.parentId === baseId) ?? null;
+        figures.find(
+          (f) => isSeamAllowanceFigure(f) && f.parentId === baseId
+        ) ?? null;
       
       const isRemoveIntent = e.evt.metaKey || e.evt.ctrlKey;
       const edgeThresholdWorld = 18 / scale;
@@ -6901,7 +7178,9 @@ export default function Canvas() {
       if (isRemoveIntent) {
         if (existingSeam) {
           setFigures((prev) =>
-            prev.filter((f) => !(f.kind === "seam" && f.parentId === baseId))
+            prev.filter(
+              (f) => !(isSeamAllowanceFigure(f) && f.parentId === baseId)
+            )
           );
         }
         return;
@@ -6943,6 +7222,38 @@ export default function Canvas() {
           seamSegmentEdgeIds: seam.seamSegmentEdgeIds ?? null,
           nodes: seam.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y })),
         },
+      });
+      return;
+    }
+
+    if (tool === "hem" && e.evt.button === 0) {
+      const thresholdWorld = 10 / scale;
+      const baseIdFromClick = (() => {
+        const hitId = findHoveredFigureId(figures, world, thresholdWorld);
+        const hit = hitId ? (figures.find((f) => f.id === hitId) ?? null) : null;
+        const hitBaseId = hit?.kind === "seam" ? (hit.parentId ?? null) : hitId;
+        if (hitBaseId) return hitBaseId;
+        return findHoveredClosedFigureOrSeamBaseId(
+          figures,
+          world,
+          60,
+          thresholdWorld
+        );
+      })();
+
+      const baseId = hoveredHemBaseId ?? baseIdFromClick;
+      if (!baseId) return;
+
+      const base = figures.find((f) => f.id === baseId) ?? null;
+      if (!base) return;
+      if (!isFigureEligibleForOffsetTool(base)) return;
+      if (!base.closed && !hasClosedLoop(base)) return;
+
+      setSelectedFigureId(baseId);
+      setHemDraft({
+        baseId,
+        anchorEdgeId:
+          hoveredHemEdge?.figureId === baseId ? hoveredHemEdge.edgeId : null,
       });
       return;
     }
@@ -7853,6 +8164,57 @@ export default function Canvas() {
       setHoveredOffsetBaseId(null);
       if (hoveredOffsetEdge) setHoveredOffsetEdge(null);
       if (offsetRemoveMode) setOffsetRemoveMode(false);
+    }
+
+    if (tool === "hem") {
+      const thresholdWorld = 10 / scale;
+      const hitId = findHoveredFigureId(figures, world, thresholdWorld);
+      const hit = hitId ? (figures.find((f) => f.id === hitId) ?? null) : null;
+      const hitBaseId = hit?.kind === "seam" ? (hit.parentId ?? null) : hitId;
+      const insideId = hitBaseId
+        ? null
+        : findHoveredClosedFigureOrSeamBaseId(
+            figures,
+            world,
+            60,
+            thresholdWorld
+          );
+
+      const baseIdCandidate = hitBaseId ?? insideId;
+      const baseCandidate = baseIdCandidate
+        ? (figures.find((f) => f.id === baseIdCandidate) ?? null)
+        : null;
+      const baseId =
+        baseCandidate && isFigureEligibleForOffsetTool(baseCandidate)
+          ? baseIdCandidate
+          : null;
+
+      setHoveredHemBaseId((prev) => (prev === baseId ? prev : baseId));
+
+      if (baseId) {
+        const base = figures.find((f) => f.id === baseId) ?? null;
+        if (base && (base.closed || hasClosedLoop(base))) {
+          const local = worldToFigureLocal(base, world);
+          const outerEdgeIds = getOuterLoopEdgeIds(base);
+          const hitEdge = findNearestEdgeInSet(base, local, outerEdgeIds);
+          if (hitEdge.best && hitEdge.bestDist <= thresholdWorld) {
+            setHoveredHemEdge(
+              outerEdgeIds.has(hitEdge.best.edgeId)
+                ? { figureId: baseId, edgeId: hitEdge.best.edgeId }
+                : null
+            );
+          } else if (hoveredHemEdge) {
+            setHoveredHemEdge(null);
+          }
+        } else if (hoveredHemEdge) {
+          setHoveredHemEdge(null);
+        }
+      } else if (hoveredHemEdge) {
+        setHoveredHemEdge(null);
+      }
+    } else if (hoveredHemBaseId || hoveredHemEdge) {
+      setHoveredHemBaseId(null);
+      if (hoveredHemEdge) setHoveredHemEdge(null);
     }
 
     if (measureDisplayMode !== "never") {
@@ -11509,6 +11871,7 @@ export default function Canvas() {
               if (fig.kind === "mold" && fig.moldMeta?.visible === false) {
                 return null;
               }
+              const isHem = isHemFigure(fig);
               const isSeam = fig.kind === "seam" && !!fig.parentId;
               const baseId = isSeam ? fig.parentId! : fig.id;
               const isSelected = selectedIdsSet.has(baseId);
@@ -11517,7 +11880,7 @@ export default function Canvas() {
                 hoveredOffsetBaseId != null &&
                 offsetRemoveMode &&
                 !hoveredOffsetEdge &&
-                isSeam &&
+                isSeamAllowanceFigure(fig) &&
                 fig.parentId === hoveredOffsetBaseId;
               const isHoverFigure =
                 tool === "select" &&
@@ -11526,9 +11889,13 @@ export default function Canvas() {
                 hoveredSelectFigureId === baseId;
               const stroke = isRemovePreview
                 ? previewRemoveStroke
-                : isSelected
-                  ? "#2563eb"
-                  : isHoverFigure
+                : isHem
+                  ? HEM_STROKE
+                  : isSeamAllowanceFigure(fig)
+                    ? SEAM_ALLOWANCE_STROKE
+                  : isSelected
+                    ? "#2563eb"
+                    : isHoverFigure
                     ? "#3b82f6"
                     : resolveStrokeColor(fig.stroke, isDark);
               const hasSelectedEdge =
@@ -11569,7 +11936,7 @@ export default function Canvas() {
                   fig.id === hoveredFigureId);
 
               const showSeamLabel =
-                fig.kind === "seam" &&
+                isSeamAllowanceFigure(fig) &&
                 (tool === "offset" ||
                   measureDisplayMode === "always" ||
                   (measureDisplayMode === "hover" &&
@@ -11705,6 +12072,7 @@ export default function Canvas() {
                       tool === "dart" ||
                       tool === "text" ||
                       tool === "pique" ||
+                      tool === "hem" ||
                       tool === "extractMold";
 
                     if (allowStageForDrawing) {
@@ -11965,7 +12333,8 @@ export default function Canvas() {
 
                       const existingSeam =
                         figures.find(
-                          (f) => f.kind === "seam" && f.parentId === baseId
+                          (f) =>
+                            isSeamAllowanceFigure(f) && f.parentId === baseId
                         ) ?? null;
                       const isRemoveIntent = e.evt.metaKey || e.evt.ctrlKey;
 
@@ -12037,12 +12406,15 @@ export default function Canvas() {
 
                       if (isRemoveIntent) {
                         if (existingSeam) {
-                          setFigures((prev) =>
-                            prev.filter(
-                              (f) =>
-                                !(f.kind === "seam" && f.parentId === baseId)
-                            )
-                          );
+                              setFigures((prev) =>
+                                prev.filter(
+                                  (f) =>
+                                    !(
+                                      isSeamAllowanceFigure(f) &&
+                                      f.parentId === baseId
+                                    )
+                                )
+                              );
                         }
                         return;
                       }
@@ -12240,6 +12612,93 @@ export default function Canvas() {
                 )}
               </Group>
             ) : null}
+
+            {hemHoverPreview ? (
+              <Group
+                key={hemHoverPreview.key}
+                x={hemHoverPreview.x}
+                y={hemHoverPreview.y}
+                rotation={hemHoverPreview.rotation}
+                listening={false}
+              >
+                {hemHoverPreview.segments.map((segment, idx) => {
+                  const lastX = segment[segment.length - 2] ?? Number.NaN;
+                  const lastY = segment[segment.length - 1] ?? Number.NaN;
+                  const isClosedArea =
+                    segment.length >= 8 &&
+                    Number.isFinite(lastX) &&
+                    Number.isFinite(lastY) &&
+                    Math.hypot(segment[0] - lastX, segment[1] - lastY) <= 1e-2;
+                  return (
+                    <React.Fragment key={`${hemHoverPreview.key}:${idx}`}>
+                      {isClosedArea ? (
+                        <Line
+                          points={segment}
+                          closed={true}
+                          fill={isDark ? "rgba(251,191,36,0.18)" : "rgba(217,119,6,0.16)"}
+                          strokeEnabled={false}
+                          listening={false}
+                          name="inaa-hem-preview-fill"
+                        />
+                      ) : null}
+                      <Line
+                        points={segment}
+                        closed={false}
+                        stroke={hemHoverPreview.previewStroke}
+                        strokeWidth={3.4 / scale}
+                        opacity={0.5}
+                        lineCap="round"
+                        lineJoin="round"
+                        listening={false}
+                        name="inaa-hem-preview-line"
+                      />
+                      <Line
+                        points={segment}
+                        closed={false}
+                        stroke={hemHoverPreview.stroke}
+                        strokeWidth={2.2 / scale}
+                        dash={hemHoverPreview.dash.map((d) => d / scale)}
+                        opacity={0.92}
+                        lineCap="round"
+                        lineJoin="round"
+                        listening={false}
+                        name="inaa-hem-preview-line"
+                      />
+                    </React.Fragment>
+                  );
+                })}
+              </Group>
+            ) : null}
+
+            {tool === "hem"
+              ? Object.entries(hemControlNodeIdsByFigure).map(
+                  ([figureId, nodeIds]) => {
+                    const figure = figuresById.get(figureId) ?? null;
+                    if (!figure || !nodeIds.length) return null;
+
+                    return nodeIds.map((nodeId, index) => {
+                      const node = figure.nodes.find((n) => n.id === nodeId) ?? null;
+                      if (!node) return null;
+                      const worldNode = figureLocalToWorld(figure, {
+                        x: node.x,
+                        y: node.y,
+                      });
+                      return (
+                        <Circle
+                          key={`hem-control:${figureId}:${nodeId}`}
+                          x={worldNode.x}
+                          y={worldNode.y}
+                          radius={Math.max(4 / scale, 2.2 / scale)}
+                          fill={index === 0 ? "#0ea5e9" : "#14b8a6"}
+                          stroke="#ffffff"
+                          strokeWidth={Math.max(1 / scale, 0.7 / scale)}
+                          listening={false}
+                        />
+                      );
+                    });
+                  }
+                )
+              : null}
 
             {draftPreview}
 

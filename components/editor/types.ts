@@ -13,6 +13,7 @@ export type Tool =
   | "node"
   | "measure"
   | "pique"
+  | "hem"
   | "offset"
   | "extractMold"
   | "mirror"
@@ -196,6 +197,20 @@ export interface MoldMeta {
   };
 }
 
+export type DerivedSeamRole = "seamAllowance" | "hem";
+
+export type HemNotchType = "seta";
+
+export interface HemMeta {
+  widthCm: number;
+  folds: number;
+  notchesEnabled: boolean;
+  notchType: HemNotchType;
+  selectedOuterEdgeIds?: string[];
+  controlNodeIds?: string[];
+  anchorEdgeId?: string | null;
+}
+
 export interface Figure {
   id: string;
 
@@ -215,6 +230,7 @@ export interface Figure {
 
   // Optional metadata (v2): derived figures like seam allowance
   kind?: "seam" | "mold";
+  derivedRole?: DerivedSeamRole;
   parentId?: string;
   // Offset cm can be uniform (number) or per-edge map (edgeId -> cm)
   offsetCm?: number | Record<string, number>;
@@ -225,6 +241,7 @@ export interface Figure {
   // Tracks the base geometry state used to generate this derived figure.
   // Used to auto-recompute seam allowance when the parent changes.
   sourceSignature?: string;
+  hemMeta?: HemMeta;
 
   // Metadata for extracted pattern pieces (kind === "mold")
   moldMeta?: MoldMeta;

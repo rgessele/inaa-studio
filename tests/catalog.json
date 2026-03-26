@@ -120,11 +120,11 @@
       "notes": "Cobertura unitária de geometria."
     },
     {
-      "id": "export.pdfSvg.toggleSources",
-      "title": "Exportação PDF/SVG: fontes por chavinha (moldes e convencionais)",
+      "id": "export.pdf.toggleSources",
+      "title": "Exportação PDF: fontes por chavinha (moldes e convencionais)",
       "risk": "high",
       "e2e": ["tests/point-labels.export.spec.ts"],
-      "notes": "Valida fluxo de export com chavinha de figuras convencionais e download em modal rolável."
+      "notes": "Valida fluxo de export em PDF com chavinha de figuras convencionais e download em modal rolável."
     }
   ]
 }

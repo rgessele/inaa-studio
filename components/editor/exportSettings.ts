@@ -54,7 +54,7 @@ export function createDefaultExportSettings(): ExportSettings {
     orientation: "portrait",
     marginCm: 1,
     showPageGuides: true,
-    includeBlankPages: true,
+    includeBlankPages: false,
     toolFilter: {
       rectangle: true,
       circle: true,

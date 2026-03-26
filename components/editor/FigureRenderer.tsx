@@ -282,7 +282,8 @@ const FigureRenderer = ({
   onNameOffsetCommit,
 }: FigureRendererProps) => {
   const isTextFigure = figure.tool === "text";
-  const supportsPiques = figure.closed || hasClosedLoop(figure);
+  const supportsPiques =
+    (figure.piques?.length ?? 0) > 0 || figure.closed || hasClosedLoop(figure);
   const isDenseLinearContour =
     figure.closed &&
     figure.edges.length >= DENSE_LINEAR_CONTOUR_THRESHOLD &&

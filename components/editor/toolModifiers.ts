@@ -45,6 +45,7 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
   ],
   pan: [],
   measure: [],
+  hem: [],
   offset: [
     {
       key: "cmdOrCtrl",

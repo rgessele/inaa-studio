@@ -16,7 +16,6 @@ import { getToolIcon } from "./ToolCursorIcons";
 import {
   createDefaultExportSettings,
   generateTiledPDF,
-  generateSVG,
   type ExportSettings,
 } from "./export";
 import { PAPER_SIZES, PAPER_SIZE_LABELS } from "./exportSettings";
@@ -59,7 +58,6 @@ export function EditorToolbar() {
   } = useEditor();
   const [showExportModal, setShowExportModal] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
-  const [isExportingSvg, setIsExportingSvg] = useState(false);
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
 
   const [exportSettings, setExportSettings] = useState<ExportSettings>(() =>
@@ -80,7 +78,36 @@ export function EditorToolbar() {
     searchParams.get("embedded") === "1" || searchParams.get("embed") === "1";
   const printOnly = searchParams.get("printOnly") === "1";
   const printOnlyReadOnly = readOnly && printOnly;
-  const noShapesToExportMessage = "Nenhuma figura ativa para impressão.";
+  const noShapesToExportMessage = useMemo(() => {
+    const moldCount = figures.filter((f) => f.kind === "mold").length;
+    const printableMoldCount = figures.filter(
+      (f) =>
+        f.kind === "mold" &&
+        f.moldMeta?.printEnabled !== false &&
+        f.moldMeta?.visible !== false
+    ).length;
+    const conventionalCount = figures.filter(
+      (f) => f.kind !== "mold" && f.kind !== "seam"
+    ).length;
+
+    if (!figures.length) {
+      return "Não há nada para exportar. Desenhe algo primeiro.";
+    }
+
+    if (!includeMolds && !includeConventionalFigures) {
+      return 'Ative "Imprimir moldes" ou "Imprimir figuras convencionais" para exportar.';
+    }
+
+    if (includeMolds && moldCount > 0 && printableMoldCount === 0) {
+      return "Nenhum molde ativo para impressão. Verifique visibilidade e impressão na lista de moldes.";
+    }
+
+    if (!includeConventionalFigures && conventionalCount > 0 && printableMoldCount === 0) {
+      return 'Nenhum molde ativo para impressão. Extraia um molde ou ative "Imprimir figuras convencionais".';
+    }
+
+    return "Nenhuma figura ativa para impressão.";
+  }, [figures, includeConventionalFigures, includeMolds]);
 
   const getExportShapes = useCallback(() => {
     const activeMolds = includeMolds
@@ -92,20 +119,22 @@ export function EditorToolbar() {
         )
       : [];
 
-    const activeMoldIds = new Set(activeMolds.map((f) => f.id));
+    const conventionalFigures = includeConventionalFigures
+      ? figures.filter((f) => f.kind !== "mold" && f.kind !== "seam")
+      : [];
+
+    const exportedBaseIds = new Set(
+      [...activeMolds, ...conventionalFigures].map((f) => f.id)
+    );
     const seams =
-      includeMolds && includeSeamAllowance
+      includeSeamAllowance
         ? figures.filter(
             (f) =>
               f.kind === "seam" &&
               !!f.parentId &&
-              activeMoldIds.has(f.parentId)
+              exportedBaseIds.has(f.parentId)
           )
         : [];
-
-    const conventionalFigures = includeConventionalFigures
-      ? figures.filter((f) => f.kind !== "mold" && f.kind !== "seam")
-      : [];
 
     return [...activeMolds, ...seams, ...conventionalFigures];
   }, [figures, includeConventionalFigures, includeMolds, includeSeamAllowance]);
@@ -117,7 +146,7 @@ export function EditorToolbar() {
   const isExportModalOpen = showExportModal || urlWantsExportModal;
 
   const closeExportModal = () => {
-    if (isExportingPdf || isExportingSvg) {
+    if (isExportingPdf) {
       return;
     }
     setShowExportModal(false);
@@ -505,7 +534,7 @@ export function EditorToolbar() {
   }, [isClearConfirmOpen]);
 
   const handleExportPDF = async () => {
-    if (isExportingPdf || isExportingSvg) return;
+    if (isExportingPdf) return;
     const stage = getStage();
     if (!stage) {
       toast("Canvas ainda não está pronto.", "error");
@@ -555,40 +584,6 @@ export function EditorToolbar() {
     }
   };
 
-  const handleExportSVG = () => {
-    if (isExportingPdf || isExportingSvg) return;
-    setIsExportingSvg(true);
-
-    const resolvedSettings: ExportSettings = {
-      ...exportSettings,
-      marginCm: customMargins ? exportSettings.marginCm : 1,
-      toolFilter: {
-        ...exportSettings.toolFilter,
-        text: includePatternTexts,
-      },
-    };
-
-    const exportShapes = getExportShapes();
-    if (!exportShapes.length) {
-      toast(noShapesToExportMessage, "error");
-      setIsExportingSvg(false);
-      return;
-    }
-
-    try {
-      generateSVG(exportShapes, resolvedSettings, {
-        includePointLabels,
-        includeMeasures,
-        includePatternName,
-        includePiques,
-        pointLabelsMode,
-      });
-      closeExportModal();
-    } finally {
-      setIsExportingSvg(false);
-    }
-  };
-
   const toggleToolFilter = (drawingTool: DrawingTool) => {
     setExportSettings((prev) => ({
       ...prev,
@@ -627,7 +622,7 @@ export function EditorToolbar() {
                   isMac={isMac}
                   title="Imprimir"
                   expanded={exportTooltip.expanded}
-                  details={["Exportação e impressão (PDF/SVG)."]}
+                  details={["Exportação e impressão em PDF."]}
                 />
               </button>
             </div>
@@ -676,16 +671,16 @@ export function EditorToolbar() {
               <span className="material-symbols-outlined text-[22px]">
                 download
               </span>
-              <ToolbarTooltip
-                isMac={isMac}
-                title="Exportar"
-                expanded={exportTooltip.expanded}
-                details={[
-                  "Abre as opções de exportação e impressão.",
-                  "Use para PDF (paginado) ou SVG.",
-                ]}
-              />
-            </button>
+                <ToolbarTooltip
+                  isMac={isMac}
+                  title="Exportar"
+                  expanded={exportTooltip.expanded}
+                  details={[
+                    "Abre as opções de exportação e impressão.",
+                    "Use para gerar o PDF paginado de impressão.",
+                  ]}
+                />
+              </button>
 
             <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
 
@@ -1079,6 +1074,20 @@ export function EditorToolbar() {
                 "Use as opções para ajustar a distância.",
               ]}
               customIcon={getToolIcon("offset", "toolbar")}
+            />
+
+            <ToolButton
+              active={tool === "hem"}
+              onClick={() => handleToolChange("hem")}
+              icon="stairs"
+              isMac={isMac}
+              title="Bainha"
+              shortcuts={[{ key: "A" }]}
+              details={[
+                "Duplo clique em nós para definir o trecho de aplicação.",
+                "Clique para preparar e duplo clique para aplicar a bainha.",
+              ]}
+              customIcon={getToolIcon("hem", "toolbar")}
             />
 
             <ToolButton
@@ -1484,23 +1493,10 @@ export function EditorToolbar() {
             <div className="mt-10 flex items-center justify-between gap-4">
               <button
                 type="button"
-                onClick={handleExportSVG}
-                disabled={isExportingPdf || isExportingSvg}
-                className={`px-4 py-2 text-sm rounded-md border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 transition-colors ${
-                  isExportingPdf || isExportingSvg
-                    ? "opacity-60 cursor-not-allowed"
-                    : "hover:bg-gray-50 dark:hover:bg-gray-700"
-                }`}
-              >
-                {isExportingSvg ? "Gerando SVG…" : "Exportar SVG"}
-              </button>
-
-              <button
-                type="button"
                 onClick={handleExportPDF}
-                disabled={isExportingPdf || isExportingSvg}
-                className={`px-4 py-2 text-sm rounded-md bg-primary text-white transition-all flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-                  isExportingPdf || isExportingSvg
+                disabled={isExportingPdf}
+                className={`ml-auto px-4 py-2 text-sm rounded-md bg-primary text-white transition-all flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  isExportingPdf
                     ? "opacity-70 cursor-not-allowed"
                     : "hover:brightness-110 hover:shadow-md active:brightness-95 active:scale-[0.99]"
                 }`}

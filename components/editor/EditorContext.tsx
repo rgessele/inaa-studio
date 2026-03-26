@@ -12,6 +12,7 @@ import React, {
 import Konva from "konva";
 import {
   Tool,
+  type HemNotchType,
   type MeasureDisplayMode,
   type NodesDisplayMode,
   type PointLabelsMode,
@@ -239,6 +240,16 @@ interface EditorContextType {
   setOffsetValueCm: (value: number) => void;
   offsetTargetId: string | null;
   setOffsetTargetId: (id: string | null) => void;
+
+  // Hem tool
+  hemWidthCm: number;
+  setHemWidthCm: (value: number) => void;
+  hemFolds: number;
+  setHemFolds: (value: number) => void;
+  hemNotchesEnabled: boolean;
+  setHemNotchesEnabled: (enabled: boolean) => void;
+  hemNotchType: HemNotchType;
+  setHemNotchType: (type: HemNotchType) => void;
 
   // Mirror tool
   mirrorAxis: "vertical" | "horizontal";
@@ -539,6 +550,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   // Offset tool state (default 1cm for seam allowance)
   const [offsetValueCm, setOffsetValueCm] = useState(1);
   const [offsetTargetId, setOffsetTargetId] = useState<string | null>(null);
+
+  // Hem tool state
+  const [hemWidthCm, setHemWidthCm] = useState(1);
+  const [hemFolds, setHemFolds] = useState(1);
+  const [hemNotchesEnabled, setHemNotchesEnabled] = useState(false);
+  const [hemNotchType, setHemNotchType] = useState<HemNotchType>("seta");
 
   // Mirror tool state
   const [mirrorAxis, setMirrorAxis] = useState<"vertical" | "horizontal">(
@@ -1449,6 +1466,14 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setOffsetValueCm,
         offsetTargetId,
         setOffsetTargetId,
+        hemWidthCm,
+        setHemWidthCm,
+        hemFolds,
+        setHemFolds,
+        hemNotchesEnabled,
+        setHemNotchesEnabled,
+        hemNotchType,
+        setHemNotchType,
         mirrorAxis,
         setMirrorAxis,
         unfoldAxis,

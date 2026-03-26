@@ -50,6 +50,14 @@ export function PropertiesPanel() {
     setEdgeAnchorPreference,
     offsetValueCm,
     setOffsetValueCm,
+    hemWidthCm,
+    setHemWidthCm,
+    hemFolds,
+    setHemFolds,
+    hemNotchesEnabled,
+    setHemNotchesEnabled,
+    hemNotchType,
+    setHemNotchType,
   } = useEditor();
 
   const isDark = useSyncExternalStore(
@@ -1288,12 +1296,46 @@ export function PropertiesPanel() {
     applyStyledParams({ rotationDeg: next });
   };
 
+  const selectedBaseFigure = (() => {
+    if (!selectedFigure) return null;
+    if (selectedFigure.kind === "seam") {
+      if (!selectedFigure.parentId) return null;
+      return figures.find((f) => f.id === selectedFigure.parentId) ?? null;
+    }
+    return selectedFigure;
+  })();
+  const selectedBaseFigureId = selectedBaseFigure?.id ?? null;
+
   const seamForSelection = (() => {
     if (!selectedFigure) return null;
-    if (selectedFigure.kind === "seam") return selectedFigure;
+    if (selectedFigure.kind === "seam" && selectedFigure.derivedRole !== "hem") {
+      return selectedFigure;
+    }
+    const baseId = selectedBaseFigure?.id ?? null;
+    if (!baseId) return null;
     return (
       figures.find(
-        (f) => f.kind === "seam" && f.parentId === selectedFigure.id
+        (f) =>
+          f.kind === "seam" &&
+          f.derivedRole !== "hem" &&
+          f.parentId === baseId
+      ) ?? null
+    );
+  })();
+
+  const hemForSelection = (() => {
+    if (!selectedFigure) return null;
+    if (selectedFigure.kind === "seam" && selectedFigure.derivedRole === "hem") {
+      return selectedFigure;
+    }
+    const baseId = selectedBaseFigure?.id ?? null;
+    if (!baseId) return null;
+    return (
+      figures.find(
+        (f) =>
+          f.kind === "seam" &&
+          f.derivedRole === "hem" &&
+          f.parentId === baseId
       ) ?? null
     );
   })();
@@ -1709,12 +1751,119 @@ export function PropertiesPanel() {
     setToolOffsetError(null);
   };
 
+  const hemWidthDisplayCm = hemForSelection?.hemMeta?.widthCm ?? hemWidthCm;
+  const hemFoldsDisplay = hemForSelection?.hemMeta?.folds ?? hemFolds;
+  const hemNotchesDisplay =
+    hemForSelection?.hemMeta?.notchesEnabled ?? hemNotchesEnabled;
+  const hemNotchTypeDisplay = hemForSelection?.hemMeta?.notchType ?? hemNotchType;
+
+  const [hemWidthDraft, setHemWidthDraft] = useState<string>(
+    formatPtBrDecimalFixed(hemWidthDisplayCm, 2)
+  );
+  const [hemWidthError, setHemWidthError] = useState<string | null>(null);
+  const [isEditingHemWidth, setIsEditingHemWidth] = useState(false);
+
+  React.useEffect(() => {
+    if (isEditingHemWidth) return;
+    setHemWidthDraft(formatPtBrDecimalFixed(hemWidthDisplayCm, 2));
+    setHemWidthError(null);
+  }, [hemWidthDisplayCm, isEditingHemWidth]);
+
+  const applyHemWidthDraft = (raw: string) => {
+    const cm = parsePtBrDecimal(raw);
+    if (cm == null) {
+      setHemWidthError("Valor inválido");
+      return;
+    }
+    const safe = Math.max(0.1, Math.min(500, cm));
+    setHemWidthCm(safe);
+    setHemWidthDraft(formatPtBrDecimalFixed(safe, 2));
+    setHemWidthError(null);
+  };
+
+  const bumpHemWidth = (direction: 1 | -1) => {
+    const next = bumpNumericValue({
+      raw: hemWidthDraft,
+      fallback: hemWidthDisplayCm,
+      direction,
+      step: 0.1,
+      min: 0.1,
+      max: 500,
+    });
+    setHemWidthCm(next);
+    setHemWidthDraft(formatPtBrDecimalFixed(next, 2));
+    setHemWidthError(null);
+  };
+
+  const [hemFoldsDraft, setHemFoldsDraft] = useState<string>(
+    String(hemFoldsDisplay)
+  );
+  const [hemFoldsError, setHemFoldsError] = useState<string | null>(null);
+  const [isEditingHemFolds, setIsEditingHemFolds] = useState(false);
+
+  React.useEffect(() => {
+    if (isEditingHemFolds) return;
+    setHemFoldsDraft(String(hemFoldsDisplay));
+    setHemFoldsError(null);
+  }, [hemFoldsDisplay, isEditingHemFolds]);
+
+  const applyHemFoldsDraft = (raw: string) => {
+    const parsed = Number(raw.replace(",", "."));
+    if (!Number.isFinite(parsed)) {
+      setHemFoldsError("Valor inválido");
+      return;
+    }
+    const safe = Math.max(1, Math.min(64, Math.round(parsed)));
+    setHemFolds(safe);
+    setHemFoldsDraft(String(safe));
+    setHemFoldsError(null);
+  };
+
+  const bumpHemFolds = (direction: 1 | -1) => {
+    const parsed = Number(hemFoldsDraft.replace(",", "."));
+    const base = Number.isFinite(parsed) ? parsed : hemFoldsDisplay;
+    const next = Math.max(1, Math.min(64, Math.round(base + direction)));
+    setHemFolds(next);
+    setHemFoldsDraft(String(next));
+    setHemFoldsError(null);
+  };
+
+  const removeHemForSelection = useCallback(() => {
+    if (!hemForSelection) return;
+    setFigures((prev) => prev.filter((f) => f.id !== hemForSelection.id));
+  }, [hemForSelection, setFigures]);
+
+  const removeSeamAndHemForSelection = useCallback(() => {
+    const baseId = selectedBaseFigureId;
+    if (!baseId) return;
+    setFigures((prev) =>
+      prev.filter((f) => !(f.kind === "seam" && f.parentId === baseId))
+    );
+  }, [selectedBaseFigureId, setFigures]);
+
+  const applyDottedToBase = useCallback(() => {
+    const baseId = selectedBaseFigureId;
+    if (!baseId) return;
+    setFigures((prev) =>
+      prev.map((f) => (f.id === baseId ? { ...f, dash: [4, 4] } : f))
+    );
+  }, [selectedBaseFigureId, setFigures]);
+
+  const clearDottedFromBase = useCallback(() => {
+    const baseId = selectedBaseFigureId;
+    if (!baseId) return;
+    setFigures((prev) =>
+      prev.map((f) => (f.id === baseId ? { ...f, dash: undefined } : f))
+    );
+  }, [selectedBaseFigureId, setFigures]);
+
   // Show tool properties when no shape is selected but a tool is active
   const showToolProperties =
     !selectedFigure &&
     (tool === "mirror" ||
       tool === "unfold" ||
       tool === "offset" ||
+      tool === "hem" ||
       tool === "curve");
 
   const hasCanvasSelection =
@@ -1742,12 +1891,14 @@ export function PropertiesPanel() {
     | "mirrorSync"
     | "figureName"
     | "seamAllowance"
+    | "hemSettings"
     | "edge"
     | "transform"
     | "toolCurve"
     | "toolMirror"
     | "toolUnfold"
-    | "toolOffset";
+    | "toolOffset"
+    | "toolHem";
 
   const [collapsedSections, setCollapsedSections] = useState<
     Record<CollapsibleSectionId, boolean>
@@ -1759,12 +1910,14 @@ export function PropertiesPanel() {
     mirrorSync: false,
     figureName: false,
     seamAllowance: false,
+    hemSettings: false,
     edge: false,
     transform: false,
     toolCurve: false,
     toolMirror: false,
     toolUnfold: false,
     toolOffset: false,
+    toolHem: false,
   });
 
   const toggleSection = (id: CollapsibleSectionId) => {
@@ -3501,6 +3654,223 @@ export function PropertiesPanel() {
                 })
               )}
 
+              {(tool === "hem" || !!hemForSelection) &&
+                renderCollapsibleSection({
+                  id: "hemSettings",
+                  title: "Nova bainha",
+                  children: (
+                    <>
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <input
+                            className={
+                              "w-24 " +
+                              inputBaseClass +
+                              " " +
+                              inputDisabledClass +
+                              " " +
+                              (hemWidthError ? inputErrorClass : inputFocusClass)
+                            }
+                            type="text"
+                            inputMode="decimal"
+                            value={hemWidthDraft}
+                            onFocus={() => setIsEditingHemWidth(true)}
+                            onChange={(e) => {
+                              setHemWidthDraft(e.target.value);
+                              setHemWidthError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                bumpHemWidth(1);
+                                return;
+                              }
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                bumpHemWidth(-1);
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                setIsEditingHemWidth(false);
+                                setHemWidthDraft(
+                                  formatPtBrDecimalFixed(hemWidthDisplayCm, 2)
+                                );
+                                setHemWidthError(null);
+                                return;
+                              }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                applyHemWidthDraft(hemWidthDraft);
+                                setIsEditingHemWidth(false);
+                              }
+                            }}
+                            onWheel={(e) => {
+                              if (document.activeElement !== e.currentTarget)
+                                return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              bumpHemWidth(e.deltaY < 0 ? 1 : -1);
+                            }}
+                            onBlur={() => {
+                              applyHemWidthDraft(hemWidthDraft);
+                              setIsEditingHemWidth(false);
+                            }}
+                          />
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            cm
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <input
+                            className={
+                              "w-24 " +
+                              inputBaseClass +
+                              " " +
+                              inputDisabledClass +
+                              " " +
+                              (hemFoldsError ? inputErrorClass : inputFocusClass)
+                            }
+                            type="text"
+                            inputMode="numeric"
+                            value={hemFoldsDraft}
+                            onFocus={() => setIsEditingHemFolds(true)}
+                            onChange={(e) => {
+                              setHemFoldsDraft(e.target.value);
+                              setHemFoldsError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                bumpHemFolds(1);
+                                return;
+                              }
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                bumpHemFolds(-1);
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                setIsEditingHemFolds(false);
+                                setHemFoldsDraft(String(hemFoldsDisplay));
+                                setHemFoldsError(null);
+                                return;
+                              }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                applyHemFoldsDraft(hemFoldsDraft);
+                                setIsEditingHemFolds(false);
+                              }
+                            }}
+                            onWheel={(e) => {
+                              if (document.activeElement !== e.currentTarget)
+                                return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              bumpHemFolds(e.deltaY < 0 ? 1 : -1);
+                            }}
+                            onBlur={() => {
+                              applyHemFoldsDraft(hemFoldsDraft);
+                              setIsEditingHemFolds(false);
+                            }}
+                          />
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            dobras
+                          </span>
+                        </div>
+
+                        <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={hemNotchesDisplay}
+                            onChange={(e) =>
+                              setHemNotchesEnabled(e.target.checked)
+                            }
+                            className="w-4 h-4"
+                          />
+                          <span>Piques nas dobras</span>
+                        </label>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            Pique
+                          </span>
+                          <select
+                            className={
+                              "w-24 " +
+                              inputBaseClass +
+                              " " +
+                              inputDisabledClass +
+                              " " +
+                              inputFocusClass
+                            }
+                            value={hemNotchTypeDisplay}
+                            onChange={(e) =>
+                              setHemNotchType(e.target.value as "seta")
+                            }
+                            disabled={!hemNotchesDisplay}
+                          >
+                            <option value="seta">Seta</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {hemWidthError ? (
+                        <p className="mt-2 text-xs text-red-600 dark:text-red-500">
+                          {hemWidthError}
+                        </p>
+                      ) : null}
+                      {hemFoldsError ? (
+                        <p className="mt-2 text-xs text-red-600 dark:text-red-500">
+                          {hemFoldsError}
+                        </p>
+                      ) : null}
+
+                      <div className="mt-3 grid grid-cols-1 gap-2">
+                        <button
+                          type="button"
+                          className="px-2 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 disabled:opacity-50 disabled:cursor-default"
+                          onClick={removeHemForSelection}
+                          disabled={!hemForSelection}
+                        >
+                          Remover bainha
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 disabled:opacity-50 disabled:cursor-default"
+                          onClick={removeSeamAndHemForSelection}
+                          disabled={!selectedBaseFigure}
+                        >
+                          Remover margem + bainha
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 disabled:opacity-50 disabled:cursor-default"
+                          onClick={applyDottedToBase}
+                          disabled={!selectedBaseFigure}
+                        >
+                          Aplicar pontilhado na peça
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 disabled:opacity-50 disabled:cursor-default"
+                          onClick={clearDottedFromBase}
+                          disabled={!selectedBaseFigure}
+                        >
+                          Remover pontilhado da peça
+                        </button>
+                      </div>
+
+                      <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                        Dica: duplo clique no nó para marcar o trecho e duplo
+                        clique para aplicar.
+                      </p>
+                    </>
+                  ),
+                })}
+
               {selectedEdgeInfo ? (
                 renderCollapsibleSection({
                   id: "edge",
@@ -3824,6 +4194,8 @@ export function PropertiesPanel() {
                     ? "Desespelhar"
                     : tool === "curve"
                       ? "Curvas"
+                      : tool === "hem"
+                        ? "Bainha"
                       : "Margem de costura"}
               </h3>
             </div>
@@ -3861,6 +4233,189 @@ export function PropertiesPanel() {
                     Clique em uma forma espelhada para remover a cópia e
                     desfazer o vínculo (funciona no original ou na cópia).
                   </p>
+                  ),
+                })
+              )}
+
+              {tool === "hem" && (
+                renderCollapsibleSection({
+                  id: "toolHem",
+                  title: "Nova bainha",
+                  children: (
+                    <>
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <input
+                            className={
+                              "w-24 " +
+                              inputBaseClass +
+                              " " +
+                              inputDisabledClass +
+                              " " +
+                              (hemWidthError ? inputErrorClass : inputFocusClass)
+                            }
+                            type="text"
+                            inputMode="decimal"
+                            value={hemWidthDraft}
+                            onFocus={() => setIsEditingHemWidth(true)}
+                            onChange={(e) => {
+                              setHemWidthDraft(e.target.value);
+                              setHemWidthError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                bumpHemWidth(1);
+                                return;
+                              }
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                bumpHemWidth(-1);
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                setIsEditingHemWidth(false);
+                                setHemWidthDraft(
+                                  formatPtBrDecimalFixed(hemWidthDisplayCm, 2)
+                                );
+                                setHemWidthError(null);
+                                return;
+                              }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                applyHemWidthDraft(hemWidthDraft);
+                                setIsEditingHemWidth(false);
+                              }
+                            }}
+                            onWheel={(e) => {
+                              if (document.activeElement !== e.currentTarget)
+                                return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              bumpHemWidth(e.deltaY < 0 ? 1 : -1);
+                            }}
+                            onBlur={() => {
+                              applyHemWidthDraft(hemWidthDraft);
+                              setIsEditingHemWidth(false);
+                            }}
+                          />
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            cm
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <input
+                            className={
+                              "w-24 " +
+                              inputBaseClass +
+                              " " +
+                              inputDisabledClass +
+                              " " +
+                              (hemFoldsError ? inputErrorClass : inputFocusClass)
+                            }
+                            type="text"
+                            inputMode="numeric"
+                            value={hemFoldsDraft}
+                            onFocus={() => setIsEditingHemFolds(true)}
+                            onChange={(e) => {
+                              setHemFoldsDraft(e.target.value);
+                              setHemFoldsError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                bumpHemFolds(1);
+                                return;
+                              }
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                bumpHemFolds(-1);
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                setIsEditingHemFolds(false);
+                                setHemFoldsDraft(String(hemFoldsDisplay));
+                                setHemFoldsError(null);
+                                return;
+                              }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                applyHemFoldsDraft(hemFoldsDraft);
+                                setIsEditingHemFolds(false);
+                              }
+                            }}
+                            onWheel={(e) => {
+                              if (document.activeElement !== e.currentTarget)
+                                return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              bumpHemFolds(e.deltaY < 0 ? 1 : -1);
+                            }}
+                            onBlur={() => {
+                              applyHemFoldsDraft(hemFoldsDraft);
+                              setIsEditingHemFolds(false);
+                            }}
+                          />
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            dobras
+                          </span>
+                        </div>
+
+                        <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={hemNotchesDisplay}
+                            onChange={(e) =>
+                              setHemNotchesEnabled(e.target.checked)
+                            }
+                            className="w-4 h-4"
+                          />
+                          <span>Piques nas dobras</span>
+                        </label>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            Pique
+                          </span>
+                          <select
+                            className={
+                              "w-24 " +
+                              inputBaseClass +
+                              " " +
+                              inputDisabledClass +
+                              " " +
+                              inputFocusClass
+                            }
+                            value={hemNotchTypeDisplay}
+                            onChange={(e) =>
+                              setHemNotchType(e.target.value as "seta")
+                            }
+                            disabled={!hemNotchesDisplay}
+                          >
+                            <option value="seta">Seta</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {hemWidthError ? (
+                        <p className="mt-2 text-xs text-red-600 dark:text-red-500">
+                          {hemWidthError}
+                        </p>
+                      ) : null}
+                      {hemFoldsError ? (
+                        <p className="mt-2 text-xs text-red-600 dark:text-red-500">
+                          {hemFoldsError}
+                        </p>
+                      ) : null}
+
+                      <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+                        Clique na aresta para preparar, duplo clique para
+                        aplicar e duplo clique em nós para limitar o trecho.
+                      </p>
+                    </>
                   ),
                 })
               )}

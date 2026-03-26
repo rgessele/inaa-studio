@@ -44,6 +44,8 @@ type BoundingBox = { x: number; y: number; width: number; height: number };
 
 type Vec2 = { x: number; y: number };
 
+const EXPORT_MEASURE_FONT_SIZE = 12;
+
 function concatPolylineSegments(segments: Vec2[][]): Vec2[] {
   const out: Vec2[] = [];
   for (const seg of segments) {
@@ -198,7 +200,8 @@ function computePiqueSegmentWorld(
   figure: Figure,
   pique: { edgeId: string; t01: number; lengthCm: number; side: 1 | -1 }
 ): { aWorld: Vec2; bWorld: Vec2 } | null {
-  if (!figure.closed && !hasClosedLoop(figure)) return null;
+  const allowOpenHem = figure.kind === "seam" && figure.derivedRole === "hem";
+  if (!allowOpenHem && !figure.closed && !hasClosedLoop(figure)) return null;
   const edge = figure.edges.find((e) => e.id === pique.edgeId) ?? null;
   if (!edge) return null;
 
@@ -249,6 +252,10 @@ function formatSeamLabelCm(cm: number): string {
   return `${cm.toFixed(2).replace(".", ",")}cm`;
 }
 
+function isSeamAllowanceFigure(figure: Figure): boolean {
+  return figure.kind === "seam" && figure.derivedRole !== "hem";
+}
+
 function findLongestSegmentWorld(
   pts: Vec2[],
   closed: boolean
@@ -273,13 +280,6 @@ function findLongestSegmentWorld(
     }
   }
   return { a: bestA, b: bestB, len: bestLen };
-}
-
-function escapeXml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 function computeEdgeMeasureLayoutWorld(
@@ -434,13 +434,47 @@ function filterFiguresBySettings(
   figures: Figure[],
   settings: ExportSettings
 ): Figure[] {
+  const includedBaseIds = new Set(
+    figures
+      .filter((figure) => {
+        if (figure.kind === "seam") return false;
+        if (figure.kind === "mold") return true;
+        const enabled =
+          settings.toolFilter[
+            figure.tool as keyof ExportSettings["toolFilter"]
+          ];
+        return enabled !== false;
+      })
+      .map((figure) => figure.id)
+  );
+
   return figures.filter((figure) => {
-    // Exported molds/seam pieces should not depend on diagram tool filters.
-    if (figure.kind === "mold" || figure.kind === "seam") return true;
+    if (figure.kind === "seam") {
+      return !!figure.parentId && includedBaseIds.has(figure.parentId);
+    }
+    if (figure.kind === "mold") return true;
     const enabled =
       settings.toolFilter[figure.tool as keyof ExportSettings["toolFilter"]];
     return enabled !== false;
   });
+}
+
+function seamSegmentWorldPolylines(figure: Figure): number[][] {
+  if (figure.kind !== "seam" || !figure.seamSegments?.length) return [];
+
+  return figure.seamSegments
+    .map((segment) => {
+      const world: number[] = [];
+      for (let i = 0; i < segment.length; i += 2) {
+        const point = figureLocalToWorld(figure, {
+          x: segment[i]!,
+          y: segment[i + 1]!,
+        });
+        world.push(point.x, point.y);
+      }
+      return world;
+    })
+    .filter((segment) => segment.length >= 4);
 }
 
 function calculateFiguresBoundingBox(figures: Figure[]): BoundingBox | null {
@@ -491,16 +525,6 @@ function downloadBlob(blob: Blob, filename: string): void {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
-}
-
-function polylineToSvgPath(points: number[], closed: boolean): string {
-  if (points.length < 4) return "";
-  let d = `M ${points[0]} ${points[1]}`;
-  for (let i = 2; i < points.length; i += 2) {
-    d += ` L ${points[i]} ${points[i + 1]}`;
-  }
-  if (closed) d += " Z";
-  return d;
 }
 
 /**
@@ -614,6 +638,17 @@ export async function generateTiledPDF(
     toast("Nada para exportar com os filtros selecionados.", "error");
     return;
   }
+
+  const rowLabelByRow = new Map(
+    [...new Set(tiles.map((tile) => tile.row))]
+      .sort((a, b) => a - b)
+      .map((row, index) => [row, index + 1] as const)
+  );
+  const columnLabelByCol = new Map(
+    [...new Set(tiles.map((tile) => tile.col))]
+      .sort((a, b) => a - b)
+      .map((col, index) => [col, index + 1] as const)
+  );
 
   const pdf = new jsPDF({
     orientation: resolved.orientation,
@@ -741,30 +776,57 @@ export async function generateTiledPDF(
         return;
       }
 
-      const poly = figureWorldPolyline(figure, 60);
-      if (poly.length < 4) return;
+      const seamPolylines = seamSegmentWorldPolylines(figure);
+      if (seamPolylines.length > 0) {
+        for (const poly of seamPolylines) {
+          const shifted: number[] = [];
+          for (let i = 0; i < poly.length; i += 2) {
+            shifted.push(poly[i] - tileX, poly[i + 1] - tileY);
+          }
 
-      const shifted: number[] = [];
-      for (let i = 0; i < poly.length; i += 2) {
-        shifted.push(poly[i] - tileX, poly[i + 1] - tileY);
+          tileLayer.add(
+            new Konva.Line({
+              points: shifted,
+              stroke: "#000000",
+              strokeWidth: figure.strokeWidth || 1,
+              closed: false,
+              fill: undefined,
+              opacity: figure.opacity ?? 1,
+              dash: figure.dash,
+              lineCap: "round",
+              lineJoin: "round",
+              perfectDrawEnabled: false,
+              shadowForStrokeEnabled: false,
+              listening: false,
+            })
+          );
+        }
+      } else {
+        const poly = figureWorldPolyline(figure, 60);
+        if (poly.length < 4) return;
+
+        const shifted: number[] = [];
+        for (let i = 0; i < poly.length; i += 2) {
+          shifted.push(poly[i] - tileX, poly[i + 1] - tileY);
+        }
+
+        tileLayer.add(
+          new Konva.Line({
+            points: shifted,
+            stroke: "#000000",
+            strokeWidth: figure.strokeWidth || 1,
+            closed: figure.closed,
+            fill: figure.closed ? "transparent" : undefined,
+            opacity: figure.opacity ?? 1,
+            dash: figure.dash,
+            lineCap: "round",
+            lineJoin: "round",
+            perfectDrawEnabled: false,
+            shadowForStrokeEnabled: false,
+            listening: false,
+          })
+        );
       }
-
-      tileLayer.add(
-        new Konva.Line({
-          points: shifted,
-          stroke: "#000000",
-          strokeWidth: figure.strokeWidth || 1,
-          closed: figure.closed,
-          fill: figure.closed ? "transparent" : undefined,
-          opacity: figure.opacity ?? 1,
-          dash: figure.dash,
-          lineCap: "round",
-          lineJoin: "round",
-          perfectDrawEnabled: false,
-          shadowForStrokeEnabled: false,
-          listening: false,
-        })
-      );
 
       // Dart/Pence overlays (non-destructive): base dashed on contour + legs + height.
       const darts = figure.darts ?? [];
@@ -900,7 +962,7 @@ export async function generateTiledPDF(
             const abRawAngleDeg =
               (Math.atan2(abTangent.y, abTangent.x) * 180) / Math.PI;
             const abAngleDeg = normalizeUprightAngleDeg(abRawAngleDeg);
-            const abFontSize = 14;
+            const abFontSize = EXPORT_MEASURE_FONT_SIZE;
             const abApproxWidth = Math.max(
               60,
               abLabel.length * abFontSize * 0.62
@@ -912,7 +974,6 @@ export async function generateTiledPDF(
                 y: abP.y - tileY,
                 text: abLabel,
                 fontSize: abFontSize,
-                fontStyle: "bold",
                 fill: "#000000",
                 opacity: 0.75,
                 rotation: abAngleDeg,
@@ -934,7 +995,7 @@ export async function generateTiledPDF(
             const rawAngleDeg =
               (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
             const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
-            const fontSize = 14;
+            const fontSize = EXPORT_MEASURE_FONT_SIZE;
             const approxWidth = Math.max(60, label.length * fontSize * 0.62);
 
             tileLayer.add(
@@ -943,7 +1004,6 @@ export async function generateTiledPDF(
                 y: p.y - tileY,
                 text: label,
                 fontSize,
-                fontStyle: "bold",
                 fill: "#000000",
                 opacity: 0.85,
                 rotation: angleDeg,
@@ -963,7 +1023,9 @@ export async function generateTiledPDF(
       const piques = figure.piques ?? [];
       if (
         shouldIncludePiques &&
-        (figure.closed || hasClosedLoop(figure)) &&
+        (figure.closed ||
+          hasClosedLoop(figure) ||
+          (figure.kind === "seam" && figure.derivedRole === "hem")) &&
         piques.length
       ) {
         for (const pk of piques) {
@@ -1015,7 +1077,7 @@ export async function generateTiledPDF(
 
         if (!isSeam) {
           // Edge length labels (matches MeasureOverlay intent; no hover/selection UI)
-          const fontSize = 11;
+          const fontSize = EXPORT_MEASURE_FONT_SIZE;
           const textWidth = 120;
 
           for (const edge of figure.edges) {
@@ -1110,8 +1172,8 @@ export async function generateTiledPDF(
         }
 
         // Seam allowance labels ("Margem de Costura")
-        if (figure.kind === "seam") {
-          const fontSize = 11;
+        if (isSeamAllowanceFigure(figure)) {
+          const fontSize = EXPORT_MEASURE_FONT_SIZE;
           const textWidth = 240;
           const centroidWorld = figureLocalToWorld(
             figure,
@@ -1366,8 +1428,8 @@ export async function generateTiledPDF(
     // Page assembly guide (top-right, in the paper margin): row/col coordinate + page N/T.
     // Drawn on the PDF (outside the tiled image) so it never overlaps the pattern.
     {
-      const line = row + 1;
-      const column = col + 1;
+      const line = rowLabelByRow.get(row) ?? row + 1;
+      const column = columnLabelByCol.get(col) ?? col + 1;
       const label = `L${line} C${column} · Pág. ${pageNum}/${totalPages}`;
 
       // Place it in the top-right margin area.
@@ -1384,496 +1446,4 @@ export async function generateTiledPDF(
   const filename = `inaa-pattern-${Date.now()}.pdf`;
   const pdfBlob = pdf.output("blob");
   downloadBlob(pdfBlob, filename);
-}
-
-/**
- * Generate SVG export (vector; good for plotters).
- */
-export function generateSVG(
-  figures: Figure[],
-  settings?: Partial<ExportSettings>,
-  options?: PointLabelsExportOptions
-): void {
-  const resolved = resolveExportSettings(settings);
-  const filtered = filterFiguresBySettings(figures, resolved);
-
-  const shouldIncludeMeasures = options?.includeMeasures !== false;
-  const shouldIncludePatternName = options?.includePatternName !== false;
-  const shouldIncludePiques = options?.includePiques !== false;
-
-  const shouldIncludePointLabels =
-    options?.includePointLabels === true &&
-    options.pointLabelsMode &&
-    options.pointLabelsMode !== "off";
-  const nodeLabelsByFigureId = shouldIncludePointLabels
-    ? computeNodeLabels(filtered, options!.pointLabelsMode!)
-    : new Map<string, Record<string, string>>();
-
-  if (filtered.length === 0) {
-    toast("Não há nada para exportar. Desenhe algo primeiro.", "error");
-    return;
-  }
-
-  const bbox = calculateFiguresBoundingBox(filtered);
-  if (!bbox) {
-    toast("Erro ao calcular a área de desenho.", "error");
-    return;
-  }
-
-  const padding = 10;
-  const viewBox = {
-    x: bbox.x - padding,
-    y: bbox.y - padding,
-    width: bbox.width + 2 * padding,
-    height: bbox.height + 2 * padding,
-  };
-
-  const dashArray = null;
-
-  let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-  svg += `<svg xmlns="http://www.w3.org/2000/svg" `;
-  svg += `viewBox="${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}" `;
-  svg += `width="${viewBox.width}px" height="${viewBox.height}px">\n`;
-
-  for (const fig of filtered) {
-    if (fig.tool === "text") {
-      const value = (fig.textValue ?? "").toString();
-      if (value.trim()) {
-        const fontSize = (() => {
-          const v = fig.textFontSizePx;
-          if (!Number.isFinite(v ?? NaN)) return 18;
-          return Math.max(6, Math.min(300, v as number));
-        })();
-        const lineHeight = (() => {
-          const v = fig.textLineHeight;
-          if (!Number.isFinite(v ?? NaN)) return 1.25;
-          return Math.max(0.8, Math.min(3, v as number));
-        })();
-        const align = fig.textAlign ?? "left";
-        const anchor =
-          align === "center" ? "middle" : align === "right" ? "end" : "start";
-        const x = fig.x;
-        const y = fig.y;
-        const rot = fig.rotation || 0;
-        const fontFamily = (fig.textFontFamily ?? "sans-serif").replace(
-          /"/g,
-          "&quot;"
-        );
-
-        const textFill = (fig.textFill ?? "#000").replace(/"/g, "&quot;");
-        const paddingPx = (() => {
-          const v = fig.textPaddingPx;
-          if (!Number.isFinite(v ?? NaN)) return 0;
-          return Math.max(0, Math.min(50, v as number));
-        })();
-        const bgEnabled = fig.textBackgroundEnabled === true;
-        const bgFill = (fig.textBackgroundFill ?? "#ffffff").replace(
-          /"/g,
-          "&quot;"
-        );
-        const bgOpacity = (() => {
-          const v = fig.textBackgroundOpacity;
-          if (!Number.isFinite(v ?? NaN)) return 1;
-          return Math.max(0, Math.min(1, v as number));
-        })();
-
-        // Escape basic XML entities; preserve newlines using <tspan>.
-        const escaped = value
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
-        const parts = escaped.split("\n");
-
-        if (bgEnabled) {
-          const approxCharWidth = fontSize * 0.62;
-          const longest = value
-            .split("\n")
-            .reduce((m, l) => Math.max(m, l.length), 0);
-          const widthLocal =
-            ((Number.isFinite(fig.textWidthPx ?? NaN) &&
-            (fig.textWidthPx ?? 0) > 0
-              ? (fig.textWidthPx as number)
-              : Math.max(12, longest * approxCharWidth)) as number) +
-            paddingPx * 2;
-          const heightLocal =
-            Math.max(1, value.split("\n").length) * fontSize * lineHeight +
-            paddingPx * 2;
-
-          svg += `  <g class="inaa-text-group"`;
-          if (rot) svg += ` transform="rotate(${rot} ${x} ${y})"`;
-          svg += `>\n`;
-          svg += `    <rect x="${x - paddingPx}" y="${y - paddingPx}" width="${widthLocal}" height="${heightLocal}"`;
-          svg += ` fill="${bgFill}" fill-opacity="${(fig.opacity ?? 1) * bgOpacity}" />\n`;
-        }
-
-        svg += bgEnabled ? `    ` : `  `;
-        svg += `<text class="inaa-text" x="${x}" y="${y}"`;
-        svg += ` font-family="${fontFamily}" font-size="${fontSize}"`;
-        svg += ` fill="${textFill}" fill-opacity="${fig.opacity ?? 1}"`;
-        svg += ` text-anchor="${anchor}" dominant-baseline="hanging"`;
-        svg += ` letter-spacing="${fig.textLetterSpacing ?? 0}"`;
-        svg += ` style="white-space: pre;"`;
-        if (rot && !bgEnabled) svg += ` transform="rotate(${rot} ${x} ${y})"`;
-        svg += `>`;
-
-        if (parts.length === 1) {
-          svg += parts[0] ?? "";
-        } else {
-          for (let i = 0; i < parts.length; i++) {
-            const dy = i === 0 ? 0 : fontSize * lineHeight;
-            svg += `<tspan x="${x}" dy="${dy}">${parts[i] ?? ""}</tspan>`;
-          }
-        }
-
-        svg += `</text>\n`;
-        if (bgEnabled) svg += `  </g>\n`;
-      }
-      continue;
-    }
-
-    const points = figureWorldPolyline(fig, 120);
-    const d = polylineToSvgPath(points, fig.closed);
-    if (!d) continue;
-    const strokeWidth = fig.strokeWidth ?? 1;
-
-    svg += `  <path d="${d}" stroke="#000" stroke-width="${strokeWidth}" fill="none"`;
-    if (dashArray) svg += ` stroke-dasharray="${dashArray}"`;
-    svg += ` />\n`;
-
-    // Dart/Pence overlays (vector): base dashed on contour + legs + height + height label.
-    const darts = fig.darts ?? [];
-    if (resolved.toolFilter.dart !== false && darts.length) {
-      const dartDash = "12 6";
-      for (const dart of darts) {
-        const aNode = fig.nodes.find((n) => n.id === dart.aNodeId);
-        const bNode = fig.nodes.find((n) => n.id === dart.bNodeId);
-        const cNode = fig.nodes.find((n) => n.id === dart.cNodeId);
-        if (!aNode || !bNode || !cNode) continue;
-
-        const aWorld = figureLocalToWorld(fig, { x: aNode.x, y: aNode.y });
-        const bWorld = figureLocalToWorld(fig, { x: bNode.x, y: bNode.y });
-        const cWorld = figureLocalToWorld(fig, { x: cNode.x, y: cNode.y });
-
-        const baseWorld = computeDartBaseWorldPolyline(
-          fig,
-          dart.aNodeId,
-          dart.bNodeId
-        ) ?? [aWorld, bWorld];
-        const baseFlat: number[] = [];
-        for (const p of baseWorld) baseFlat.push(p.x, p.y);
-        const baseD = polylineToSvgPath(baseFlat, false);
-        if (baseD) {
-          // Mask the solid contour segment then draw it dashed.
-          svg += `  <path d="${baseD}" stroke="#fff" stroke-width="${strokeWidth + 4}" fill="none" />\n`;
-          svg += `  <path d="${baseD}" stroke="#000" stroke-width="${strokeWidth}" fill="none" stroke-dasharray="${dartDash}" />\n`;
-        }
-
-        // Legs
-        svg += `  <line x1="${aWorld.x}" y1="${aWorld.y}" x2="${cWorld.x}" y2="${cWorld.y}" stroke="#000" stroke-width="${Math.max(1, strokeWidth * 0.9)}" />\n`;
-        svg += `  <line x1="${bWorld.x}" y1="${bWorld.y}" x2="${cWorld.x}" y2="${cWorld.y}" stroke="#000" stroke-width="${Math.max(1, strokeWidth * 0.9)}" />\n`;
-
-        // Height
-        const midWorld = lerp(aWorld, bWorld, 0.5);
-        svg += `  <line x1="${midWorld.x}" y1="${midWorld.y}" x2="${cWorld.x}" y2="${cWorld.y}" stroke="#000" stroke-width="${Math.max(1, strokeWidth * 0.85)}" stroke-dasharray="${dartDash}" />\n`;
-
-        if (shouldIncludeMeasures) {
-          // AB label (chord)
-          const abPx = dist(aWorld, bWorld);
-          const abLabel = formatCm(pxToCm(abPx), 2);
-          const abTangent = sub(bWorld, aWorld);
-          const abNormal = norm(perp(abTangent));
-          const abPos = add(lerp(aWorld, bWorld, 0.5), mul(abNormal, 12));
-          const abRawAngleDeg =
-            (Math.atan2(abTangent.y, abTangent.x) * 180) / Math.PI;
-          const abAngleDeg = normalizeUprightAngleDeg(abRawAngleDeg);
-
-          const abEscaped = abLabel
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
-
-          svg += `  <text class="inaa-dart-ab-label" x="${abPos.x}" y="${abPos.y}"`;
-          svg += ` font-family="sans-serif" font-size="14" font-weight="700"`;
-          svg += ` fill="#000" fill-opacity="0.75" text-anchor="middle" dominant-baseline="middle"`;
-          svg += ` transform="rotate(${abAngleDeg} ${abPos.x} ${abPos.y})"`;
-          svg += `>${abEscaped}</text>\n`;
-
-          // Height label
-          const heightPx = dist(midWorld, cWorld);
-          const label = formatCm(pxToCm(heightPx), 2);
-          const tangent = sub(cWorld, midWorld);
-          const normal = norm(perp(tangent));
-          const pos = add(lerp(midWorld, cWorld, 0.5), mul(normal, 12));
-          const rawAngleDeg =
-            (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
-          const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
-
-          const escaped = label
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
-
-          svg += `  <text class="inaa-dart-height-label" x="${pos.x}" y="${pos.y}"`;
-          svg += ` font-family="sans-serif" font-size="14" font-weight="700"`;
-          svg += ` fill="#000" fill-opacity="0.85" text-anchor="middle" dominant-baseline="middle"`;
-          svg += ` transform="rotate(${angleDeg} ${pos.x} ${pos.y})"`;
-          svg += `>${escaped}</text>\n`;
-        }
-      }
-    }
-
-    // Piques (notches)
-    const piques = fig.piques ?? [];
-    if (shouldIncludePiques && (fig.closed || hasClosedLoop(fig)) && piques.length) {
-      for (const pk of piques) {
-        const seg = computePiqueSegmentWorld(fig, pk);
-        if (!seg) continue;
-        svg += `  <line class="inaa-pique" x1="${seg.aWorld.x}" y1="${seg.aWorld.y}" x2="${seg.bWorld.x}" y2="${seg.bWorld.y}" stroke="#000" stroke-width="${Math.max(
-          1,
-          (fig.strokeWidth || 1) * 0.9
-        )}" stroke-linecap="round" />\n`;
-      }
-    }
-
-    if (shouldIncludeMeasures) {
-      // Edge length labels (vector)
-      const fontSize = 11;
-      for (const edge of fig.edges) {
-        const layout = computeEdgeMeasureLayoutWorld(fig, edge.id);
-        if (!layout) continue;
-
-        const fallbackLen = edgeWorldLengthFallbackPx(fig, edge.id);
-        const lengthPx = safeEdgeLengthPx(fig, edge.id, fallbackLen);
-        const label = formatCm(pxToCm(lengthPx), 2);
-        const escaped = label
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
-
-        if (layout.isShortEdge) {
-          svg += `  <line class="inaa-measure-leader" x1="${layout.midWorld.x}" y1="${layout.midWorld.y}" x2="${layout.posWorld.x}" y2="${layout.posWorld.y}" stroke="#000" stroke-width="1" stroke-dasharray="4 4" stroke-opacity="0.5" />\n`;
-        }
-
-        svg += `  <text class="inaa-measure-label" x="${layout.posWorld.x}" y="${layout.posWorld.y}"`;
-        svg += ` font-family="sans-serif" font-size="${fontSize}"`;
-        svg += ` fill="#000" fill-opacity="0.75" text-anchor="middle" dominant-baseline="middle"`;
-        svg += ` transform="rotate(${layout.angleDeg} ${layout.posWorld.x} ${layout.posWorld.y})"`;
-        svg += `>${escaped}</text>\n`;
-      }
-
-      // Circle summary block
-      if (fig.tool === "circle" && fig.measures?.circle) {
-        const c = fig.measures.circle;
-        const isCircle = c.radiusPx != null;
-        const lines: string[] = [];
-        if (isCircle && c.radiusPx != null) {
-          lines.push(`Raio: ${formatCm(pxToCm(c.radiusPx), 2)}`);
-          lines.push(`Circ.: ${formatCm(pxToCm(c.circumferencePx), 2)}`);
-        } else {
-          lines.push(`Raio X: ${formatCm(pxToCm(c.rxPx), 2)}`);
-          lines.push(`Raio Y: ${formatCm(pxToCm(c.ryPx), 2)}`);
-          lines.push(
-            `Circ. (aprox.): ${formatCm(pxToCm(c.circumferencePx), 2)}`
-          );
-        }
-
-        const centroidWorld = figureLocalToWorld(fig, figureCentroidLocal(fig));
-        const escapedLines = lines.map((line) =>
-          line
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-        );
-
-        svg += `  <text class="inaa-measure-label" x="${centroidWorld.x}" y="${centroidWorld.y}"`;
-        svg += ` font-family="sans-serif" font-size="${fontSize}"`;
-        svg += ` fill="#000" fill-opacity="0.75" text-anchor="middle" dominant-baseline="middle"`;
-        svg += `>`;
-
-        if (escapedLines.length === 1) {
-          svg += escapedLines[0] ?? "";
-        } else {
-          for (let i = 0; i < escapedLines.length; i++) {
-            const dy = i === 0 ? 0 : fontSize * 1.15;
-            svg += `<tspan x="${centroidWorld.x}" dy="${dy}">${escapedLines[i] ?? ""}</tspan>`;
-          }
-        }
-
-        svg += `</text>\n`;
-      }
-
-      // Seam allowance labels ("Margem de Costura")
-      if (fig.kind === "seam") {
-        const centroidWorld = figureLocalToWorld(fig, figureCentroidLocal(fig));
-        const OFFSET_PX = 10;
-
-        const addSeamLabel = (pos: Vec2, angleDeg: number, text: string) => {
-          const escaped = escapeXml(text);
-          svg += `  <text class="inaa-seam-label" x="${pos.x}" y="${pos.y}"`;
-          svg += ` font-family="sans-serif" font-size="${fontSize}"`;
-          svg += ` fill="#000" fill-opacity="0.75" text-anchor="middle" dominant-baseline="middle"`;
-          svg += ` transform="rotate(${angleDeg} ${pos.x} ${pos.y})"`;
-          svg += `>${escaped}</text>\n`;
-        };
-
-        if (typeof fig.offsetCm === "number" && Number.isFinite(fig.offsetCm)) {
-          const flat = figureWorldPolyline(fig, 60);
-          const pts: Vec2[] = [];
-          for (let i = 0; i < flat.length; i += 2) {
-            pts.push({ x: flat[i]!, y: flat[i + 1]! });
-          }
-          if (pts.length >= 2 && dist(pts[0]!, pts[pts.length - 1]!) < 1e-6) {
-            pts.pop();
-          }
-
-          if (pts.length >= 2) {
-            const label = `Margem de Costura: ${formatSeamLabelCm(fig.offsetCm)}`;
-
-            if (fig.tool === "circle") {
-              let bestIndex = 0;
-              let bestY = pts[0]!.y;
-              for (let i = 1; i < pts.length; i++) {
-                if (pts[i]!.y < bestY) {
-                  bestY = pts[i]!.y;
-                  bestIndex = i;
-                }
-              }
-
-              const prev = pts[(bestIndex - 1 + pts.length) % pts.length]!;
-              const next = pts[(bestIndex + 1) % pts.length]!;
-              const mid = pts[bestIndex]!;
-              const tangent = sub(next, prev);
-              const n = norm(perp(tangent));
-
-              const p1 = add(mid, mul(n, OFFSET_PX));
-              const p2 = add(mid, mul(n, -OFFSET_PX));
-              const p =
-                dist(p1, centroidWorld) >= dist(p2, centroidWorld) ? p1 : p2;
-              const rawAngleDeg =
-                (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
-              const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
-
-              addSeamLabel(p, angleDeg, label);
-            } else {
-              const longest = findLongestSegmentWorld(pts, fig.closed);
-              if (longest.a && longest.b && longest.len > 1e-6) {
-                const mid = lerp(longest.a, longest.b, 0.5);
-                const tangent = sub(longest.b, longest.a);
-                const n = norm(perp(tangent));
-                const p1 = add(mid, mul(n, OFFSET_PX));
-                const p2 = add(mid, mul(n, -OFFSET_PX));
-                const p =
-                  dist(p1, centroidWorld) >= dist(p2, centroidWorld) ? p1 : p2;
-                const rawAngleDeg =
-                  (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
-                const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
-                addSeamLabel(p, angleDeg, label);
-              }
-            }
-          }
-        } else if (
-          fig.tool !== "circle" &&
-          fig.seamSegments?.length &&
-          fig.seamSegmentEdgeIds?.length &&
-          fig.offsetCm &&
-          typeof fig.offsetCm === "object"
-        ) {
-          for (let index = 0; index < fig.seamSegments.length; index++) {
-            const segment = fig.seamSegments[index];
-            const edgeId = fig.seamSegmentEdgeIds[index];
-            if (!edgeId || !segment) continue;
-
-            const value = (fig.offsetCm as Record<string, number>)[edgeId];
-            if (!Number.isFinite(value ?? NaN)) continue;
-
-            const pts: Vec2[] = [];
-            for (let i = 0; i < segment.length; i += 2) {
-              const local = { x: segment[i]!, y: segment[i + 1]! };
-              pts.push(figureLocalToWorld(fig, local));
-            }
-            if (pts.length < 2) continue;
-
-            const longest = findLongestSegmentWorld(pts, false);
-            if (!longest.a || !longest.b || longest.len <= 1e-6) continue;
-
-            const mid = lerp(longest.a, longest.b, 0.5);
-            const tangent = sub(longest.b, longest.a);
-            const n = norm(perp(tangent));
-            const p1 = add(mid, mul(n, OFFSET_PX));
-            const p2 = add(mid, mul(n, -OFFSET_PX));
-            const p =
-              dist(p1, centroidWorld) >= dist(p2, centroidWorld) ? p1 : p2;
-            const rawAngleDeg =
-              (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
-            const angleDeg = normalizeUprightAngleDeg(rawAngleDeg);
-            const label = `Margem de Costura: ${formatSeamLabelCm(value as number)}`;
-
-            addSeamLabel(p, angleDeg, label);
-          }
-        }
-      }
-    }
-
-    if (shouldIncludePointLabels) {
-      const labels = nodeLabelsByFigureId.get(fig.id);
-      if (!labels) continue;
-
-      const fontSize = 14;
-      const centroid = figureCentroidLocal(fig);
-      const offsetDistLocal = 14;
-
-      for (const node of fig.nodes) {
-        const text = labels[node.id];
-        if (!text) continue;
-
-        const dx = node.x - centroid.x;
-        const dy = node.y - centroid.y;
-        const len = Math.hypot(dx, dy);
-        const dir =
-          len > 1e-6
-            ? { x: dx / len, y: dy / len }
-            : { x: 0.707106781, y: -0.707106781 };
-
-        const posLocal = {
-          x: node.x + dir.x * offsetDistLocal,
-          y: node.y + dir.y * offsetDistLocal,
-        };
-
-        const worldPos = figureLocalToWorld(fig, posLocal);
-        const rot = fig.rotation || 0;
-        const anchor = dx < 0 ? "end" : "start";
-
-        svg += `  <text class="inaa-point-label" x="${worldPos.x}" y="${worldPos.y}"`;
-        svg += ` font-family="sans-serif" font-size="${fontSize}" font-weight="700"`;
-        svg += ` fill="#000" fill-opacity="0.35" text-anchor="${anchor}" dominant-baseline="middle"`;
-        if (rot) {
-          svg += ` transform="rotate(${rot} ${worldPos.x} ${worldPos.y})"`;
-        }
-        svg += `>${text.toUpperCase()}</text>\n`;
-      }
-    }
-
-    const figName = (fig.name ?? "").trim();
-    if (shouldIncludePatternName && fig.kind !== "seam" && figName) {
-      const layout = computeFigureNameLayoutLocal(fig, figName);
-      if (layout) {
-        const worldPos = figureLocalToWorld(fig, layout.posLocal);
-        const rot = (fig.rotation || 0) + (fig.nameRotationDeg || 0);
-        svg += `  <text class="inaa-figure-name" x="${worldPos.x}" y="${worldPos.y}"`;
-        svg += ` font-family="sans-serif" font-size="${layout.fontSize}" font-weight="700"`;
-        svg += ` fill="#000" fill-opacity="0.22" text-anchor="middle" dominant-baseline="middle"`;
-        if (rot) {
-          svg += ` transform="rotate(${rot} ${worldPos.x} ${worldPos.y})"`;
-        }
-        svg += `>${figName}</text>\n`;
-      }
-    }
-  }
-
-  svg += `</svg>`;
-
-  downloadBlob(
-    new Blob([svg], { type: "image/svg+xml" }),
-    `inaa-pattern-${new Date().getTime()}.svg`
-  );
 }

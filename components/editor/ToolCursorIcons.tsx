@@ -12,6 +12,7 @@ type ToolName =
   | "text"
   | "measure"
   | "pique"
+  | "hem"
   | "offset"
   | "extractMold"
   | "dart"
@@ -135,6 +136,14 @@ function getToolIconInternal(
           <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
         </Svg>
       );
+    case "hem":
+      return (
+        <Svg className={className} strokeWidth={strokeWidth}>
+          <path d="M5 8h14" />
+          <path d="M5 12h14" strokeDasharray="2 2" />
+          <path d="M5 16h14" strokeDasharray="2 2" />
+        </Svg>
+      );
     case "offset":
       return (
         <Svg className={className} strokeWidth={strokeWidth}>
@@ -233,6 +242,7 @@ export function isToolCursorOverlayEnabled(tool: string): boolean {
     tool === "text" ||
     tool === "measure" ||
     tool === "pique" ||
+    tool === "hem" ||
     tool === "offset" ||
     tool === "extractMold" ||
     tool === "dart" ||

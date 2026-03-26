@@ -3,6 +3,9 @@ import { add, dist, mul, sub } from "./figureGeometry";
 import { edgeLocalPoints, figureLocalPolyline } from "./figurePath";
 import type { Figure, FigureEdge, FigureNode } from "./types";
 
+export const SEAM_ALLOWANCE_STROKE = "#6366f1";
+export const SEAM_ALLOWANCE_DASH = [5, 5];
+
 type Vec2 = { x: number; y: number };
 
 function id(prefix: string): string {
@@ -1792,12 +1795,14 @@ export function makeSeamFigure(
       ...base,
       id: id("fig"),
       kind: "seam",
+      derivedRole: "seamAllowance",
       parentId: base.id,
       name: "",
       closed: true,
       offsetCm: offsetValueCm,
       sourceSignature,
-      dash: [5, 5],
+      stroke: SEAM_ALLOWANCE_STROKE,
+      dash: [...SEAM_ALLOWANCE_DASH],
       fill: "transparent",
       nodes,
       edges,
@@ -1852,13 +1857,15 @@ export function makeSeamFigure(
     ...base,
     id: id("fig"),
     kind: "seam",
+    derivedRole: "seamAllowance",
     parentId: base.id,
     name: "",
     offsetCm: offsetValueCm,
     seamSegments,
     seamSegmentEdgeIds,
     sourceSignature,
-    dash: [5, 5],
+    stroke: SEAM_ALLOWANCE_STROKE,
+    dash: [...SEAM_ALLOWANCE_DASH],
     fill: "transparent",
     nodes,
     edges,
