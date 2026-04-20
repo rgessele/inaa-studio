@@ -1,7 +1,22 @@
 import { test, expect } from "./helpers/test";
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { gotoEditor } from "./helpers/e2e";
+import { getEditorState, gotoEditor } from "./helpers/e2e";
+
+async function choosePointLabelsMode(
+  page: import("@playwright/test").Page,
+  mode:
+    | "off"
+    | "numGlobal"
+    | "numPerFigure"
+    | "alphaGlobal"
+    | "alphaPerFigure"
+) {
+  await page.getByTestId("point-labels-mode-button").click();
+  await expect(page.getByTestId("point-labels-mode-popover")).toBeVisible();
+  await page.getByTestId(`point-labels-mode-option-${mode}`).click();
+  await expect(page.getByTestId("point-labels-mode-popover")).toHaveCount(0);
+}
 
 test("point labels: PDF export toggles inclusion (size sanity)", async ({
   page,
@@ -56,8 +71,8 @@ test("point labels: PDF export toggles inclusion (size sanity)", async ({
     window.__INAA_DEBUG__.loadTestProject({ figures: [fig] });
   });
 
-  // Enable labels (off -> numGlobal)
-  await page.getByTestId("point-labels-mode-button").click();
+  // Enable labels explicitly through the mode submenu.
+  await choosePointLabelsMode(page, "numGlobal");
   await expect
     .poll(
       async () =>
@@ -114,4 +129,29 @@ test("point labels: PDF export toggles inclusion (size sanity)", async ({
     .update(bytesWithout)
     .digest("hex");
   expect(hashWith).not.toBe(hashWithout);
+});
+
+test("point labels: submenu choice persists after reload", async ({ page }) => {
+  await gotoEditor(page);
+
+  await page.getByTestId("point-labels-mode-button").click();
+  await expect(page.getByTestId("point-labels-mode-popover")).toBeVisible();
+  await expect
+    .poll(async () => (await getEditorState(page)).pointLabelsMode)
+    .toBe("off");
+
+  await page.getByTestId("point-labels-mode-option-alphaPerFigure").click();
+  await expect(page.getByTestId("point-labels-mode-popover")).toHaveCount(0);
+  await expect
+    .poll(async () => (await getEditorState(page)).pointLabelsMode)
+    .toBe("alphaPerFigure");
+
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForFunction(() => Boolean(window.__INAA_DEBUG__), {
+    timeout: 15_000,
+  });
+
+  await expect
+    .poll(async () => (await getEditorState(page)).pointLabelsMode)
+    .toBe("alphaPerFigure");
 });

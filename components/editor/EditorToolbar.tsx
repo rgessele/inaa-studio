@@ -11,7 +11,14 @@ import React, {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Magnet } from "lucide-react";
 import { useEditor } from "./EditorContext";
-import { DrawingTool, Tool, type LineToolMode } from "./types";
+import {
+  DrawingTool,
+  Tool,
+  type LineToolMode,
+  type MeasureDisplayMode,
+  type NodesDisplayMode,
+  type PointLabelsMode,
+} from "./types";
 import { getToolIcon } from "./ToolCursorIcons";
 import {
   createDefaultExportSettings,
@@ -19,8 +26,315 @@ import {
   type ExportSettings,
 } from "./export";
 import { PAPER_SIZES, PAPER_SIZE_LABELS } from "./exportSettings";
-import { cyclePointLabelsMode } from "./pointLabels";
 import { toast } from "@/utils/toast";
+
+type ToolbarModeOption<T extends string> = {
+  mode: T;
+  label: string;
+  summary: string;
+  details: string[];
+  renderIcon: (className?: string) => React.ReactNode;
+  testId: string;
+};
+
+function renderMeasureDisplayModeIcon(
+  mode: MeasureDisplayMode,
+  className = "w-5 h-5 stroke-current"
+) {
+  if (mode === "never") {
+    return (
+      <svg
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+        viewBox="0 0 24 24"
+      >
+        <path d="M4 17 L17 4" />
+        <path d="M7 20 L20 7" />
+        <rect x="6" y="6" width="12" height="12" rx="2" />
+        <path d="M9 10 h0" />
+        <path d="M11 12 h0" />
+        <path d="M13 14 h0" />
+        <path d="M15 16 h0" />
+      </svg>
+    );
+  }
+
+  if (mode === "always") {
+    return (
+      <svg
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+        viewBox="0 0 24 24"
+      >
+        <rect x="5" y="5" width="14" height="14" rx="2" />
+        <path d="M8 9 v2" />
+        <path d="M11 9 v4" />
+        <path d="M14 9 v2" />
+        <path d="M17 9 v4" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.5"
+      viewBox="0 0 24 24"
+    >
+      <rect x="5" y="5" width="14" height="14" rx="2" />
+      <path d="M8 9 v2" />
+      <path d="M11 9 v4" />
+      <path d="M14 9 v2" />
+      <path d="M17 9 v4" />
+      <path d="M20 20 l-3 -1 1 3 1 -2 1 0 z" />
+    </svg>
+  );
+}
+
+function renderNodesDisplayModeIcon(
+  mode: NodesDisplayMode,
+  className = "w-5 h-5 stroke-current"
+) {
+  if (mode === "never") {
+    return (
+      <svg
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+        viewBox="0 0 24 24"
+      >
+        <path d="M5 19 L19 5" />
+        <circle cx="7" cy="7" r="1.5" />
+        <circle cx="12" cy="12" r="1.5" />
+        <circle cx="17" cy="17" r="1.5" />
+      </svg>
+    );
+  }
+
+  if (mode === "always") {
+    return (
+      <svg
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+        viewBox="0 0 24 24"
+      >
+        <circle cx="7" cy="7" r="1.8" />
+        <circle cx="12" cy="12" r="1.8" />
+        <circle cx="17" cy="17" r="1.8" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.5"
+      viewBox="0 0 24 24"
+    >
+      <circle cx="7" cy="7" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="17" cy="17" r="1.8" />
+      <path d="M20 20 l-3 -1 1 3 1 -2 1 0 z" />
+    </svg>
+  );
+}
+
+function renderPointLabelsModeIcon(
+  mode: PointLabelsMode,
+  className = "w-5 h-5"
+) {
+  const badge = (ch: string, showReset: boolean) => (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.5"
+      viewBox="0 0 24 24"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <text
+        x="12"
+        y="15"
+        textAnchor="middle"
+        fontSize="9"
+        fontWeight="700"
+        fill="currentColor"
+        stroke="none"
+      >
+        {ch}
+      </text>
+      {showReset ? <path d="M16.5 8.5a4.5 4.5 0 0 0-6.8-1.2" /> : null}
+      {showReset ? <path d="M9.5 6.4H6.8V9" /> : null}
+    </svg>
+  );
+
+  switch (mode) {
+    case "off":
+      return (
+        <svg
+          className={className}
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.5"
+          viewBox="0 0 24 24"
+        >
+          <path d="M5 19L19 5" />
+          <path d="M7 7h7l3 3-7 7-3-3V7z" />
+        </svg>
+      );
+    case "numGlobal":
+      return badge("1", false);
+    case "numPerFigure":
+      return badge("1", true);
+    case "alphaGlobal":
+      return badge("A", false);
+    case "alphaPerFigure":
+    default:
+      return badge("A", true);
+  }
+}
+
+const MEASURE_MODE_OPTIONS: ToolbarModeOption<MeasureDisplayMode>[] = [
+  {
+    mode: "never",
+    label: "Nunca",
+    summary: "Oculto",
+    details: ["Oculta todas as medidas do canvas."],
+    renderIcon: (className) => renderMeasureDisplayModeIcon("never", className),
+    testId: "measures-mode-option-never",
+  },
+  {
+    mode: "always",
+    label: "Sempre",
+    summary: "Todas as figuras",
+    details: ["Exibe as medidas de todas as figuras do canvas."],
+    renderIcon: (className) =>
+      renderMeasureDisplayModeIcon("always", className),
+    testId: "measures-mode-option-always",
+  },
+  {
+    mode: "hover",
+    label: "Hover",
+    summary: "Figura em foco",
+    details: [
+      "Exibe as medidas da figura em hover e da figura selecionada.",
+    ],
+    renderIcon: (className) => renderMeasureDisplayModeIcon("hover", className),
+    testId: "measures-mode-option-hover",
+  },
+];
+
+const NODES_MODE_OPTIONS: ToolbarModeOption<NodesDisplayMode>[] = [
+  {
+    mode: "never",
+    label: "Nunca",
+    summary: "Oculto",
+    details: ["Oculta os nós das figuras fora do modo de edição de nós."],
+    renderIcon: (className) => renderNodesDisplayModeIcon("never", className),
+    testId: "nodes-mode-option-never",
+  },
+  {
+    mode: "always",
+    label: "Sempre",
+    summary: "Todas as figuras",
+    details: ["Exibe os nós de todas as figuras no canvas."],
+    renderIcon: (className) => renderNodesDisplayModeIcon("always", className),
+    testId: "nodes-mode-option-always",
+  },
+  {
+    mode: "hover",
+    label: "Hover",
+    summary: "Figura em foco",
+    details: ["Exibe os nós da figura em hover e da figura selecionada."],
+    renderIcon: (className) => renderNodesDisplayModeIcon("hover", className),
+    testId: "nodes-mode-option-hover",
+  },
+];
+
+const POINT_LABELS_MODE_OPTIONS: ToolbarModeOption<PointLabelsMode>[] = [
+  {
+    mode: "off",
+    label: "Desligado",
+    summary: "Sem rótulos",
+    details: ["Não exibe rótulos de pontos no canvas nem na exportação."],
+    renderIcon: (className) => renderPointLabelsModeIcon("off", className),
+    testId: "point-labels-mode-option-off",
+  },
+  {
+    mode: "numGlobal",
+    label: "Numeração global",
+    summary: "1, 2, 3...",
+    details: [
+      "Numera todos os pontos em sequência única no projeto inteiro.",
+    ],
+    renderIcon: (className) =>
+      renderPointLabelsModeIcon("numGlobal", className),
+    testId: "point-labels-mode-option-numGlobal",
+  },
+  {
+    mode: "numPerFigure",
+    label: "Numeração por figura",
+    summary: "Reinicia por figura",
+    details: ["Numera os pontos reiniciando a contagem em cada figura."],
+    renderIcon: (className) =>
+      renderPointLabelsModeIcon("numPerFigure", className),
+    testId: "point-labels-mode-option-numPerFigure",
+  },
+  {
+    mode: "alphaGlobal",
+    label: "Alfabético global",
+    summary: "A, B, C...",
+    details: [
+      "Nomeia os pontos com letras em sequência única no projeto inteiro.",
+    ],
+    renderIcon: (className) =>
+      renderPointLabelsModeIcon("alphaGlobal", className),
+    testId: "point-labels-mode-option-alphaGlobal",
+  },
+  {
+    mode: "alphaPerFigure",
+    label: "Alfabético por figura",
+    summary: "Reinicia por figura",
+    details: ["Nomeia os pontos com letras reiniciando em cada figura."],
+    renderIcon: (className) =>
+      renderPointLabelsModeIcon("alphaPerFigure", className),
+    testId: "point-labels-mode-option-alphaPerFigure",
+  },
+];
+
+function getToolbarModeOption<T extends string>(
+  options: ToolbarModeOption<T>[],
+  mode: T
+) {
+  return options.find((option) => option.mode === mode) ?? options[0];
+}
 
 export function EditorToolbar() {
   const router = useRouter();
@@ -257,194 +571,19 @@ export function EditorToolbar() {
     setTool(newTool);
   };
 
-  const measuresModeIcon = useMemo(() => {
-    const base = "w-5 h-5 stroke-current";
-
-    if (measureDisplayMode === "never") {
-      // Ruler with a slash (off)
-      return (
-        <svg
-          className={base}
-          fill="none"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.5"
-          viewBox="0 0 24 24"
-        >
-          <path d="M4 17 L17 4" />
-          <path d="M7 20 L20 7" />
-          <rect x="6" y="6" width="12" height="12" rx="2" />
-          <path d="M9 10 h0" />
-          <path d="M11 12 h0" />
-          <path d="M13 14 h0" />
-          <path d="M15 16 h0" />
-        </svg>
-      );
-    }
-
-    if (measureDisplayMode === "always") {
-      // Ruler (always)
-      return (
-        <svg
-          className={base}
-          fill="none"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.5"
-          viewBox="0 0 24 24"
-        >
-          <rect x="5" y="5" width="14" height="14" rx="2" />
-          <path d="M8 9 v2" />
-          <path d="M11 9 v4" />
-          <path d="M14 9 v2" />
-          <path d="M17 9 v4" />
-        </svg>
-      );
-    }
-
-    // Hover: ruler + small pointer
-    return (
-      <svg
-        className={base}
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-        viewBox="0 0 24 24"
-      >
-        <rect x="5" y="5" width="14" height="14" rx="2" />
-        <path d="M8 9 v2" />
-        <path d="M11 9 v4" />
-        <path d="M14 9 v2" />
-        <path d="M17 9 v4" />
-        <path d="M20 20 l-3 -1 1 3 1 -2 1 0 z" />
-      </svg>
-    );
-  }, [measureDisplayMode]);
-
-  const nodesModeIcon = useMemo(() => {
-    const base = "w-5 h-5 stroke-current";
-
-    if (nodesDisplayMode === "never") {
-      // Dots with slash (off)
-      return (
-        <svg
-          className={base}
-          fill="none"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.5"
-          viewBox="0 0 24 24"
-        >
-          <path d="M5 19 L19 5" />
-          <circle cx="7" cy="7" r="1.5" />
-          <circle cx="12" cy="12" r="1.5" />
-          <circle cx="17" cy="17" r="1.5" />
-        </svg>
-      );
-    }
-
-    if (nodesDisplayMode === "always") {
-      // Dots (always)
-      return (
-        <svg
-          className={base}
-          fill="none"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.5"
-          viewBox="0 0 24 24"
-        >
-          <circle cx="7" cy="7" r="1.8" />
-          <circle cx="12" cy="12" r="1.8" />
-          <circle cx="17" cy="17" r="1.8" />
-        </svg>
-      );
-    }
-
-    // Hover: dots + small pointer
-    return (
-      <svg
-        className={base}
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-        viewBox="0 0 24 24"
-      >
-        <circle cx="7" cy="7" r="1.8" />
-        <circle cx="12" cy="12" r="1.8" />
-        <circle cx="17" cy="17" r="1.8" />
-        <path d="M20 20 l-3 -1 1 3 1 -2 1 0 z" />
-      </svg>
-    );
-  }, [nodesDisplayMode]);
-
   const magnetIcon = <Magnet className="w-5 h-5" strokeWidth={1.5} />;
-
-  const pointLabelsModeIcon = useMemo(() => {
-    const base = "w-5 h-5";
-
-    const badge = (ch: string, showReset: boolean) => (
-      <svg
-        className={base}
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-        viewBox="0 0 24 24"
-      >
-        <circle cx="12" cy="12" r="9" />
-        <text
-          x="12"
-          y="15"
-          textAnchor="middle"
-          fontSize="9"
-          fontWeight="700"
-          fill="currentColor"
-          stroke="none"
-        >
-          {ch}
-        </text>
-        {showReset ? <path d="M16.5 8.5a4.5 4.5 0 0 0-6.8-1.2" /> : null}
-        {showReset ? <path d="M9.5 6.4H6.8V9" /> : null}
-      </svg>
-    );
-
-    switch (pointLabelsMode) {
-      case "off":
-        return (
-          <svg
-            className={base}
-            fill="none"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="1.5"
-            viewBox="0 0 24 24"
-          >
-            <path d="M5 19L19 5" />
-            <path d="M7 7h7l3 3-7 7-3-3V7z" />
-          </svg>
-        );
-      case "numGlobal":
-        return badge("1", false);
-      case "numPerFigure":
-        return badge("1", true);
-      case "alphaGlobal":
-        return badge("A", false);
-      case "alphaPerFigure":
-      default:
-        return badge("A", true);
-    }
-  }, [pointLabelsMode]);
+  const activeMeasureModeOption = getToolbarModeOption(
+    MEASURE_MODE_OPTIONS,
+    measureDisplayMode
+  );
+  const activeNodesModeOption = getToolbarModeOption(
+    NODES_MODE_OPTIONS,
+    nodesDisplayMode
+  );
+  const activePointLabelsModeOption = getToolbarModeOption(
+    POINT_LABELS_MODE_OPTIONS,
+    pointLabelsMode
+  );
 
   const isMac = useSyncExternalStore(
     () => () => {
@@ -948,67 +1087,56 @@ export function EditorToolbar() {
               ]}
             />
 
-            <ToolButton
+            <ModeMenuButton
               active={measureDisplayMode !== "never"}
-              onClick={() => {
-                const next =
-                  measureDisplayMode === "never"
-                    ? "always"
-                    : measureDisplayMode === "always"
-                      ? "hover"
-                      : "never";
-                setMeasureDisplayMode(next);
-              }}
-              icon="rule"
+              mode={measureDisplayMode}
+              onChangeMode={setMeasureDisplayMode}
               isMac={isMac}
-              title={`Medidas (${measureDisplayMode === "never" ? "Nunca" : measureDisplayMode === "always" ? "Sempre" : "Hover"})`}
+              title={`Medidas (${activeMeasureModeOption.label})`}
               details={[
-                "Exibe medidas no canvas (discreto).",
-                "Clique para alternar: Nunca → Sempre → Hover.",
-                "No modo Hover: mostra a figura em hover e a selecionada.",
+                "Exibe medidas no canvas.",
+                ...activeMeasureModeOption.details,
               ]}
-              customIcon={measuresModeIcon}
+              customIcon={activeMeasureModeOption.renderIcon()}
               dataTestId="measures-mode-button"
+              popoverTestId="measures-mode-popover"
+              menuLabel="Modos de exibição de medidas"
+              options={MEASURE_MODE_OPTIONS}
             />
 
-            <ToolButton
+            <ModeMenuButton
               active={nodesDisplayMode !== "never"}
-              onClick={() => {
-                const next =
-                  nodesDisplayMode === "never"
-                    ? "always"
-                    : nodesDisplayMode === "always"
-                      ? "hover"
-                      : "never";
-                setNodesDisplayMode(next);
-              }}
-              icon="trip_origin"
+              mode={nodesDisplayMode}
+              onChangeMode={setNodesDisplayMode}
               isMac={isMac}
-              title={`Nós (${nodesDisplayMode === "never" ? "Nunca" : nodesDisplayMode === "always" ? "Sempre" : "Hover"})`}
+              title={`Nós (${activeNodesModeOption.label})`}
               details={[
                 "Exibe pontinhos (nós) das figuras no canvas.",
-                "Clique para alternar: Nunca → Sempre → Hover.",
-                "No modo Hover: mostra a figura em hover e a selecionada.",
+                ...activeNodesModeOption.details,
               ]}
-              customIcon={nodesModeIcon}
+              customIcon={activeNodesModeOption.renderIcon()}
               dataTestId="nodes-mode-button"
+              popoverTestId="nodes-mode-popover"
+              menuLabel="Modos de exibição de nós"
+              options={NODES_MODE_OPTIONS}
             />
 
-            <ToolButton
+            <ModeMenuButton
               active={pointLabelsMode !== "off"}
-              onClick={() =>
-                setPointLabelsMode(cyclePointLabelsMode(pointLabelsMode))
-              }
-              icon="tag"
+              mode={pointLabelsMode}
+              onChangeMode={setPointLabelsMode}
               isMac={isMac}
-              title={`Rótulos (${pointLabelsMode === "off" ? "Desligado" : pointLabelsMode === "numGlobal" ? "Num global" : pointLabelsMode === "numPerFigure" ? "Num por figura" : pointLabelsMode === "alphaGlobal" ? "Letras global" : "Letras por figura"})`}
+              title={`Rótulos (${activePointLabelsModeOption.label})`}
               details={[
-                "Numera/nomeia os pontos (nós) das figuras.",
-                "Clique para alternar: Desligado → 1 global → 1 por figura → A global → A por figura.",
-                "Aparece no canvas e pode ser incluído na impressão/export.",
+                "Numera ou nomeia os pontos das figuras.",
+                ...activePointLabelsModeOption.details,
+                "Aparece no canvas e pode ser incluído na impressão/exportação.",
               ]}
-              customIcon={pointLabelsModeIcon}
+              customIcon={activePointLabelsModeOption.renderIcon()}
               dataTestId="point-labels-mode-button"
+              popoverTestId="point-labels-mode-popover"
+              menuLabel="Modos de rótulos de pontos"
+              options={POINT_LABELS_MODE_OPTIONS}
             />
 
             <ToolButton
@@ -1619,6 +1747,140 @@ function ToolButton({
         expanded={tooltip.expanded}
       />
     </button>
+  );
+}
+
+interface ModeMenuButtonProps<T extends string> {
+  active: boolean;
+  mode: T;
+  onChangeMode: (mode: T) => void;
+  title: string;
+  isMac: boolean;
+  customIcon: React.ReactNode;
+  details?: string[];
+  shortcuts?: ToolbarShortcut[];
+  dataTestId: string;
+  popoverTestId: string;
+  menuLabel: string;
+  options: ToolbarModeOption<T>[];
+}
+
+function ModeMenuButton<T extends string>({
+  active,
+  mode,
+  onChangeMode,
+  title,
+  isMac,
+  customIcon,
+  details,
+  shortcuts,
+  dataTestId,
+  popoverTestId,
+  menuLabel,
+  options,
+}: ModeMenuButtonProps<T>) {
+  const tooltip = useDelayedTooltip(Boolean(details && details.length > 0));
+  const [isOpen, setIsOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  return (
+    <div ref={wrapperRef} className="relative w-full">
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        onMouseEnter={tooltip.onMouseEnter}
+        onMouseLeave={tooltip.onMouseLeave}
+        data-testid={dataTestId}
+        className={`group relative w-full aspect-square flex items-center justify-center rounded transition-all ${
+          active
+            ? "bg-primary/10 text-primary border border-primary/20 dark:bg-primary/20 dark:text-primary-light dark:border-primary/40 shadow-sm"
+            : "bg-transparent text-gray-500 border border-transparent hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+        }`}
+        aria-label={title}
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+      >
+        {customIcon}
+        <ToolbarTooltip
+          isMac={isMac}
+          title={title}
+          shortcuts={shortcuts}
+          details={details}
+          expanded={tooltip.expanded}
+        />
+      </button>
+
+      {isOpen ? (
+        <div
+          className="absolute left-full top-1/2 -translate-y-1/2 ml-2 z-40 rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl dark:border-gray-700 dark:bg-surface-dark"
+          data-testid={popoverTestId}
+          role="menu"
+          aria-label={menuLabel}
+        >
+          <div className="flex flex-col gap-1">
+            {options.map((option) => {
+              const optionActive = option.mode === mode;
+              return (
+                <button
+                  key={option.mode}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={optionActive}
+                  data-testid={option.testId}
+                  onClick={() => {
+                    onChangeMode(option.mode);
+                    setIsOpen(false);
+                  }}
+                  className={`flex min-w-[170px] items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors ${
+                    optionActive
+                      ? "bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary-light"
+                      : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                  }`}
+                >
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md border border-current/15 bg-current/5">
+                    {option.renderIcon()}
+                  </span>
+                  <span className="flex flex-col">
+                    <span className="text-sm font-medium leading-tight">
+                      {option.label}
+                    </span>
+                    <span className="text-[11px] leading-tight text-current/70">
+                      {option.summary}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

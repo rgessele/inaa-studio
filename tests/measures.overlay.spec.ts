@@ -1,6 +1,16 @@
 import { test, expect } from "./helpers/test";
 import { getEditorState, gotoEditor } from "./helpers/e2e";
 
+async function chooseMeasuresMode(
+  page: import("@playwright/test").Page,
+  mode: "never" | "always" | "hover"
+) {
+  await page.getByTestId("measures-mode-button").click();
+  await expect(page.getByTestId("measures-mode-popover")).toBeVisible();
+  await page.getByTestId(`measures-mode-option-${mode}`).click();
+  await expect(page.getByTestId("measures-mode-popover")).toHaveCount(0);
+}
+
 test("editor: medidas overlay modes (never/always/hover)", async ({ page }) => {
   await gotoEditor(page);
 
@@ -23,6 +33,14 @@ test("editor: medidas overlay modes (never/always/hover)", async ({ page }) => {
     .poll(async () => (await getEditorState(page)).measureDisplayMode)
     .toBe("always");
 
+  await page.getByTestId("measures-mode-button").click();
+  await expect(page.getByTestId("measures-mode-popover")).toBeVisible();
+  await expect
+    .poll(async () => (await getEditorState(page)).measureDisplayMode)
+    .toBe("always");
+  await page.getByTestId("measures-mode-option-always").click();
+  await expect(page.getByTestId("measures-mode-popover")).toHaveCount(0);
+
   await expect
     .poll(async () => {
       return await page.evaluate(() => {
@@ -37,7 +55,7 @@ test("editor: medidas overlay modes (never/always/hover)", async ({ page }) => {
     .toBe(4);
 
   // Switch to hover
-  await page.getByTestId("measures-mode-button").click();
+  await chooseMeasuresMode(page, "hover");
   await expect
     .poll(async () => (await getEditorState(page)).measureDisplayMode)
     .toBe("hover");
@@ -104,7 +122,7 @@ test("editor: medidas overlay modes (never/always/hover)", async ({ page }) => {
     .toBe(0);
 
   // Switch back to never (no labels rendered)
-  await page.getByTestId("measures-mode-button").click();
+  await chooseMeasuresMode(page, "never");
   await expect
     .poll(async () => (await getEditorState(page)).measureDisplayMode)
     .toBe("never");

@@ -19,6 +19,9 @@ export async function initE2EState(page: Page) {
       if (localStorage.getItem("inaa:nodesDisplayMode") === null) {
         localStorage.setItem("inaa:nodesDisplayMode", "always");
       }
+      if (localStorage.getItem("inaa:pointLabelsMode") === null) {
+        localStorage.setItem("inaa:pointLabelsMode", "off");
+      }
       if (localStorage.getItem("inaa:magnetEnabled") === null) {
         localStorage.setItem("inaa:magnetEnabled", "0");
       }

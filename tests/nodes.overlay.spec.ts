@@ -1,6 +1,16 @@
 import { test, expect } from "./helpers/test";
 import { getEditorState, gotoEditor } from "./helpers/e2e";
 
+async function chooseNodesMode(
+  page: import("@playwright/test").Page,
+  mode: "never" | "always" | "hover"
+) {
+  await page.getByTestId("nodes-mode-button").click();
+  await expect(page.getByTestId("nodes-mode-popover")).toBeVisible();
+  await page.getByTestId(`nodes-mode-option-${mode}`).click();
+  await expect(page.getByTestId("nodes-mode-popover")).toHaveCount(0);
+}
+
 test("editor: nós (pontinhos) overlay modes (never/always/hover)", async ({
   page,
 }) => {
@@ -31,7 +41,7 @@ test("editor: nós (pontinhos) overlay modes (never/always/hover)", async ({
     .toBe("always");
 
   // Switch to hover
-  await page.getByTestId("nodes-mode-button").click();
+  await chooseNodesMode(page, "hover");
   await expect
     .poll(async () => (await getEditorState(page)).nodesDisplayMode)
     .toBe("hover");
@@ -48,7 +58,7 @@ test("editor: nós (pontinhos) overlay modes (never/always/hover)", async ({
     .toBe(4);
 
   // Switch to never (no points rendered)
-  await page.getByTestId("nodes-mode-button").click();
+  await chooseNodesMode(page, "never");
   await expect
     .poll(async () => (await getEditorState(page)).nodesDisplayMode)
     .toBe("never");
@@ -63,7 +73,7 @@ test("editor: nós (pontinhos) overlay modes (never/always/hover)", async ({
     .toBe(0);
 
   // Switch back to always
-  await page.getByTestId("nodes-mode-button").click();
+  await chooseNodesMode(page, "always");
   await expect
     .poll(async () => (await getEditorState(page)).nodesDisplayMode)
     .toBe("always");

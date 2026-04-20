@@ -415,7 +415,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [nodesDisplayMode, setNodesDisplayModeState] =
     useState<NodesDisplayMode>("always");
 
-  const [pointLabelsMode, setPointLabelsMode] =
+  const [pointLabelsMode, setPointLabelsModeState] =
     useState<PointLabelsMode>("off");
 
   const [magnetEnabled, setMagnetEnabledState] = useState(false);
@@ -500,6 +500,34 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setNodesDisplayModeState(mode);
     try {
       localStorage.setItem("inaa:nodesDisplayMode", mode);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("inaa:pointLabelsMode");
+      if (!raw) return;
+      const normalized = raw.trim();
+      if (
+        normalized === "off" ||
+        normalized === "numGlobal" ||
+        normalized === "numPerFigure" ||
+        normalized === "alphaGlobal" ||
+        normalized === "alphaPerFigure"
+      ) {
+        setPointLabelsModeState(normalized);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setPointLabelsMode = useCallback((mode: PointLabelsMode) => {
+    setPointLabelsModeState(mode);
+    try {
+      localStorage.setItem("inaa:pointLabelsMode", mode);
     } catch {
       // ignore
     }
