@@ -13,6 +13,7 @@ import Konva from "konva";
 import {
   Tool,
   type HemNotchType,
+  type LineToolMode,
   type MeasureDisplayMode,
   type NodesDisplayMode,
   type PointLabelsMode,
@@ -149,6 +150,8 @@ interface EditorContextType {
 
   tool: Tool;
   setTool: (tool: Tool) => void;
+  lineToolMode: LineToolMode;
+  setLineToolMode: (mode: LineToolMode) => void;
 
   modifierKeys: { shift: boolean; alt: boolean; meta: boolean; ctrl: boolean };
   figures: Figure[];
@@ -287,6 +290,8 @@ const EditorContext = createContext<EditorContextType | undefined>(undefined);
 export function EditorProvider({ children }: { children: ReactNode }) {
   const [readOnly, setReadOnlyState] = useState(false);
   const [tool, setToolState] = useState<Tool>("select");
+  const [lineToolMode, setLineToolModeState] =
+    useState<LineToolMode>("continuous");
   const [modifierKeys, setModifierKeys] = useState<{
     shift: boolean;
     alt: boolean;
@@ -316,6 +321,28 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     },
     [readOnly]
   );
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("inaa:lineToolMode");
+      if (!raw) return;
+      const normalized = raw.trim().toLowerCase();
+      if (normalized === "continuous" || normalized === "single") {
+        setLineToolModeState(normalized);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setLineToolMode = useCallback((mode: LineToolMode) => {
+    setLineToolModeState(mode);
+    try {
+      localStorage.setItem("inaa:lineToolMode", mode);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   type ClipboardPayload = {
     figures: Figure[];
@@ -1162,6 +1189,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     (window as unknown as { __INAA_DEBUG__?: unknown }).__INAA_DEBUG__ = {
       getState: () => ({
         tool,
+        lineToolMode,
         figuresCount: (figures || []).length,
         selectedFigureId,
         selectedFigureIds,
@@ -1271,6 +1299,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     measureDisplayMode,
     nodesDisplayMode,
     pointLabelsMode,
+    lineToolMode,
     measureSnapStrengthPx,
     pageGuideSettings,
     position,
@@ -1384,7 +1413,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       type: "select-figure",
       payload,
     });
-  }, [figures, selectedFigureId]);
+  }, [figures, lineToolMode, selectedFigureId]);
 
   return (
     <EditorContext.Provider
@@ -1393,6 +1422,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setReadOnly,
         tool,
         setTool,
+        lineToolMode,
+        setLineToolMode,
         modifierKeys,
         figures: figures || [],
         setFigures,

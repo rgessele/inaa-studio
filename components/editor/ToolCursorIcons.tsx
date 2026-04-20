@@ -7,6 +7,8 @@ type ToolName =
   | "rectangle"
   | "circle"
   | "line"
+  | "lineSingle"
+  | "lineContinuous"
   | "pen"
   | "curve"
   | "text"
@@ -89,6 +91,23 @@ function getToolIconInternal(
           <path d="M6 18L18 6" />
           <circle cx="6" cy="18" r="1.2" fill="currentColor" stroke="none" />
           <circle cx="18" cy="6" r="1.2" fill="currentColor" stroke="none" />
+        </Svg>
+      );
+    case "lineSingle":
+      return (
+        <Svg className={className} strokeWidth={strokeWidth}>
+          <path d="M6 16L18 8" />
+          <circle cx="6" cy="16" r="1.2" fill="currentColor" stroke="none" />
+          <circle cx="18" cy="8" r="1.2" fill="currentColor" stroke="none" />
+        </Svg>
+      );
+    case "lineContinuous":
+      return (
+        <Svg className={className} strokeWidth={strokeWidth}>
+          <path d="M5 17L10.5 12L18 7" />
+          <circle cx="5" cy="17" r="1.2" fill="currentColor" stroke="none" />
+          <circle cx="10.5" cy="12" r="1.2" fill="currentColor" stroke="none" />
+          <circle cx="18" cy="7" r="1.2" fill="currentColor" stroke="none" />
         </Svg>
       );
     case "pen":

@@ -45,8 +45,10 @@ declare global {
     __INAA_DEBUG__?: {
       getState: () => {
         tool: string;
+        lineToolMode?: "continuous" | "single";
         figuresCount: number;
         selectedFigureId: string | null;
+        selectedFigureIds?: string[];
         showGrid: boolean;
         showPageGuides: boolean;
         pageGuideSettings: {
@@ -65,9 +67,22 @@ declare global {
           | "alphaGlobal"
           | "alphaPerFigure";
         magnetEnabled: boolean;
+        magnetJoinEnabled?: boolean;
+        guidesCount?: number;
+        lineDraft?: {
+          pointsWorld?: Array<{ x: number; y: number }>;
+          joinHits?: Array<{
+            figureId?: string;
+            kind?: string;
+            pointIndex?: number;
+          }>;
+        } | null;
+        snap?: unknown;
         projectId: string | null;
         projectName: string;
       };
+      getPosition?: () => { x: number; y: number };
+      getScale?: () => number;
       countStageNodesByName?: (name: string) => number;
       getStageNodeAbsolutePositionsByName?: (
         name: string

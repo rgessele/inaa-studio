@@ -11,7 +11,7 @@ import React, {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Magnet } from "lucide-react";
 import { useEditor } from "./EditorContext";
-import { DrawingTool, Tool } from "./types";
+import { DrawingTool, Tool, type LineToolMode } from "./types";
 import { getToolIcon } from "./ToolCursorIcons";
 import {
   createDefaultExportSettings,
@@ -55,6 +55,8 @@ export function EditorToolbar() {
     copySelection,
     canPaste,
     paste,
+    lineToolMode,
+    setLineToolMode,
   } = useEditor();
   const [showExportModal, setShowExportModal] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -881,19 +883,12 @@ export function EditorToolbar() {
               filled
             />
 
-            <ToolButton
+            <LineToolButton
               active={tool === "line"}
-              onClick={() => handleToolChange("line")}
-              icon="horizontal_rule" // Using horizontal_rule as line icon replacement or custom svg
+              onActivate={() => handleToolChange("line")}
+              lineToolMode={lineToolMode}
+              onChangeLineToolMode={setLineToolMode}
               isMac={isMac}
-              title="Linha"
-              shortcuts={[{ key: "L" }]}
-              details={[
-                "Clique e arraste para desenhar uma linha.",
-                "Segure Shift para travar ângulo (15°).",
-                "Segure Alt para desenhar do centro.",
-              ]}
-              customIcon={getToolIcon("line", "toolbar")}
             />
 
             <ToolButton
@@ -1624,6 +1619,186 @@ function ToolButton({
         expanded={tooltip.expanded}
       />
     </button>
+  );
+}
+
+type LineToolModeOption = {
+  mode: LineToolMode;
+  title: string;
+  details: string[];
+  summary: string;
+  icon: "lineSingle" | "lineContinuous";
+};
+
+const LINE_TOOL_MODE_OPTIONS: LineToolModeOption[] = [
+  {
+    mode: "single",
+    title: "Linha simples",
+    summary: "2 pontos",
+    details: [
+      "Clique para iniciar a linha.",
+      "Clique novamente para concluir.",
+      "Digite um comprimento para travar o segmento.",
+    ],
+    icon: "lineSingle",
+  },
+  {
+    mode: "continuous",
+    title: "Linha contínua",
+    summary: "Polilinha",
+    details: [
+      "Clique para adicionar pontos.",
+      "Enter para finalizar.",
+      "Clique no nó inicial para fechar a figura.",
+      "Digite um comprimento para travar o segmento atual.",
+    ],
+    icon: "lineContinuous",
+  },
+];
+
+function getLineToolModeOption(mode: LineToolMode): LineToolModeOption {
+  return (
+    LINE_TOOL_MODE_OPTIONS.find((option) => option.mode === mode) ??
+    LINE_TOOL_MODE_OPTIONS[1]
+  );
+}
+
+function LineToolButton({
+  active,
+  onActivate,
+  lineToolMode,
+  onChangeLineToolMode,
+  isMac,
+}: {
+  active: boolean;
+  onActivate: () => void;
+  lineToolMode: LineToolMode;
+  onChangeLineToolMode: (mode: LineToolMode) => void;
+  isMac: boolean;
+}) {
+  const tooltip = useDelayedTooltip(true);
+  const [isOpen, setIsOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const activeOption = getLineToolModeOption(lineToolMode);
+
+  useEffect(() => {
+    if (active) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setIsOpen(false);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [active]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  const handleMainClick = () => {
+    onActivate();
+    setIsOpen(true);
+  };
+
+  const handleModeClick = (mode: LineToolMode) => {
+    onChangeLineToolMode(mode);
+    onActivate();
+    setIsOpen(false);
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative w-full">
+      <button
+        type="button"
+        onClick={handleMainClick}
+        onMouseEnter={tooltip.onMouseEnter}
+        onMouseLeave={tooltip.onMouseLeave}
+        data-testid="line-tool-button"
+        className={`group relative w-full aspect-square flex items-center justify-center rounded transition-all ${
+          active
+            ? "bg-primary/10 text-primary border border-primary/20 dark:bg-primary/20 dark:text-primary-light dark:border-primary/40 shadow-sm"
+            : "bg-transparent text-gray-500 border border-transparent hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+        }`}
+        aria-label="Linha"
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+      >
+        {getToolIcon(activeOption.icon, "toolbar")}
+        <ToolbarTooltip
+          isMac={isMac}
+          title={activeOption.title}
+          shortcuts={[{ key: "L" }]}
+          details={activeOption.details}
+          expanded={tooltip.expanded}
+        />
+      </button>
+
+      {isOpen ? (
+        <div
+          className="absolute left-full top-1/2 -translate-y-1/2 ml-2 z-40 rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl dark:border-gray-700 dark:bg-surface-dark"
+          data-testid="line-tool-mode-popover"
+          role="menu"
+          aria-label="Modos da ferramenta linha"
+        >
+          <div className="flex flex-col gap-1">
+            {LINE_TOOL_MODE_OPTIONS.map((option) => {
+              const optionActive = option.mode === lineToolMode;
+              return (
+                <button
+                  key={option.mode}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={optionActive}
+                  data-testid={`line-tool-mode-${option.mode}`}
+                  onClick={() => handleModeClick(option.mode)}
+                  className={`flex min-w-[156px] items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors ${
+                    optionActive
+                      ? "bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary-light"
+                      : "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                  }`}
+                >
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md border border-current/15 bg-current/5">
+                    {getToolIcon(option.icon, "toolbar", "w-5 h-5 stroke-current")}
+                  </span>
+                  <span className="flex flex-col">
+                    <span className="text-sm font-medium leading-tight">
+                      {option.title}
+                    </span>
+                    <span className="text-[11px] leading-tight text-current/70">
+                      {option.summary}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

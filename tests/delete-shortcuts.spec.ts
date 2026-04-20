@@ -1,7 +1,8 @@
 import { expect, test } from "./helpers/test";
 import { getEditorState, gotoEditor } from "./helpers/e2e";
+import type { Page } from "@playwright/test";
 
-async function seedAndSelectRectangle(page: Parameters<typeof test>[0]["page"]) {
+async function seedAndSelectRectangle(page: Page) {
   await page.evaluate(() => {
     if (!window.__INAA_DEBUG__?.loadTestProject) {
       throw new Error("loadTestProject not available");

@@ -3376,6 +3376,7 @@ export default function Canvas() {
   const {
     tool,
     setTool,
+    lineToolMode,
     figures,
     setFigures,
     selectedFigureIds,
@@ -6012,6 +6013,52 @@ export default function Canvas() {
     return cm * PX_PER_CM;
   }, []);
 
+  const clearActiveLineDraft = useCallback(() => {
+    lineDraftRef.current = null;
+    setLineDraft(null);
+    clearSegmentLengthConstraint();
+  }, [clearSegmentLengthConstraint]);
+
+  const finalizeLineFigure = useCallback(
+    (
+      pointsWorld: Vec2[],
+      joinHits: Array<JoinHit | null>,
+      closed: boolean
+    ) => {
+      if (pointsWorld.length < 2 || (closed && pointsWorld.length < 3)) {
+        clearActiveLineDraft();
+        return;
+      }
+
+      const finalized = makePolylineLineFigure(pointsWorld, closed, "aci7");
+      if (finalized) {
+        const hits = joinHits.filter((h): h is JoinHit => !!h);
+        sendDebugLog({
+          type: "draw-finalize",
+          payload: {
+            tool: "line",
+            pointsWorld,
+            closed,
+            snapped: hits.map((h) => ({
+              kind: h.kind,
+              figureId: h.figureId,
+              pointIndex: h.pointIndex,
+            })),
+          },
+        });
+        addFigureWithOptionalMerge(finalized, hits);
+      }
+
+      clearActiveLineDraft();
+    },
+    [addFigureWithOptionalMerge, clearActiveLineDraft]
+  );
+
+  useEffect(() => {
+    if (tool !== "line" || !lineDraftRef.current) return;
+    clearActiveLineDraft();
+  }, [clearActiveLineDraft, lineToolMode, tool]);
+
   useEffect(() => {
     return () => clearSegmentLengthApplyTimer();
   }, [clearSegmentLengthApplyTimer]);
@@ -7895,21 +7942,12 @@ export default function Canvas() {
       // Allow closing even with magnetJoin enabled when clicking on the first point
       // of the current figure (self-close). This makes sense UX-wise because the user
       // is clicking on THEIR OWN starting point, not trying to join another figure.
-      const canClose = pts.length >= 3;
+      const canClose = lineToolMode === "continuous" && pts.length >= 3;
       const isCloseClick =
         canClose && dist(placedWorld, first) <= closeTolWorld;
 
       if (isCloseClick) {
-        const closedFig = makePolylineLineFigure(pts, true, "aci7");
-        if (closedFig) {
-          const hits = current.joinHits.filter(
-            (h): h is JoinHit => !!h
-          );
-          addFigureWithOptionalMerge(closedFig, hits);
-        }
-        lineDraftRef.current = null;
-        setLineDraft(null);
-        clearSegmentLengthConstraint();
+        finalizeLineFigure(pts, current.joinHits, true);
         return;
       }
 
@@ -7935,10 +7973,39 @@ export default function Canvas() {
 
         const a = sub(center, v);
         const b = add(center, v);
+        const nextPoints = [a, b];
+        const nextHits = [current.joinHits[0] ?? null, joinHit];
+        if (lineToolMode === "single") {
+          sendDebugLog({
+            type: "draw-point",
+            payload: {
+              tool: "line",
+              pointIndex: 0,
+              pointWorld: a,
+              snapped: false,
+              snapKind: null,
+              snapFigureId: null,
+            },
+          });
+          sendDebugLog({
+            type: "draw-point",
+            payload: {
+              tool: "line",
+              pointIndex: 1,
+              pointWorld: b,
+              snapped: false,
+              snapKind: null,
+              snapFigureId: null,
+            },
+          });
+          finalizeLineFigure(nextPoints, nextHits, false);
+          return;
+        }
+
         const nextDraft = {
-          pointsWorld: [a, b],
+          pointsWorld: nextPoints,
           currentWorld: b,
-          joinHits: [current.joinHits[0] ?? null, joinHit],
+          joinHits: nextHits,
         };
         lineDraftRef.current = nextDraft;
         setLineDraft(nextDraft);
@@ -7976,13 +8043,8 @@ export default function Canvas() {
         return;
       }
 
-      const nextDraft = {
-        pointsWorld: [...pts, placedWorld],
-        currentWorld: placedWorld,
-        joinHits: [...current.joinHits, joinHit],
-      };
-      lineDraftRef.current = nextDraft;
-      setLineDraft(nextDraft);
+      const nextPoints = [...pts, placedWorld];
+      const nextHits = [...current.joinHits, joinHit];
       sendDebugLog({
         type: "draw-point",
         payload: {
@@ -7996,6 +8058,18 @@ export default function Canvas() {
             : null,
         },
       });
+      if (lineToolMode === "single") {
+        finalizeLineFigure(nextPoints, nextHits, false);
+        return;
+      }
+
+      const nextDraft = {
+        pointsWorld: nextPoints,
+        currentWorld: placedWorld,
+        joinHits: nextHits,
+      };
+      lineDraftRef.current = nextDraft;
+      setLineDraft(nextDraft);
       clearSegmentLengthConstraint();
       return;
     }
@@ -9199,6 +9273,12 @@ export default function Canvas() {
       }
 
       if (tool === "line" && currentLineDraft) {
+        if (lineToolMode === "single" && evt.key === "Enter") {
+          evt.preventDefault();
+          evt.stopPropagation();
+          return;
+        }
+
         if (evt.key === "Enter") {
           evt.preventDefault();
           let pts = currentLineDraft.pointsWorld;
@@ -9217,29 +9297,7 @@ export default function Canvas() {
             return;
           }
 
-          const finalized = makePolylineLineFigure(pts, false, "aci7");
-          if (finalized) {
-            const hits = currentLineDraft.joinHits.filter(
-              (h): h is JoinHit => !!h
-            );
-            sendDebugLog({
-              type: "draw-finalize",
-              payload: {
-                tool: "line",
-                pointsWorld: pts,
-                closed: false,
-                snapped: hits.map((h) => ({
-                  kind: h.kind,
-                  figureId: h.figureId,
-                  pointIndex: h.pointIndex,
-                })),
-              },
-            });
-            addFigureWithOptionalMerge(finalized, hits);
-          }
-          lineDraftRef.current = null;
-          setLineDraft(null);
-          clearSegmentLengthConstraint();
+          finalizeLineFigure(pts, currentLineDraft.joinHits, false);
           return;
         }
 
@@ -9347,6 +9405,8 @@ export default function Canvas() {
     clearMoldExtractionState,
     commitSegmentLengthInputNow,
     curveDraft,
+    finalizeLineFigure,
+    lineToolMode,
     magnetJoinEnabled,
     moldConfirmDialog,
     openMoldConfirmDialog,

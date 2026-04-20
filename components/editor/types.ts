@@ -19,6 +19,8 @@ export type Tool =
   | "mirror"
   | "unfold";
 
+export type LineToolMode = "continuous" | "single";
+
 export type MeasureDisplayMode = "never" | "always" | "hover";
 
 export type NodesDisplayMode = "never" | "always" | "hover";
