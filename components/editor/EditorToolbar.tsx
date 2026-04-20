@@ -800,7 +800,7 @@ export function EditorToolbar() {
               <ToolbarTooltip
                 isMac={isMac}
                 title="Borracha"
-                shortcuts={[{ key: "Backspace" }]}
+                shortcuts={[{ key: "Backspace" }, { key: "Delete" }]}
                 expanded={eraseTooltip.expanded}
                 details={["Apaga a figura selecionada."]}
               />

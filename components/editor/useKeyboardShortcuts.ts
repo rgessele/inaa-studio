@@ -42,9 +42,9 @@ export function useKeyboardShortcuts({
       // Don't trigger shortcuts when typing in input fields
       if (isTypingElement(event.target)) return;
 
-      // Borracha: Backspace (somente quando há seleção)
+      // Borracha: Backspace/Delete (somente quando há seleção)
       if (
-        event.key === "Backspace" &&
+        (event.key === "Backspace" || event.key === "Delete") &&
         !event.metaKey &&
         !event.ctrlKey &&
         !event.altKey &&
