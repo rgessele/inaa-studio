@@ -93,6 +93,11 @@ import {
   recomputeHemFigure,
   resolveHemSelectedOuterEdgeIds,
 } from "./hemFigure";
+import {
+  bakeFigureGeometryFromNodeTransform,
+  hasResidualFigureNodeTransform,
+  type FigureNodeTransformCommit,
+} from "./selectionTransform";
 
 const MIN_ZOOM_SCALE = 0.1;
 const MAX_ZOOM_SCALE = 10;
@@ -5301,18 +5306,25 @@ export default function Canvas() {
 
     const updates = new Map<
       string,
-      { x: number; y: number; rotation: number; scaleX: number; scaleY: number }
+      FigureNodeTransformCommit
     >();
 
     for (const node of nodes) {
       const figId = (node.getAttr("figureId") as string | undefined) ?? null;
       if (!figId) continue;
+      // Konva's getMatrix() returns a live reference to the node's internal
+      // matrix; it mutates when we reset scaleX/scaleY/skew below. Clone it so
+      // the bake step receives the pre-reset values.
+      const capturedMatrix = [...node.getTransform().getMatrix()];
       updates.set(figId, {
         x: node.x(),
         y: node.y(),
         rotation: node.rotation(),
         scaleX: node.scaleX(),
         scaleY: node.scaleY(),
+        skewX: node.skewX(),
+        skewY: node.skewY(),
+        transformMatrix: capturedMatrix,
       });
     }
 
@@ -5332,6 +5344,8 @@ export default function Canvas() {
         node.rotation(tr.rotation);
         node.scaleX(1);
         node.scaleY(1);
+        node.skewX(0);
+        node.skewY(0);
         transformer.getLayer()?.batchDraw();
         toast(
           "Espelho sincronizado está bloqueado. Desligue a sincronização para editar.",
@@ -5341,10 +5355,12 @@ export default function Canvas() {
       }
     }
 
-    // Reset Konva node scaling; we bake scale into figure geometry.
+    // Reset Konva node residual transform; we bake scale/skew into figure geometry.
     for (const node of nodes) {
       node.scaleX(1);
       node.scaleY(1);
+      node.skewX(0);
+      node.skewY(0);
     }
     transformer.getLayer()?.batchDraw();
 
@@ -5354,8 +5370,7 @@ export default function Canvas() {
           const u = updates.get(f.id);
           if (!u) return f;
 
-          const didScale =
-            Math.abs(u.scaleX - 1) > 1e-6 || Math.abs(u.scaleY - 1) > 1e-6;
+          const didTransformGeometry = hasResidualFigureNodeTransform(u);
 
           let next: Figure = {
             ...f,
@@ -5364,7 +5379,7 @@ export default function Canvas() {
             rotation: u.rotation,
           };
 
-          if (didScale) {
+          if (didTransformGeometry) {
             const sx = u.scaleX;
             const sy = u.scaleY;
 
@@ -5406,20 +5421,7 @@ export default function Canvas() {
               return next;
             }
 
-            next = {
-              ...next,
-              nodes: next.nodes.map((n) => ({
-                ...n,
-                x: n.x * sx,
-                y: n.y * sy,
-                inHandle: n.inHandle
-                  ? { x: n.inHandle.x * sx, y: n.inHandle.y * sy }
-                  : undefined,
-                outHandle: n.outHandle
-                  ? { x: n.outHandle.x * sx, y: n.outHandle.y * sy }
-                  : undefined,
-              })),
-            };
+            next = bakeFigureGeometryFromNodeTransform(next, u);
 
             // Scaling changes curve geometry; break styled link and mark snapshot dirty if applicable.
             next = markCurveCustomSnapshotDirtyIfPresent(
@@ -6724,6 +6726,46 @@ export default function Canvas() {
 
     const isBackground =
       e.target === stage || e.target === backgroundRef.current;
+
+    // Detect if the pointer landed on a Transformer anchor, border, or rotation
+    // handle. We do this by walking the Konva parent chain from the event target
+    // up to the transformer itself.
+    const isTransformerTarget = (() => {
+      if (tool !== "select") return false;
+      const transformer = transformerRef.current;
+      if (!transformer || transformer.nodes().length === 0) return false;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let node: any = e.target;
+      while (node) {
+        if (node === transformer) return true;
+        node = typeof node.getParent === "function" ? node.getParent() : null;
+      }
+      return false;
+    })();
+
+    const isTransformerChromeHit = (() => {
+      if (!isBackground || tool !== "select") return false;
+      const transformer = transformerRef.current;
+      if (!transformer) return false;
+      if (transformer.nodes().length === 0) return false;
+      const rect = transformer.getClientRect();
+      if (!Number.isFinite(rect.width) || !Number.isFinite(rect.height)) {
+        return false;
+      }
+      return (
+        pos.x >= rect.x &&
+        pos.x <= rect.x + rect.width &&
+        pos.y >= rect.y &&
+        pos.y <= rect.y + rect.height
+      );
+    })();
+
+    // Skip all selection/drag logic when the pointer is on a transformer element
+    // (anchor, border, or rotation handle). A background hit inside the chrome is
+    // also skipped to avoid clearing selection before onTransformEnd fires.
+    if (isTransformerTarget || isTransformerChromeHit) {
+      return;
+    }
 
     if (tool === "text" && isLeftClick) {
       e.evt.preventDefault();
