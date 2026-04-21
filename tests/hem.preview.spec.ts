@@ -175,3 +175,70 @@ test("bainha: oculta preview global ao pairar na aresta antes da parcial", async
     )
     .toBe(0);
 });
+
+test("bainha: destaca nó em hover para indicar duplo clique", async ({
+  page,
+}) => {
+  await gotoEditor(page);
+
+  const mold = createRectFigure("hem_hover_node_mold", {
+    kind: "mold",
+    name: "Molde Hover",
+    x: 220,
+    y: 180,
+    w: 180,
+    h: 120,
+  });
+
+  await page.evaluate((payload) => {
+    window.__INAA_DEBUG__?.loadTestProject?.({ figures: [payload] });
+  }, mold);
+
+  await page.getByRole("button", { name: "Bainha" }).click();
+  await expect
+    .poll(
+      async () =>
+        (await page.evaluate(() => window.__INAA_DEBUG__?.getState().tool)) ??
+        null
+    )
+    .toBe("hem");
+
+  const nodePoint = await worldToViewport(page, { x: 220, y: 180 });
+  await page.mouse.move(nodePoint.x, nodePoint.y);
+
+  await expect
+    .poll(async () => {
+      return await page.evaluate(
+        () =>
+          window.__INAA_DEBUG__?.countStageNodesByName?.(
+            "inaa-hem-node-hover"
+          ) ?? 0
+      );
+    })
+    .toBeGreaterThan(0);
+
+  await expect
+    .poll(async () => {
+      return await page.evaluate(
+        () =>
+          window.__INAA_DEBUG__?.countStageNodesByName?.(
+            "inaa-hem-node-hover-pulse"
+          ) ?? 0
+      );
+    })
+    .toBeGreaterThan(0);
+
+  const centerPoint = await worldToViewport(page, { x: 310, y: 240 });
+  await page.mouse.move(centerPoint.x, centerPoint.y);
+
+  await expect
+    .poll(async () => {
+      return await page.evaluate(
+        () =>
+          window.__INAA_DEBUG__?.countStageNodesByName?.(
+            "inaa-hem-node-hover"
+          ) ?? 0
+      );
+    })
+    .toBe(0);
+});

@@ -6,7 +6,7 @@ import {
   getPaperDimensionsCm,
   resolveExportSettings,
 } from "./exportSettings";
-import type { Figure } from "./types";
+import type { Figure, FigurePique } from "./types";
 import { figureWorldBoundingBox, figureWorldPolyline } from "./figurePath";
 import { figureLocalToWorld } from "./figurePath";
 import { figureLocalPolyline } from "./figurePath";
@@ -198,7 +198,7 @@ function pointAndTangentAtT01(
 
 function computePiqueSegmentWorld(
   figure: Figure,
-  pique: { edgeId: string; t01: number; lengthCm: number; side: 1 | -1 }
+  pique: FigurePique
 ): { aWorld: Vec2; bWorld: Vec2 } | null {
   const allowOpenHem = figure.kind === "seam" && figure.derivedRole === "hem";
   if (!allowOpenHem && !figure.closed && !hasClosedLoop(figure)) return null;
@@ -215,11 +215,21 @@ function computePiqueSegmentWorld(
   const at = pointAndTangentAtT01(ptsLocal, pique.t01);
   if (!at) return null;
 
-  const n = norm(perp(at.tangentUnit));
-  const side = pique.side === -1 ? -1 : 1;
+  const isHemPique = figure.kind === "seam" && figure.derivedRole === "hem";
+  const normal = norm(perp(at.tangentUnit));
   const lengthPx = Math.max(0, (pique.lengthCm || 0.5) * PX_PER_CM);
+  const direction = (() => {
+    if (isHemPique) {
+      const storedSide = pique.side === -1 ? -1 : 1;
+      return mul(at.tangentUnit, storedSide);
+    }
+    const baseDirection =
+      pique.orientation === "tangent" ? at.tangentUnit : normal;
+    const side = pique.side === -1 ? -1 : 1;
+    return mul(baseDirection, side);
+  })();
   const aLocal = at.point;
-  const bLocal = add(aLocal, mul(n, lengthPx * side));
+  const bLocal = add(aLocal, mul(direction, lengthPx));
 
   return {
     aWorld: figureLocalToWorld(figure, aLocal),
@@ -1040,7 +1050,10 @@ export async function generateTiledPDF(
                 seg.bWorld.y - tileY,
               ],
               stroke: "#000000",
-              strokeWidth: Math.max(1, (figure.strokeWidth || 1) * 0.9),
+              strokeWidth:
+                figure.kind === "seam" && figure.derivedRole === "hem"
+                  ? Math.max(1.5, (figure.strokeWidth || 1) * 1.5)
+                  : Math.max(1, (figure.strokeWidth || 1) * 0.9),
               closed: false,
               opacity: 1,
               lineCap: "round",

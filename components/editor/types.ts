@@ -164,8 +164,10 @@ export interface FigurePique {
   t01: number;
   // Fixed by UX for now, but kept for forward-compat.
   lengthCm: number;
-  // Which side of the edge normal the tick is drawn (chosen to point inward).
+  // Which side of the edge direction the tick is drawn.
   side: 1 | -1;
+  // Manual piques can be normal or tangent; hem piques are normal and inward.
+  orientation?: "normal" | "tangent";
 }
 
 export interface MoldSourceSegmentRef {
@@ -206,6 +208,7 @@ export type HemNotchType = "seta";
 export interface HemMeta {
   widthCm: number;
   folds: number;
+  showInternalFoldLines?: boolean;
   notchesEnabled: boolean;
   notchType: HemNotchType;
   selectedOuterEdgeIds?: string[];

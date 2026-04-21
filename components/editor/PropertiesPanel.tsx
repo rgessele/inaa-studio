@@ -36,6 +36,8 @@ import {
 } from "@/utils/numericInput";
 import { toast } from "@/utils/toast";
 import { makeSeamFigure } from "./seamFigure";
+import { normalizeHemMeta, recomputeHemFigure } from "./hemFigure";
+import type { HemMeta } from "./types";
 
 export function PropertiesPanel() {
   const {
@@ -54,10 +56,11 @@ export function PropertiesPanel() {
     setHemWidthCm,
     hemFolds,
     setHemFolds,
+    hemShowInternalFoldLines,
+    setHemShowInternalFoldLines,
     hemNotchesEnabled,
     setHemNotchesEnabled,
     hemNotchType,
-    setHemNotchType,
   } = useEditor();
 
   const isDark = useSyncExternalStore(
@@ -1753,9 +1756,74 @@ export function PropertiesPanel() {
 
   const hemWidthDisplayCm = hemForSelection?.hemMeta?.widthCm ?? hemWidthCm;
   const hemFoldsDisplay = hemForSelection?.hemMeta?.folds ?? hemFolds;
+  const hemInternalFoldLinesDisplay =
+    hemForSelection?.hemMeta?.showInternalFoldLines ??
+    hemShowInternalFoldLines;
   const hemNotchesDisplay =
     hemForSelection?.hemMeta?.notchesEnabled ?? hemNotchesEnabled;
-  const hemNotchTypeDisplay = hemForSelection?.hemMeta?.notchType ?? hemNotchType;
+
+  const updateHemForSelection = useCallback(
+    (patch: Partial<HemMeta>) => {
+      if (!hemForSelection || !selectedBaseFigure) return;
+
+      const currentMeta = normalizeHemMeta({
+        widthCm:
+          typeof hemForSelection.offsetCm === "number"
+            ? hemForSelection.offsetCm
+            : hemWidthCm,
+        folds: hemFolds,
+        showInternalFoldLines: hemShowInternalFoldLines,
+        notchesEnabled: hemNotchesEnabled,
+        notchType: hemNotchType,
+        ...(hemForSelection.hemMeta ?? {}),
+      });
+      const nextMeta = normalizeHemMeta({ ...currentMeta, ...patch });
+      const seamAllowance =
+        figures.find(
+          (f) =>
+            f.kind === "seam" &&
+            f.derivedRole !== "hem" &&
+            f.parentId === selectedBaseFigure.id
+        ) ?? null;
+      const updated = recomputeHemFigure(
+        selectedBaseFigure,
+        { ...hemForSelection, hemMeta: nextMeta },
+        { seamAllowance }
+      );
+      if (!updated) return;
+
+      setFigures((prev) =>
+        prev.map((f) => (f.id === hemForSelection.id ? updated : f))
+      );
+    },
+    [
+      figures,
+      hemFolds,
+      hemForSelection,
+      hemNotchType,
+      hemNotchesEnabled,
+      hemShowInternalFoldLines,
+      hemWidthCm,
+      selectedBaseFigure,
+      setFigures,
+    ]
+  );
+
+  const applyHemNotchesEnabled = useCallback(
+    (enabled: boolean) => {
+      setHemNotchesEnabled(enabled);
+      updateHemForSelection({ notchesEnabled: enabled });
+    },
+    [setHemNotchesEnabled, updateHemForSelection]
+  );
+
+  const applyHemInternalFoldLines = useCallback(
+    (enabled: boolean) => {
+      setHemShowInternalFoldLines(enabled);
+      updateHemForSelection({ showInternalFoldLines: enabled });
+    },
+    [setHemShowInternalFoldLines, updateHemForSelection]
+  );
 
   const [hemWidthDraft, setHemWidthDraft] = useState<string>(
     formatPtBrDecimalFixed(hemWidthDisplayCm, 2)
@@ -1777,6 +1845,7 @@ export function PropertiesPanel() {
     }
     const safe = Math.max(0.1, Math.min(500, cm));
     setHemWidthCm(safe);
+    updateHemForSelection({ widthCm: safe });
     setHemWidthDraft(formatPtBrDecimalFixed(safe, 2));
     setHemWidthError(null);
   };
@@ -1791,6 +1860,7 @@ export function PropertiesPanel() {
       max: 500,
     });
     setHemWidthCm(next);
+    updateHemForSelection({ widthCm: next });
     setHemWidthDraft(formatPtBrDecimalFixed(next, 2));
     setHemWidthError(null);
   };
@@ -1815,6 +1885,7 @@ export function PropertiesPanel() {
     }
     const safe = Math.max(1, Math.min(64, Math.round(parsed)));
     setHemFolds(safe);
+    updateHemForSelection({ folds: safe });
     setHemFoldsDraft(String(safe));
     setHemFoldsError(null);
   };
@@ -1824,6 +1895,7 @@ export function PropertiesPanel() {
     const base = Number.isFinite(parsed) ? parsed : hemFoldsDisplay;
     const next = Math.max(1, Math.min(64, Math.round(base + direction)));
     setHemFolds(next);
+    updateHemForSelection({ folds: next });
     setHemFoldsDraft(String(next));
     setHemFoldsError(null);
   };
@@ -3784,37 +3856,26 @@ export function PropertiesPanel() {
                         <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
                           <input
                             type="checkbox"
+                            checked={hemInternalFoldLinesDisplay}
+                            onChange={(e) =>
+                              applyHemInternalFoldLines(e.target.checked)
+                            }
+                            className="w-4 h-4"
+                          />
+                          <span>Dobras internas pontilhadas</span>
+                        </label>
+
+                        <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
+                          <input
+                            type="checkbox"
                             checked={hemNotchesDisplay}
                             onChange={(e) =>
-                              setHemNotchesEnabled(e.target.checked)
+                              applyHemNotchesEnabled(e.target.checked)
                             }
                             className="w-4 h-4"
                           />
                           <span>Piques nas dobras</span>
                         </label>
-
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            Pique
-                          </span>
-                          <select
-                            className={
-                              "w-24 " +
-                              inputBaseClass +
-                              " " +
-                              inputDisabledClass +
-                              " " +
-                              inputFocusClass
-                            }
-                            value={hemNotchTypeDisplay}
-                            onChange={(e) =>
-                              setHemNotchType(e.target.value as "seta")
-                            }
-                            disabled={!hemNotchesDisplay}
-                          >
-                            <option value="seta">Seta</option>
-                          </select>
-                        </div>
                       </div>
 
                       {hemWidthError ? (
@@ -4367,37 +4428,26 @@ export function PropertiesPanel() {
                         <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
                           <input
                             type="checkbox"
+                            checked={hemInternalFoldLinesDisplay}
+                            onChange={(e) =>
+                              applyHemInternalFoldLines(e.target.checked)
+                            }
+                            className="w-4 h-4"
+                          />
+                          <span>Dobras internas pontilhadas</span>
+                        </label>
+
+                        <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
+                          <input
+                            type="checkbox"
                             checked={hemNotchesDisplay}
                             onChange={(e) =>
-                              setHemNotchesEnabled(e.target.checked)
+                              applyHemNotchesEnabled(e.target.checked)
                             }
                             className="w-4 h-4"
                           />
                           <span>Piques nas dobras</span>
                         </label>
-
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            Pique
-                          </span>
-                          <select
-                            className={
-                              "w-24 " +
-                              inputBaseClass +
-                              " " +
-                              inputDisabledClass +
-                              " " +
-                              inputFocusClass
-                            }
-                            value={hemNotchTypeDisplay}
-                            onChange={(e) =>
-                              setHemNotchType(e.target.value as "seta")
-                            }
-                            disabled={!hemNotchesDisplay}
-                          >
-                            <option value="seta">Seta</option>
-                          </select>
-                        </div>
                       </div>
 
                       {hemWidthError ? (

@@ -97,7 +97,10 @@ function mirrorFigureAcrossLinePreserveId(
     piques: original.piques
       ? original.piques.map((p) => ({
           ...p,
-          side: (p.side === -1 ? 1 : -1) as 1 | -1,
+          side:
+            p.orientation === "tangent"
+              ? p.side
+              : ((p.side === -1 ? 1 : -1) as 1 | -1),
         }))
       : undefined,
   };
@@ -249,6 +252,8 @@ interface EditorContextType {
   setHemWidthCm: (value: number) => void;
   hemFolds: number;
   setHemFolds: (value: number) => void;
+  hemShowInternalFoldLines: boolean;
+  setHemShowInternalFoldLines: (enabled: boolean) => void;
   hemNotchesEnabled: boolean;
   setHemNotchesEnabled: (enabled: boolean) => void;
   hemNotchType: HemNotchType;
@@ -609,6 +614,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   // Hem tool state
   const [hemWidthCm, setHemWidthCm] = useState(1);
   const [hemFolds, setHemFolds] = useState(1);
+  const [hemShowInternalFoldLines, setHemShowInternalFoldLines] =
+    useState(true);
   const [hemNotchesEnabled, setHemNotchesEnabled] = useState(false);
   const [hemNotchType, setHemNotchType] = useState<HemNotchType>("seta");
 
@@ -1170,6 +1177,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       rotation: f.rotation || 0,
       closed: f.closed,
       offsetCm: f.offsetCm,
+      hemMeta: f.hemMeta,
       seamSegments: f.seamSegments,
       seamSegmentEdgeIds: f.seamSegmentEdgeIds,
       darts: (f.darts ?? []).map((d) => ({
@@ -1184,6 +1192,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         t01: p.t01,
         lengthCm: p.lengthCm,
         side: p.side,
+        orientation: p.orientation,
       })),
       textValue: f.textValue,
       textFontFamily: f.textFontFamily,
@@ -1420,6 +1429,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         t01: p.t01,
         lengthCm: p.lengthCm,
         side: p.side,
+        orientation: p.orientation,
       })),
       nodes: fig.nodes.map((n) => ({
         id: n.id,
@@ -1529,6 +1539,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setHemWidthCm,
         hemFolds,
         setHemFolds,
+        hemShowInternalFoldLines,
+        setHemShowInternalFoldLines,
         hemNotchesEnabled,
         setHemNotchesEnabled,
         hemNotchType,

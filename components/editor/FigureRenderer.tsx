@@ -623,11 +623,25 @@ const FigureRenderer = ({
             const at = pointAndTangentAtT01(edgePts, p.t01);
             if (!at) return null;
 
-            const n = norm(perp(at.tangentUnit));
-            const side = p.side === -1 ? -1 : 1;
+            const isHemPique =
+              figure.kind === "seam" && figure.derivedRole === "hem";
+            const normal = norm(perp(at.tangentUnit));
             const lengthPx = Math.max(0, (p.lengthCm || 0.5) * PX_PER_CM);
+            const direction = (() => {
+              if (isHemPique) {
+                const storedSide = p.side === -1 ? -1 : 1;
+                return mul(at.tangentUnit, storedSide);
+              }
+              const baseDirection =
+                p.orientation === "tangent" ? at.tangentUnit : normal;
+              const side = p.side === -1 ? -1 : 1;
+              return mul(baseDirection, side);
+            })();
             const p0 = at.point;
-            const p1 = add(p0, mul(n, lengthPx * side));
+            const p1 = add(p0, mul(direction, lengthPx));
+            const piqueStrokeWidth = isHemPique
+              ? strokeWidth * 1.5
+              : strokeWidth;
 
             const isHover = hoveredPiqueId === p.id;
 
@@ -636,8 +650,9 @@ const FigureRenderer = ({
                 key={`pique:${figure.id}:${p.id}`}
                 points={[p0.x, p0.y, p1.x, p1.y]}
                 stroke={isHover ? "#ef4444" : stroke}
-                strokeWidth={strokeWidth}
+                strokeWidth={piqueStrokeWidth}
                 opacity={Math.min(1, opacity + 0.05)}
+                dash={[]}
                 lineCap="round"
                 lineJoin="round"
                 listening={false}

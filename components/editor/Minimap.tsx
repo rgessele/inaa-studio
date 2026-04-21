@@ -248,8 +248,34 @@ export function Minimap() {
 
             // For performance, we can just draw the polyline or even a bounding box
             // Let's try polyline first, it's nicer
-            const flatPoints = figureLocalPolyline(f, 1); // Low detail
             const isSelected = selectedFigureIds.includes(f.id);
+            const stroke = isSelected ? "#2563eb" : "#9ca3af"; // blue-600 if selected, else gray-400
+            const strokeWidth = isSelected ? 2 / minimapScale : 1 / minimapScale;
+
+            if (f.kind === "seam" && f.seamSegments?.length) {
+              return (
+                <React.Fragment key={f.id}>
+                  {f.seamSegments.map((segment, index) => (
+                    <Line
+                      key={`${f.id}:segment:${index}`}
+                      x={mx}
+                      y={my}
+                      points={segment}
+                      scaleX={minimapScale}
+                      scaleY={minimapScale}
+                      rotation={f.rotation}
+                      stroke={stroke}
+                      strokeWidth={strokeWidth}
+                      listening={false}
+                      perfectDrawEnabled={false}
+                      name="inaa-minimap-seam-segment"
+                    />
+                  ))}
+                </React.Fragment>
+              );
+            }
+
+            const flatPoints = figureLocalPolyline(f, 1); // Low detail
 
             return (
               <Line
@@ -260,10 +286,11 @@ export function Minimap() {
                 scaleX={minimapScale}
                 scaleY={minimapScale}
                 rotation={f.rotation}
-                stroke={isSelected ? "#2563eb" : "#9ca3af"} // blue-600 if selected, else gray-400
-                strokeWidth={isSelected ? 2 / minimapScale : 1 / minimapScale}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
                 listening={false}
                 perfectDrawEnabled={false}
+                name="inaa-minimap-figure"
               />
             );
           })}

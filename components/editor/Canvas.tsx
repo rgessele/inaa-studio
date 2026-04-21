@@ -32,6 +32,7 @@ import type {
   Figure,
   FigureEdge,
   FigureNode,
+  FigurePique,
   GuideLine,
   MoldSourceSegmentRef,
 } from "./types";
@@ -1948,9 +1949,13 @@ function getSingleSourceMoldFromExtractDraft(
 
 function computePiqueSegmentWorld(
   figure: Figure,
-  pique: { edgeId: string; t01: number; lengthCm: number; side: 1 | -1 }
+  pique: FigurePique
 ): { aWorld: Vec2; bWorld: Vec2 } | null {
-  if (!figure.closed && !hasClosedLoop(figure)) return null;
+  const supportsPique =
+    figure.closed ||
+    hasClosedLoop(figure) ||
+    (figure.kind === "seam" && figure.derivedRole === "hem");
+  if (!supportsPique) return null;
   const edge = figure.edges.find((e) => e.id === pique.edgeId) ?? null;
   if (!edge) return null;
 
@@ -1960,11 +1965,21 @@ function computePiqueSegmentWorld(
   const at = pointAndTangentAtT01(pts, pique.t01);
   if (!at) return null;
 
-  const n = norm(perp(at.tangentUnit));
-  const side = pique.side === -1 ? -1 : 1;
+  const isHemPique = figure.kind === "seam" && figure.derivedRole === "hem";
+  const normal = norm(perp(at.tangentUnit));
   const lengthPx = Math.max(0, (pique.lengthCm || 0.5) * PX_PER_CM);
+  const direction = (() => {
+    if (isHemPique) {
+      const storedSide = pique.side === -1 ? -1 : 1;
+      return mul(at.tangentUnit, storedSide);
+    }
+    const baseDirection =
+      pique.orientation === "tangent" ? at.tangentUnit : normal;
+    const side = pique.side === -1 ? -1 : 1;
+    return mul(baseDirection, side);
+  })();
   const aLocal = at.point;
-  const bLocal = add(aLocal, mul(n, lengthPx * side));
+  const bLocal = add(aLocal, mul(direction, lengthPx));
 
   return {
     aWorld: figureLocalToWorld(figure, aLocal),
@@ -1983,7 +1998,11 @@ function findHoveredPique(
   let bestD = Number.POSITIVE_INFINITY;
 
   for (const fig of figures) {
-    if (!fig.closed && !hasClosedLoop(fig)) continue;
+    const supportsPique =
+      fig.closed ||
+      hasClosedLoop(fig) ||
+      (fig.kind === "seam" && fig.derivedRole === "hem");
+    if (!supportsPique) continue;
     const piques = fig.piques ?? [];
     if (!piques.length) continue;
     for (const pk of piques) {
@@ -2435,7 +2454,10 @@ function mirrorFigureAcrossLine(
     piques: figure.piques
       ? figure.piques.map((p) => ({
           ...p,
-          side: (p.side === -1 ? 1 : -1) as 1 | -1,
+          side:
+            p.orientation === "tangent"
+              ? p.side
+              : ((p.side === -1 ? 1 : -1) as 1 | -1),
         }))
       : undefined,
   };
@@ -3396,6 +3418,7 @@ export default function Canvas() {
     setOffsetTargetId,
     hemWidthCm,
     hemFolds,
+    hemShowInternalFoldLines,
     hemNotchesEnabled,
     hemNotchType,
     modifierKeys,
@@ -3685,6 +3708,11 @@ export default function Canvas() {
     figureId: string;
     edgeId: string;
   } | null>(null);
+  const [hoveredHemNode, setHoveredHemNode] = useState<{
+    figureId: string;
+    nodeId: string;
+  } | null>(null);
+  const [hemNodePulse, setHemNodePulse] = useState(0);
   const [hemDraft, setHemDraft] = useState<HemDraft>(null);
   const [hemControlNodeIdsByFigure, setHemControlNodeIdsByFigure] = useState<
     Record<string, string[]>
@@ -3712,8 +3740,26 @@ export default function Canvas() {
     if (tool === "hem") return;
     setHoveredHemBaseId(null);
     setHoveredHemEdge(null);
+    setHoveredHemNode(null);
     setHemDraft(null);
   }, [tool]);
+
+  useEffect(() => {
+    if (tool !== "hem" || !hoveredHemNode) {
+      setHemNodePulse(0);
+      return;
+    }
+
+    let frame = 0;
+    const startedAt = performance.now();
+    const animate = (now: number) => {
+      setHemNodePulse(((now - startedAt) % 900) / 900);
+      frame = requestAnimationFrame(animate);
+    };
+
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, [hoveredHemNode, tool]);
 
   useEffect(() => {
     setHemControlNodeIdsByFigure((prev) => {
@@ -4032,6 +4078,7 @@ export default function Canvas() {
       return normalizeHemMeta({
         widthCm: hemWidthCm,
         folds: hemFolds,
+        showInternalFoldLines: hemShowInternalFoldLines,
         notchesEnabled: hemNotchesEnabled,
         notchType: hemNotchType,
         controlNodeIds,
@@ -4042,6 +4089,7 @@ export default function Canvas() {
     [
       hemControlNodeIdsByFigure,
       hemFolds,
+      hemShowInternalFoldLines,
       hemNotchType,
       hemNotchesEnabled,
       hemWidthCm,
@@ -8304,6 +8352,7 @@ export default function Canvas() {
         baseCandidate && isFigureEligibleForOffsetTool(baseCandidate)
           ? baseIdCandidate
           : null;
+      let nextHoveredHemNode: { figureId: string; nodeId: string } | null = null;
 
       setHoveredHemBaseId((prev) => (prev === baseId ? prev : baseId));
 
@@ -8311,6 +8360,12 @@ export default function Canvas() {
         const base = figures.find((f) => f.id === baseId) ?? null;
         if (base && (base.closed || hasClosedLoop(base))) {
           const local = worldToFigureLocal(base, world);
+          const nodeId = findFigureNodeIdNearWorldPoint(
+            base,
+            world,
+            thresholdWorld
+          );
+          nextHoveredHemNode = nodeId ? { figureId: baseId, nodeId } : null;
           const outerEdgeIds = getOuterLoopEdgeIds(base);
           const hitEdge = findNearestEdgeInSet(base, local, outerEdgeIds);
           if (hitEdge.best && hitEdge.bestDist <= thresholdWorld) {
@@ -8328,9 +8383,16 @@ export default function Canvas() {
       } else if (hoveredHemEdge) {
         setHoveredHemEdge(null);
       }
-    } else if (hoveredHemBaseId || hoveredHemEdge) {
+      setHoveredHemNode((prev) =>
+        prev?.figureId === nextHoveredHemNode?.figureId &&
+        prev?.nodeId === nextHoveredHemNode?.nodeId
+          ? prev
+          : nextHoveredHemNode
+      );
+    } else if (hoveredHemBaseId || hoveredHemEdge || hoveredHemNode) {
       setHoveredHemBaseId(null);
       if (hoveredHemEdge) setHoveredHemEdge(null);
+      if (hoveredHemNode) setHoveredHemNode(null);
     }
 
     if (measureDisplayMode !== "never") {
@@ -12795,11 +12857,58 @@ export default function Canvas() {
                           stroke="#ffffff"
                           strokeWidth={Math.max(1 / scale, 0.7 / scale)}
                           listening={false}
+                          name="inaa-hem-control-node"
                         />
                       );
                     });
                   }
                 )
+              : null}
+
+            {tool === "hem" && hoveredHemNode
+              ? (() => {
+                  const figure = figuresById.get(hoveredHemNode.figureId) ?? null;
+                  const node =
+                    figure?.nodes.find((n) => n.id === hoveredHemNode.nodeId) ??
+                    null;
+                  if (!figure || !node) return null;
+
+                  const worldNode = figureLocalToWorld(figure, {
+                    x: node.x,
+                    y: node.y,
+                  });
+                  const coreRadius = Math.max(5.5 / scale, 3 / scale);
+                  const pulseRadius =
+                    Math.max(9 / scale, 5 / scale) +
+                    (10 / scale) * hemNodePulse;
+                  const pulseOpacity = 0.45 * (1 - hemNodePulse);
+
+                  return (
+                    <Group
+                      key={`hem-hover-node:${hoveredHemNode.figureId}:${hoveredHemNode.nodeId}`}
+                      x={worldNode.x}
+                      y={worldNode.y}
+                      listening={false}
+                    >
+                      <Circle
+                        radius={pulseRadius}
+                        fill={HEM_STROKE}
+                        opacity={pulseOpacity}
+                        name="inaa-hem-node-hover-pulse"
+                      />
+                      <Circle
+                        radius={coreRadius}
+                        fill="#ecfdf5"
+                        stroke={HEM_STROKE}
+                        strokeWidth={Math.max(1.8 / scale, 0.9 / scale)}
+                        shadowColor={HEM_STROKE}
+                        shadowBlur={10 / scale}
+                        shadowOpacity={0.7}
+                        name="inaa-hem-node-hover"
+                      />
+                    </Group>
+                  );
+                })()
               : null}
 
             {draftPreview}

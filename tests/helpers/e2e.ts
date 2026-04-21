@@ -101,6 +101,19 @@ declare global {
         y: number;
         rotation: number;
         closed: boolean;
+        offsetCm?: number | Record<string, number>;
+        seamSegments?: number[][];
+        seamSegmentEdgeIds?: string[];
+        hemMeta?: {
+          widthCm: number;
+          folds: number;
+          showInternalFoldLines?: boolean;
+          notchesEnabled: boolean;
+          notchType: "seta";
+          selectedOuterEdgeIds?: string[];
+          controlNodeIds?: string[];
+          anchorEdgeId?: string | null;
+        };
         textValue?: string;
         textFontFamily?: string;
         textFontSizePx?: number;
@@ -123,6 +136,14 @@ declare global {
           outHandle: { x: number; y: number } | null;
         }>;
         edges: Array<{ id: string; from: string; to: string; kind: string }>;
+        piques?: Array<{
+          id: string;
+          edgeId: string;
+          t01: number;
+          lengthCm: number;
+          side: 1 | -1;
+          orientation?: "normal" | "tangent";
+        }>;
       }>;
       getSelectedFigureStats?: () => {
         nodesCount: number;

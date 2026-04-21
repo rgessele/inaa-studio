@@ -94,6 +94,7 @@ export function normalizeHemMeta(raw: Partial<HemMeta> | null | undefined): HemM
   const folds = Math.round(
     clamp(Number(raw?.folds ?? 1), HEM_FOLDS_MIN, HEM_FOLDS_MAX)
   );
+  const showInternalFoldLines = raw?.showInternalFoldLines !== false;
   const notchesEnabled = raw?.notchesEnabled === true;
   const notchType = normalizeHemNotchType(raw?.notchType);
   const selectedOuterEdgeIds = uniqueStringList(raw?.selectedOuterEdgeIds);
@@ -106,6 +107,7 @@ export function normalizeHemMeta(raw: Partial<HemMeta> | null | undefined): HemM
   return {
     widthCm,
     folds,
+    showInternalFoldLines,
     notchesEnabled,
     notchType,
     selectedOuterEdgeIds,
@@ -416,7 +418,10 @@ function buildPartialClosureSegment(
 
 function buildHemNodesAndEdges(
   flattened: FlattenedHemSegment[],
-  withNotches: boolean
+  withNotches: boolean,
+  totalFolds: number,
+  showInternalFoldLines: boolean,
+  selectedOuterEdgeIds: string[]
 ): {
   nodes: FigureNode[];
   edges: FigureEdge[];
@@ -429,13 +434,22 @@ function buildHemNodesAndEdges(
   const seamSegments: number[][] = [];
   const seamSegmentEdgeIds: string[] = [];
   const piques: NonNullable<Figure["piques"]> = [];
+  const internalFoldRecords: Array<{
+    segment: FlattenedHemSegment;
+    segmentEdges: FigureEdge[];
+    segmentNodes: FigureNode[];
+  }> = [];
 
   flattened.forEach((segment, segmentIndex) => {
     if (segment.points.length < 4) return;
-    seamSegments.push([...segment.points]);
-    seamSegmentEdgeIds.push(
-      segment.sourceEdgeId ?? `hem-seg-${segmentIndex + 1}`
-    );
+    const isInternalFold = segment.foldIndex < totalFolds;
+    const shouldDrawSegment = showInternalFoldLines || !isInternalFold;
+    if (shouldDrawSegment) {
+      seamSegments.push([...segment.points]);
+      seamSegmentEdgeIds.push(
+        segment.sourceEdgeId ?? `hem-seg-${segmentIndex + 1}`
+      );
+    }
 
     const segmentNodes: FigureNode[] = [];
     for (let i = 0; i < segment.points.length; i += 2) {
@@ -463,19 +477,70 @@ function buildHemNodesAndEdges(
 
     if (
       withNotches &&
+      isInternalFold &&
       segmentEdges.length > 0 &&
-      !String(segment.sourceEdgeId ?? "").startsWith("hem-closure")
+      typeof segment.sourceEdgeId === "string" &&
+      !segment.sourceEdgeId.startsWith("hem-closure")
     ) {
-      const edge = segmentEdges[Math.floor(segmentEdges.length / 2)]!;
-      piques.push({
-        id: id("pique"),
-        edgeId: edge.id,
-        t01: 0.5,
-        lengthCm: 0.4,
-        side: 1,
-      });
+      internalFoldRecords.push({ segment, segmentEdges, segmentNodes });
     }
   });
+
+  if (withNotches && internalFoldRecords.length) {
+    const order = new Map(
+      selectedOuterEdgeIds.map((edgeId, index) => [edgeId, index] as const)
+    );
+    const byFold = new Map<number, typeof internalFoldRecords>();
+    for (const record of internalFoldRecords) {
+      const list = byFold.get(record.segment.foldIndex) ?? [];
+      list.push(record);
+      byFold.set(record.segment.foldIndex, list);
+    }
+
+    for (const records of byFold.values()) {
+      const ordered = records
+        .filter((record) => {
+          const sourceEdgeId = record.segment.sourceEdgeId;
+          return typeof sourceEdgeId === "string" && order.has(sourceEdgeId);
+        })
+        .sort((a, b) => {
+          const aIndex = order.get(a.segment.sourceEdgeId!) ?? 0;
+          const bIndex = order.get(b.segment.sourceEdgeId!) ?? 0;
+          return aIndex - bIndex;
+        });
+      if (!ordered.length) continue;
+
+      const first = ordered[0]!;
+      const last = ordered[ordered.length - 1]!;
+      const firstNode = first.segmentNodes[0];
+      const lastNode = last.segmentNodes[last.segmentNodes.length - 1];
+      const isClosedFold =
+        !!firstNode && !!lastNode && pointsEqual(firstNode, lastNode);
+      if (isClosedFold) continue;
+
+      const lengthCm = 0.4;
+      const firstEdge = first.segmentEdges[0];
+      const lastEdge = last.segmentEdges[last.segmentEdges.length - 1];
+      if (!firstEdge || !lastEdge) continue;
+
+      piques.push({
+        id: id("pique"),
+        edgeId: firstEdge.id,
+        t01: 0,
+        lengthCm,
+        side: 1,
+        orientation: "tangent",
+      });
+      piques.push({
+        id: id("pique"),
+        edgeId: lastEdge.id,
+        t01: 1,
+        lengthCm,
+        side: -1,
+        orientation: "tangent",
+      });
+    }
+  }
 
   return {
     nodes,
@@ -490,6 +555,7 @@ function sanitizeSourceSignatureMeta(meta: HemMeta) {
   return {
     widthCm: Math.round(meta.widthCm * 10000) / 10000,
     folds: meta.folds,
+    showInternalFoldLines: meta.showInternalFoldLines !== false,
     notchesEnabled: meta.notchesEnabled === true,
     notchType: normalizeHemNotchType(meta.notchType),
     selectedOuterEdgeIds: uniqueStringList(meta.selectedOuterEdgeIds).sort(),
@@ -559,7 +625,13 @@ export function makeHemFigure(
     flattened.unshift(closureSegment);
   }
 
-  const built = buildHemNodesAndEdges(flattened, meta.notchesEnabled);
+  const built = buildHemNodesAndEdges(
+    flattened,
+    meta.notchesEnabled,
+    meta.folds,
+    meta.showInternalFoldLines,
+    selectedOuterEdgeIds
+  );
   if (!built.nodes.length || !built.edges.length) return null;
 
   return {
@@ -603,6 +675,7 @@ export function recomputeHemFigure(
         ? hem.offsetCm
         : 1,
     folds: 1,
+    showInternalFoldLines: true,
     notchesEnabled: false,
     notchType: "seta",
     selectedOuterEdgeIds: [],
