@@ -629,7 +629,7 @@ export function makeHemFigure(
     flattened,
     meta.notchesEnabled,
     meta.folds,
-    meta.showInternalFoldLines,
+    meta.showInternalFoldLines !== false,
     selectedOuterEdgeIds
   );
   if (!built.nodes.length || !built.edges.length) return null;
