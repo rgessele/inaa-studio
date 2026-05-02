@@ -5396,6 +5396,18 @@ export default function Canvas() {
     transformer.getLayer()?.batchDraw();
   }, [tool, transformTargetIds]);
 
+  useEffect(() => {
+    const transformer = transformerRef.current;
+    if (!transformer) return;
+    if (tool !== "select" || transformTargetIds.length === 0) return;
+
+    // Force the Transformer to recompute anchor positions when zoom changes.
+    // Anchor sizes themselves are in screen px (absoluteScale=1) and stay
+    // constant; only the box bounding the target needs to be refreshed.
+    transformer.forceUpdate();
+    transformer.getLayer()?.batchDraw();
+  }, [scale, tool, transformTargetIds]);
+
   const finalizeSelectionTransform = useCallback(() => {
     const transformer = transformerRef.current;
     if (!transformer) return;
@@ -12824,43 +12836,17 @@ export default function Canvas() {
               }
               rotateSnapTolerance={4}
               flipEnabled={false}
-              // Sizes are specified in screen px, then converted to world-space
-              // so the UI remains stable across zoom levels.
-              anchorSize={(() => {
-                const s = Math.max(1e-6, scale);
-                const t = Math.sqrt(Math.min(1, s));
-                // Smaller handles overall; slightly smaller at low zoom,
-                // but clamped so it stays clickable.
-                const screenPx = Math.max(6, Math.min(9, 9 * t));
-                return screenPx / s;
-              })()}
+              // Konva's Transformer renders anchors with absoluteScale=1 (not
+              // affected by stage scale), so these values are already in screen
+              // pixels — keep them constant so handles stay fixed across zoom.
+              anchorSize={8}
               borderStroke="#2563eb"
               anchorStroke="#2563eb"
               anchorFill="#ffffff"
-              borderStrokeWidth={(() => {
-                const s = Math.max(1e-6, scale);
-                const t = Math.sqrt(Math.min(1, s));
-                const screenPx = Math.max(0.6, Math.min(1.0, 0.9 * t));
-                return screenPx / s;
-              })()}
-              anchorStrokeWidth={(() => {
-                const s = Math.max(1e-6, scale);
-                const t = Math.sqrt(Math.min(1, s));
-                const screenPx = Math.max(0.6, Math.min(1.0, 0.9 * t));
-                return screenPx / s;
-              })()}
-              padding={(() => {
-                const s = Math.max(1e-6, scale);
-                const t = Math.sqrt(Math.min(1, s));
-                const screenPx = Math.max(2, Math.min(6, 5 * t));
-                return screenPx / s;
-              })()}
-              rotateAnchorOffset={(() => {
-                const s = Math.max(1e-6, scale);
-                const t = Math.sqrt(Math.min(1, s));
-                const screenPx = Math.max(12, Math.min(22, 18 * t));
-                return screenPx / s;
-              })()}
+              borderStrokeWidth={1}
+              anchorStrokeWidth={1}
+              padding={4}
+              rotateAnchorOffset={18}
               boundBoxFunc={(oldBox, newBox) => {
                 if (newBox.width < 5 || newBox.height < 5) return oldBox;
                 return newBox;
