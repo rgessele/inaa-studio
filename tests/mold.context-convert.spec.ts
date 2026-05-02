@@ -7,6 +7,7 @@ type FigureSnapshot = {
   parentId?: string;
   tool: string;
   closed: boolean;
+  dash?: number[];
   nodes: Array<{
     id: string;
     x: number;
@@ -48,6 +49,7 @@ type TestFigure = {
   strokeWidth: number;
   fill: string;
   opacity: number;
+  dash?: number[];
 };
 
 function polygonAreaAbs(flat: number[]): number {
@@ -74,6 +76,7 @@ function createRectFigure(
     y: number;
     w: number;
     h: number;
+    dash?: number[];
   }
 ): TestFigure {
   const n1 = `${id}_n1`;
@@ -105,6 +108,7 @@ function createRectFigure(
     strokeWidth: 2,
     fill: opts.kind === "mold" ? "rgba(96,165,250,0.22)" : "transparent",
     opacity: 1,
+    dash: opts.dash,
   };
 }
 
@@ -366,6 +370,61 @@ test("context menu: converter figura em molde atualiza a própria figura", async
   const figures = await getFigures(page);
   expect(figures[0]?.id).toBe("fig_1");
   expect(figures[0]?.kind).toBe("mold");
+});
+
+test("context menu: alterna arestas entre pontilhado e solida", async ({
+  page,
+}) => {
+  await gotoEditor(page);
+  const stage = page.getByTestId("editor-stage-container");
+  await expect(stage).toBeVisible();
+
+  const fig = createRectFigure("fig_dash", {
+    x: 200,
+    y: 200,
+    w: 140,
+    h: 100,
+  });
+  await loadFigures(page, [fig]);
+
+  await expect
+    .poll(async () => (await getFigures(page)).length)
+    .toBe(1);
+
+  await stage.click({ button: "right", position: { x: 260, y: 250 } });
+  await expect(page.getByTestId("edge-context-menu")).toBeVisible();
+  await expect(
+    page.getByTestId("edge-context-convert-figure-to-mold")
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("edge-context-toggle-figure-dash")
+  ).toHaveText("Converter arestas em pontilhado");
+
+  await page.getByTestId("edge-context-toggle-figure-dash").click();
+  await expect(page.getByTestId("edge-context-menu")).toHaveCount(0);
+
+  await expect
+    .poll(async () => {
+      const figures = await getFigures(page);
+      return JSON.stringify(figures[0]?.dash ?? null);
+    })
+    .toBe(JSON.stringify([4, 4]));
+
+  await stage.click({ button: "right", position: { x: 260, y: 250 } });
+  await expect(page.getByTestId("edge-context-menu")).toBeVisible();
+  await expect(
+    page.getByTestId("edge-context-toggle-figure-dash")
+  ).toHaveText("Converter arestas em linha solida");
+
+  await page.getByTestId("edge-context-toggle-figure-dash").click();
+  await expect(page.getByTestId("edge-context-menu")).toHaveCount(0);
+
+  await expect
+    .poll(async () => {
+      const figures = await getFigures(page);
+      return JSON.stringify(figures[0]?.dash ?? null);
+    })
+    .toBe("null");
 });
 
 test("context menu: converter figura aberta em molde é bloqueado", async ({

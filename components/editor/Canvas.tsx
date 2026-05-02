@@ -6412,6 +6412,49 @@ export default function Canvas() {
     setTool,
   ]);
 
+  const handleContextToggleFigureDash = useCallback(() => {
+    if (!edgeContextMenu) return;
+    const figId = edgeContextMenu.figureId;
+    const source = figures.find((f) => f.id === figId) ?? null;
+    if (!source || source.kind === "seam" || source.edges.length === 0) {
+      setEdgeContextMenu(null);
+      return;
+    }
+
+    const nextDash = source.dash?.length ? undefined : [4, 4];
+
+    setFigures((prev) =>
+      prev.map((f) => {
+        if (f.id !== figId) return f;
+        const base = markCurveCustomSnapshotDirtyIfPresent(
+          breakStyledLinkIfNeeded(f)
+        );
+        return {
+          ...base,
+          dash: nextDash ? [...nextDash] : undefined,
+        };
+      })
+    );
+
+    setSelectedFigureIds([figId]);
+    setSelectedEdge(null);
+    setTool("select");
+    toast(
+      nextDash
+        ? "Arestas convertidas em pontilhado."
+        : "Arestas convertidas em linha solida.",
+      "success"
+    );
+    setEdgeContextMenu(null);
+  }, [
+    edgeContextMenu,
+    figures,
+    setFigures,
+    setSelectedEdge,
+    setSelectedFigureIds,
+    setTool,
+  ]);
+
   const openInlineEdgeEdit = useCallback(
     (opts: {
       figureId: string;
@@ -11628,11 +11671,15 @@ export default function Canvas() {
               );
               if (!fig) return null;
 
+              const canToggleFigureDash = fig.edges.length > 0;
+              const isFigureDashed = Boolean(fig.dash?.length);
               const canConvertMoldToFigure = fig.kind === "mold";
               const canConvertFigureToMold =
                 isFigureEligibleForMoldConversion(fig);
               const hasFigureActions =
-                canConvertMoldToFigure || canConvertFigureToMold;
+                canToggleFigureDash ||
+                canConvertMoldToFigure ||
+                canConvertFigureToMold;
 
               return (
                 <>
@@ -11659,6 +11706,18 @@ export default function Canvas() {
                           onClick={handleContextConvertFigureToMold}
                         >
                           Converter em molde
+                        </button>
+                      ) : null}
+                      {canToggleFigureDash ? (
+                        <button
+                          type="button"
+                          data-testid="edge-context-toggle-figure-dash"
+                          className="w-full text-left text-xs px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
+                          onClick={handleContextToggleFigureDash}
+                        >
+                          {isFigureDashed
+                            ? "Converter arestas em linha solida"
+                            : "Converter arestas em pontilhado"}
                         </button>
                       ) : null}
                     </>
@@ -12072,11 +12131,14 @@ export default function Canvas() {
               return;
             }
 
+            const canToggleFigureDash = fig.edges.length > 0;
             const canOpenFigureAction =
-              fig.kind === "mold" || isFigureEligibleForMoldConversion(fig);
+              canToggleFigureDash ||
+              fig.kind === "mold" ||
+              isFigureEligibleForMoldConversion(fig);
 
             // If there is no edge action, no mirror action, and no figure-level
-            // conversion action, do not open the context menu.
+            // action, do not open the context menu.
             if (!edge && !fig.mirrorLink && !canOpenFigureAction) {
               setEdgeContextMenu(null);
               return;

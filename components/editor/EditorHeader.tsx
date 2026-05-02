@@ -15,6 +15,7 @@ import { ThemeToggleButton } from "@/components/theme/ThemeToggleButton";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { SupportHelpButton } from "@/components/support/SupportHelpButton";
 import { MembersAreaButton } from "@/components/support/MembersAreaButton";
+import { importPatternPdf } from "./pdfPatternImport";
 
 function isE2EAutomationActive(): boolean {
   return (
@@ -37,6 +38,7 @@ export function EditorHeader() {
     guides,
     hasUnsavedChanges,
     markProjectSaved,
+    importFigures,
     undo,
     redo,
     canUndo,
@@ -50,6 +52,7 @@ export function EditorHeader() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showSaveAsModal, setShowSaveAsModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isImportingPdf, setIsImportingPdf] = useState(false);
   const [userInfo, setUserInfo] = useState<{
     userId: string;
     displayName: string;
@@ -755,6 +758,67 @@ export function EditorHeader() {
     setIsSaving(false);
   };
 
+  const handleImportPdf = useCallback(
+    async (file: File) => {
+      if (readOnly) {
+        setToast({
+          message: "Modo somente leitura (admin)",
+          type: "error",
+          isVisible: true,
+        });
+        return;
+      }
+
+      const isPdf =
+        file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      if (!isPdf) {
+        showToast(
+          "Escolha um PDF vetorial exportado da plataforma concorrente.",
+          "error"
+        );
+        return;
+      }
+
+      setIsImportingPdf(true);
+      try {
+        const result = await importPatternPdf(file);
+        if (result.figures.length === 0) {
+          showToast(
+            "Nenhum contorno vetorial compatível foi encontrado neste PDF.",
+            "error"
+          );
+          return;
+        }
+
+        const projectLabel =
+          file.name.replace(/\.pdf$/i, "").trim() || "Importado de PDF";
+
+        importFigures(result.figures, projectLabel);
+
+        const mergedInfo =
+          result.mergedPathCount !== result.rawPathCount
+            ? ` (${result.rawPathCount} trechos unificados em ${result.mergedPathCount})`
+            : "";
+
+        showToast(
+          `${result.figures.length} figura(s) importada(s) do PDF${mergedInfo}.`,
+          "success"
+        );
+      } catch (error) {
+        console.error("PDF import error:", error);
+        showToast(
+          error instanceof Error
+            ? error.message
+            : "Nao foi possivel importar este PDF.",
+          "error"
+        );
+      } finally {
+        setIsImportingPdf(false);
+      }
+    },
+    [importFigures, readOnly, showToast]
+  );
+
   const handleBackToDashboard = () => {
     router.push("/dashboard");
   };
@@ -778,7 +842,9 @@ export function EditorHeader() {
             <FileMenu
               onSave={handleSaveClick}
               onSaveAs={() => setShowSaveAsModal(true)}
-              disabled={isSaving}
+              onImportPdf={handleImportPdf}
+              disabled={isSaving || isImportingPdf}
+              isImportingPdf={isImportingPdf}
             />
             <EditMenu
               onUndo={undo}

@@ -2045,16 +2045,27 @@ export function PropertiesPanel() {
     );
   };
 
-  const renderMoldListSection = () => {
+  const renderMoldListSection = (
+    { expandToFill = false }: { expandToFill?: boolean } = {}
+  ) => {
     if (!moldFigures.length) return null;
 
     return renderCollapsibleSection({
       id: "moldList",
       title: "Moldes extraídos",
       right: moldFigures.length,
-      className: "space-y-2",
+      className: expandToFill
+        ? "space-y-2 min-h-0 flex flex-1 flex-col"
+        : "space-y-2",
+      contentClassName: expandToFill ? "min-h-0 flex-1" : "",
       children: (
-        <div className="min-h-0 max-h-[42vh] overflow-y-auto overscroll-contain custom-scrollbar pr-1">
+        <div
+          data-testid="mold-list-scroll"
+          className={
+            "min-h-0 overflow-y-auto overscroll-contain custom-scrollbar pr-1 " +
+            (expandToFill ? "flex-1" : "max-h-[42vh]")
+          }
+        >
           <div className="grid grid-cols-2 gap-2">
             {moldFigures.map((m) => {
             const thumbWidth = 96;
@@ -4551,8 +4562,16 @@ export function PropertiesPanel() {
             </div>
           </>
         ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
-            {renderMoldListSection() ?? (
+          <div
+            data-testid="properties-panel-idle-content"
+            className={
+              "min-h-0 flex-1 p-4 " +
+              (moldFigures.length
+                ? "flex flex-col"
+                : "overflow-y-auto custom-scrollbar space-y-6")
+            }
+          >
+            {renderMoldListSection({ expandToFill: true }) ?? (
               <div className="text-center text-gray-500 text-xs">
                 Nenhum objeto selecionado
               </div>

@@ -300,6 +300,7 @@ interface EditorContextType {
     guides?: GuideLine[],
     meta?: DesignDataV2["meta"]
   ) => void;
+  importFigures: (figures: Figure[], projectName?: string) => void;
 }
 import type { DesignDataV2 } from "./types";
 
@@ -791,6 +792,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     redo,
     canUndo,
     canRedo,
+    clearHistory,
   } = useHistory<Figure[]>([]);
 
   React.useEffect(() => {
@@ -1259,6 +1261,33 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     [setFigures]
   );
 
+  const importFigures = useCallback(
+    (nextFigures: Figure[], nextProjectName = "Importado de PDF") => {
+      const effectivePageGuideSettings = pageGuideSettingsRef.current;
+      const normalizedFigures = nextFigures.map((fig) => {
+        if (fig.closed) return fig;
+        return hasClosedLoop(fig) ? { ...fig, closed: true } : fig;
+      });
+
+      setFigures(normalizedFigures, false);
+      clearHistory();
+      setProjectId(null);
+      setProjectName(nextProjectName);
+      setProjectMeta(undefined);
+      setGuides([]);
+      setLastSavedSnapshot(
+        JSON.stringify({
+          figures: [],
+          pageGuideSettings: effectivePageGuideSettings,
+          guides: [],
+        })
+      );
+      setSelectedFigureIdsState([]);
+      setSelectedEdge(null);
+    },
+    [clearHistory, setFigures]
+  );
+
   const markProjectSaved = useCallback(
     (snapshot?: {
       figures: Figure[];
@@ -1346,6 +1375,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       stroke: f.stroke,
       strokeMode: f.strokeMode,
       strokeWidth: f.strokeWidth,
+      fill: f.fill,
+      opacity: f.opacity,
+      dash: f.dash,
       offsetCm: f.offsetCm,
       hemMeta: f.hemMeta,
       seamSegments: f.seamSegments,
@@ -1737,6 +1769,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         hasUnsavedChanges,
         markProjectSaved,
         loadProject,
+        importFigures,
       }}
     >
       {children}
