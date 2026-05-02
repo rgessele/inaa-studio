@@ -151,14 +151,14 @@ function samePoint(
   return distance(a, b) <= tolerancePx;
 }
 
-function computePathLength(nodes: DraftNode[], closed: boolean) {
-  if (nodes.length < 2) return 0;
+function computePathLength(points: Array<{ x: number; y: number }>, closed: boolean) {
+  if (points.length < 2) return 0;
   let total = 0;
-  for (let index = 1; index < nodes.length; index += 1) {
-    total += distance(nodes[index - 1]!, nodes[index]!);
+  for (let index = 1; index < points.length; index += 1) {
+    total += distance(points[index - 1]!, points[index]!);
   }
   if (closed) {
-    total += distance(nodes[nodes.length - 1]!, nodes[0]!);
+    total += distance(points[points.length - 1]!, points[0]!);
   }
   return total;
 }
@@ -1201,10 +1201,7 @@ export async function importPatternPdf(file: File): Promise<ImportPdfResult> {
   )) as typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 
   const data = new Uint8Array(await file.arrayBuffer());
-  const document = await pdfjs.getDocument({
-    data,
-    isEvalSupported: false,
-  }).promise;
+  const document = await pdfjs.getDocument({ data }).promise;
 
   const collected: DraftPath[] = [];
   const strokeOps = new Set<number>([
