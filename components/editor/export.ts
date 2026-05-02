@@ -6,6 +6,7 @@ import {
   getPaperDimensionsCm,
   resolveExportSettings,
 } from "./exportSettings";
+import { getUsedPrintTiles } from "./printLayout";
 import type { Figure, FigurePique } from "./types";
 import { figureWorldBoundingBox, figureWorldPolyline } from "./figurePath";
 import { figureLocalToWorld } from "./figurePath";
@@ -488,34 +489,6 @@ function seamSegmentWorldPolylines(figure: Figure): number[][] {
     .filter((segment) => segment.length >= 4);
 }
 
-function calculateFiguresBoundingBox(figures: Figure[]): BoundingBox | null {
-  let hasAny = false;
-  let minX = 0;
-  let minY = 0;
-  let maxX = 0;
-  let maxY = 0;
-
-  for (const fig of figures) {
-    const b = figureWorldBoundingBox(fig);
-    if (!b) continue;
-    if (!hasAny) {
-      hasAny = true;
-      minX = b.x;
-      minY = b.y;
-      maxX = b.x + b.width;
-      maxY = b.y + b.height;
-      continue;
-    }
-    minX = Math.min(minX, b.x);
-    minY = Math.min(minY, b.y);
-    maxX = Math.max(maxX, b.x + b.width);
-    maxY = Math.max(maxY, b.y + b.height);
-  }
-
-  if (!hasAny) return null;
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-}
-
 function getFigureBoundingBox(figure: Figure): BoundingBox {
   return (
     figureWorldBoundingBox(figure) ?? {
@@ -569,12 +542,6 @@ export async function generateTiledPDF(
     return;
   }
 
-  const bbox = calculateFiguresBoundingBox(filtered);
-  if (!bbox) {
-    toast("Erro ao calcular a área de desenho.", "error");
-    return;
-  }
-
   const { widthCm: paperWidthCm, heightCm: paperHeightCm } =
     getPaperDimensionsCm(resolved.paperSize, resolved.orientation);
   // jsPDF needs the page "format" (size) specified independently. When passing an array,
@@ -591,60 +558,16 @@ export async function generateTiledPDF(
     return;
   }
 
-  const safeWidthPx = safeWidthCm * PX_PER_CM;
-  const safeHeightPx = safeHeightCm * PX_PER_CM;
-
-  // Behavior A: tile pages exactly like the on-canvas page guides.
-  // Canvas page guides are anchored at world (0,0) and repeat every paperWidth/Height.
-  // Each PDF tile corresponds to the *inner* printable area (paper minus margins).
-  const paperWidthPx = paperWidthCm * PX_PER_CM;
-  const paperHeightPx = paperHeightCm * PX_PER_CM;
-  const marginPx = marginCm * PX_PER_CM;
-
-  const padding = 10;
-  const x0 = bbox.x - padding;
-  const y0 = bbox.y - padding;
-  const x1 = bbox.x + bbox.width + padding;
-  const y1 = bbox.y + bbox.height + padding;
-
-  // Determine which page indices might contain content within their printable area.
-  const ix0 = Math.floor((x0 - marginPx) / paperWidthPx);
-  const ix1 = Math.floor((x1 - marginPx) / paperWidthPx);
-  const iy0 = Math.floor((y0 - marginPx) / paperHeightPx);
-  const iy1 = Math.floor((y1 - marginPx) / paperHeightPx);
-
-  const tiles: Array<{
-    tileX: number;
-    tileY: number;
-    row: number;
-    col: number;
-  }> = [];
-  for (let iy = iy0; iy <= iy1; iy++) {
-    for (let ix = ix0; ix <= ix1; ix++) {
-      const tileX = ix * paperWidthPx + marginPx;
-      const tileY = iy * paperHeightPx + marginPx;
-      const row = iy - iy0;
-      const col = ix - ix0;
-
-      if (!resolved.includeBlankPages) {
-        const tileRect: BoundingBox = {
-          x: tileX,
-          y: tileY,
-          width: safeWidthPx,
-          height: safeHeightPx,
-        };
-
-        const hasContent = filtered.some((fig) =>
-          intersectsRect(getFigureBoundingBox(fig), tileRect)
-        );
-        if (!hasContent) continue;
-      }
-
-      tiles.push({ tileX, tileY, row, col });
+  const { tiles, totalPages, safeWidthPx, safeHeightPx } = getUsedPrintTiles(
+    filtered,
+    {
+      paperSize: resolved.paperSize,
+      orientation: resolved.orientation,
+      marginCm,
+      includeBlankPages: resolved.includeBlankPages,
     }
-  }
+  );
 
-  const totalPages = tiles.length;
   if (totalPages === 0) {
     toast("Nada para exportar com os filtros selecionados.", "error");
     return;

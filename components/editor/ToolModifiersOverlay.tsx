@@ -1,7 +1,13 @@
 "use client";
 
-import React, { useEffect, useState, useSyncExternalStore } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useEditor } from "./EditorContext";
+import { countUsedPrintPages } from "./printLayout";
 import {
   detectPlatformKind,
   isModifierActive,
@@ -92,7 +98,7 @@ function StatusTooltip({
 }
 
 function SystemStatus() {
-  const { figures } = useEditor();
+  const { figures, pageGuideSettings } = useEditor();
   const [fps, setFps] = useState(60);
 
   useEffect(() => {
@@ -121,6 +127,13 @@ function SystemStatus() {
     (acc, f) => acc + (f.kind === "mold" ? 1 : 0),
     0
   );
+  const printPageCount = useMemo(
+    () => countUsedPrintPages(figures, pageGuideSettings),
+    [figures, pageGuideSettings]
+  );
+  const printPagesTooltip = `Páginas usadas na impressão (${pageGuideSettings.paperSize} · ${
+    pageGuideSettings.orientation === "portrait" ? "Retrato" : "Paisagem"
+  })`;
 
   let fpsColor = "text-emerald-600 dark:text-emerald-400";
   if (fps < 30) fpsColor = "text-red-600 dark:text-red-400";
@@ -190,6 +203,20 @@ function SystemStatus() {
 
       <div className="w-px h-3 bg-gray-300 dark:bg-gray-700" />
 
+      <StatusTooltip text={printPagesTooltip}>
+        <div className="flex items-center gap-1" data-testid="print-pages-count">
+          <span
+            className="material-symbols-outlined"
+            style={{ fontSize: "12px" }}
+          >
+            description
+          </span>
+          <span>{printPageCount}</span>
+        </div>
+      </StatusTooltip>
+
+      <div className="w-px h-3 bg-gray-300 dark:bg-gray-700" />
+
       <StatusTooltip text="Quadros por segundo (FPS)">
         <div className={`flex items-center gap-1 ${fpsColor}`}>
           <span>{fps} FPS</span>
@@ -200,12 +227,37 @@ function SystemStatus() {
 }
 
 function ZoomIndicator({ scale }: { scale: number }) {
+  const { getStage, position, setPosition, setScale } = useEditor();
+
+  const handleResetZoom = () => {
+    const stage = getStage();
+    if (!stage) {
+      setScale(1);
+      return;
+    }
+
+    const worldCenter = {
+      x: (stage.width() / 2 - position.x) / scale,
+      y: (stage.height() / 2 - position.y) / scale,
+    };
+
+    setScale(1);
+    setPosition({
+      x: stage.width() / 2 - worldCenter.x,
+      y: stage.height() / 2 - worldCenter.y,
+    });
+  };
+
   return (
-    <div
+    <button
+      type="button"
+      data-testid="zoom-indicator"
+      onDoubleClick={handleResetZoom}
+      title="Duplo clique para voltar o zoom para 100%"
       className={
         "inline-flex h-6 items-center gap-2 rounded border px-2 text-[11px] font-medium leading-none " +
         "bg-white/60 dark:bg-gray-900/55 border-gray-200/60 dark:border-gray-700/60 " +
-        "text-gray-600 dark:text-gray-300 tabular-nums"
+        "text-gray-600 dark:text-gray-300 tabular-nums cursor-pointer transition-colors hover:bg-white/80 dark:hover:bg-gray-900/80"
       }
     >
       <svg
@@ -223,6 +275,6 @@ function ZoomIndicator({ scale }: { scale: number }) {
         />
       </svg>
       <span className="tracking-wide">{Math.round(scale * 100)}%</span>
-    </div>
+    </button>
   );
 }

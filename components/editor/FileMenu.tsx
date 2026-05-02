@@ -83,18 +83,6 @@ export function FileMenu({
       {isOpen && (
         <div className="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-2 z-50">
           <button
-            className="w-full text-left text-xs px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={handleImportClick}
-            disabled={disabled || isImportingPdf}
-          >
-            <span className="flex items-center justify-between gap-3">
-              <span>{isImportingPdf ? "Importando PDF..." : "Importar PDF..."}</span>
-              <span className="text-[10px] text-text-muted dark:text-text-muted-dark">
-                Vetorial
-              </span>
-            </span>
-          </button>
-          <button
             className="w-full text-left text-xs px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
             onClick={() => handleAction(onSave)}
           >
@@ -113,6 +101,18 @@ export function FileMenu({
               <span>Salvar como...</span>
               <span className="text-[10px] text-text-muted dark:text-text-muted-dark">
                 {shortcutSaveAs}
+              </span>
+            </span>
+          </button>
+          <button
+            className="w-full text-left text-xs px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleImportClick}
+            disabled={disabled || isImportingPdf}
+          >
+            <span className="flex items-center justify-between gap-3">
+              <span>{isImportingPdf ? "Importando..." : "Importar..."}</span>
+              <span className="text-[10px] text-text-muted dark:text-text-muted-dark">
+                PDF
               </span>
             </span>
           </button>
