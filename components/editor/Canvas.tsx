@@ -94,6 +94,7 @@ import {
   recomputeHemFigure,
   resolveHemSelectedOuterEdgeIds,
 } from "./hemFigure";
+import { isAutoStrokeColor } from "./strokeColor";
 import {
   bakeFigureGeometryFromNodeTransform,
   hasResidualFigureNodeTransform,
@@ -407,7 +408,6 @@ function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
   return inside;
 }
 
-
 function normalizeLineEdgesAtNodes(figure: Figure): Figure {
   const nodeById = new Map(figure.nodes.map((n) => [n.id, n]));
   const newEdges: FigureEdge[] = [];
@@ -515,7 +515,10 @@ function mergeCoincidentNodes(figure: Figure, eps = 1): Figure {
     newEdges.push({ ...edge, from, to });
   }
 
-  if (uniqueNodes.length === figure.nodes.length && newEdges.length === figure.edges.length) {
+  if (
+    uniqueNodes.length === figure.nodes.length &&
+    newEdges.length === figure.edges.length
+  ) {
     return figure;
   }
 
@@ -574,7 +577,7 @@ function isPointInsideClosedFigure(
       break;
     }
   }
-  
+
   // For complex topology, use the outer boundary polyline
   let poly: Vec2[];
   if (hasComplexTopology) {
@@ -601,9 +604,9 @@ function isPointInsideClosedFigure(
       poly.push({ x: flat[k], y: flat[k + 1] });
     }
   }
-  
+
   if (poly.length < 3) return false;
-  
+
   // Use ray-casting on the (outer boundary) polygon
   if (pointInPolygon(pWorld, poly)) return true;
 
@@ -835,18 +838,19 @@ function pickFigureIdByEdgePriority(
 }
 
 function useIsDarkMode(): boolean {
-  const [isDark, setIsDark] = useState(false);
-  useEffect(() => {
-    const root = document.documentElement;
-    const update = () => setIsDark(root.classList.contains("dark"));
-    update();
-
-    const observer = new MutationObserver(() => update());
-    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
-  }, []);
-
-  return isDark;
+  return useSyncExternalStore(
+    (callback) => {
+      if (typeof document === "undefined") return () => {};
+      const root = document.documentElement;
+      const observer = new MutationObserver(callback);
+      observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+      return () => observer.disconnect();
+    },
+    () =>
+      typeof document !== "undefined" &&
+      document.documentElement.classList.contains("dark"),
+    () => false
+  );
 }
 
 function resolveAci7(isDark: boolean): string {
@@ -856,11 +860,13 @@ function resolveAci7(isDark: boolean): string {
 
 function resolveStrokeColor(
   stroke: string | undefined,
-  isDark: boolean
+  isDark: boolean,
+  mode?: "auto" | "solid"
 ): string {
   if (!stroke) return resolveAci7(isDark);
   const s = stroke.toLowerCase();
   if (s === "aci7") return resolveAci7(isDark);
+  if (mode === "solid") return stroke;
   // Back-compat: older projects defaulted to black; treat that as "auto".
   if (s === "#000" || s === "#000000") return resolveAci7(isDark);
   return stroke;
@@ -1393,9 +1399,7 @@ function findNearestEdgeAcrossFigures(
   return { figure: best.figure, edge: best.edge, local: best.local };
 }
 
-function isFigureEligibleForExtractSource(
-  figure: Figure
-): boolean {
+function isFigureEligibleForExtractSource(figure: Figure): boolean {
   if (figure.kind === "seam") return false;
   if (!figure.edges.length) return false;
   return figure.tool !== "text";
@@ -1641,12 +1645,10 @@ function findNodeIntersectionProbe(
 
   if (edgeSamples.length < 2) return { kind: "none" };
 
-  let bestCandidate:
-    | {
-        pointWorld: Vec2;
-        distance: number;
-      }
-    | null = null;
+  let bestCandidate: {
+    pointWorld: Vec2;
+    distance: number;
+  } | null = null;
   let overlapNearClick = false;
 
   for (let i = 0; i < edgeSamples.length; i++) {
@@ -1682,8 +1684,10 @@ function findNodeIntersectionProbe(
           const inter = intersectSegmentsWorld(a0, a1, b0, b1);
           if (inter.kind === "none") continue;
           if (inter.kind === "overlap") {
-            const nearA = pointToSegmentDistance(clickWorld, a0, a1).d <= thresholdWorld;
-            const nearB = pointToSegmentDistance(clickWorld, b0, b1).d <= thresholdWorld;
+            const nearA =
+              pointToSegmentDistance(clickWorld, a0, a1).d <= thresholdWorld;
+            const nearB =
+              pointToSegmentDistance(clickWorld, b0, b1).d <= thresholdWorld;
             if (nearA && nearB) overlapNearClick = true;
             continue;
           }
@@ -1770,7 +1774,10 @@ function resolveOrientedEdgeWorldGeometry(
   const toNode = figure.nodes.find((n) => n.id === edge.to) ?? null;
   if (!fromNode || !toNode) return null;
 
-  const fromWorld = figureLocalToWorld(figure, { x: fromNode.x, y: fromNode.y });
+  const fromWorld = figureLocalToWorld(figure, {
+    x: fromNode.x,
+    y: fromNode.y,
+  });
   const toWorld = figureLocalToWorld(figure, { x: toNode.x, y: toNode.y });
 
   const fromOutWorld = fromNode.outHandle
@@ -1839,7 +1846,8 @@ function buildClosedMoldGeometryFromSegments(
 
     const sourceFigure = figuresById.get(seg.sourceId) ?? null;
     if (!sourceFigure) return null;
-    const sourceEdge = sourceFigure.edges.find((e) => e.id === seg.edgeId) ?? null;
+    const sourceEdge =
+      sourceFigure.edges.find((e) => e.id === seg.edgeId) ?? null;
     if (!sourceEdge) return null;
 
     const reversed = seg.t0 > seg.t1;
@@ -1908,7 +1916,8 @@ function buildClosedMoldGeometryFromSegments(
   }
 
   if (nodes.length < 3 || edges.length < 3) return null;
-  if (!firstNode || !currentNode || firstNode.id !== currentNode.id) return null;
+  if (!firstNode || !currentNode || firstNode.id !== currentNode.id)
+    return null;
 
   return { nodes, edges };
 }
@@ -2095,12 +2104,14 @@ function splitFigureEdge(
       from: fromNode.id,
       to: newNodeId,
       kind: "line",
+      stroke: edge.stroke,
     };
     const e2: FigureEdge = {
       id: id("e"),
       from: newNodeId,
       to: toNode.id,
       kind: "line",
+      stroke: edge.stroke,
     };
 
     const nextEdges = [...figure.edges];
@@ -2166,12 +2177,14 @@ function splitFigureEdge(
     from: fromNode.id,
     to: newNodeId,
     kind: "cubic",
+    stroke: edge.stroke,
   };
   const e2: FigureEdge = {
     id: id("e"),
     from: newNodeId,
     to: toNode.id,
     kind: "cubic",
+    stroke: edge.stroke,
   };
   const nextEdges = [...figure.edges];
   nextEdges.splice(edgeIndex, 1, e1, e2);
@@ -2720,7 +2733,11 @@ function applyLineAngleLock(from: Vec2, rawTo: Vec2): Vec2 {
   };
 }
 
-function constrainPointToDistance(from: Vec2, rawTo: Vec2, targetPx: number): Vec2 {
+function constrainPointToDistance(
+  from: Vec2,
+  rawTo: Vec2,
+  targetPx: number
+): Vec2 {
   if (!Number.isFinite(targetPx) || targetPx <= 0) return rawTo;
   const v = sub(rawTo, from);
   const d = len(v);
@@ -3023,6 +3040,7 @@ function cloneFigureToWorldWithMap(figure: Figure): {
     from: nodeIdMap.get(e.from) ?? e.from,
     to: nodeIdMap.get(e.to) ?? e.to,
     kind: e.kind,
+    stroke: e.stroke,
   }));
 
   return { nodes, edges, nodeIdMap };
@@ -3086,7 +3104,7 @@ function mergeFiguresWithNewFigure(
     for (let i = 0; i < newWorldNodes.length; i++) {
       const nw = newWorldNodes[i];
       const p = { x: nw.x, y: nw.y };
-      
+
       for (const fig of candidates) {
         const target = findJoinTarget(fig, p, thresholdWorld);
         if (target) {
@@ -3151,8 +3169,8 @@ function mergeFiguresWithNewFigure(
   }
 
   // Get updated figures (with split edges)
-  const updatedFigures: Figure[] = figures.map((fig) =>
-    updatedById.get(fig.id) ?? fig
+  const updatedFigures: Figure[] = figures.map(
+    (fig) => updatedById.get(fig.id) ?? fig
   );
 
   // Clone target figures to world coordinates
@@ -3176,8 +3194,11 @@ function mergeFiguresWithNewFigure(
   }
 
   // Clone new figure
-  const { nodes: clonedNewNodes, edges: clonedNewEdges, nodeIdMap: newNodeIdMap } =
-    cloneFigureToWorldWithMap(newFigure);
+  const {
+    nodes: clonedNewNodes,
+    edges: clonedNewEdges,
+    nodeIdMap: newNodeIdMap,
+  } = cloneFigureToWorldWithMap(newFigure);
 
   // Build node mapping: cloned new node ID -> cloned target node ID
   const nodeMapping = new Map<string, string>();
@@ -3189,7 +3210,9 @@ function mergeFiguresWithNewFigure(
     const clonedNewNodeId = newNodeIdMap.get(originalNewNode.id);
     if (!clonedNewNodeId) continue;
 
-    const targetClone = targetClones.find((t) => t.figureId === mapping.figureId);
+    const targetClone = targetClones.find(
+      (t) => t.figureId === mapping.figureId
+    );
     if (!targetClone) continue;
 
     const clonedTargetNodeId = targetClone.nodeIdMap.get(mapping.targetNodeId);
@@ -3272,11 +3295,12 @@ function mergeFiguresWithNewFigure(
     nodes: mergedNodes,
     edges: mergedEdges,
     stroke: styleSource.stroke,
+    strokeMode: styleSource.strokeMode,
     strokeWidth: styleSource.strokeWidth,
     fill:
       styleSource.kind === "mold"
-        ? styleSource.fill ?? "rgba(96,165,250,0.22)"
-        : styleSource.fill ?? "transparent",
+        ? (styleSource.fill ?? "rgba(96,165,250,0.22)")
+        : (styleSource.fill ?? "transparent"),
     opacity: styleSource.opacity ?? 1,
     dash: styleSource.dash ? [...styleSource.dash] : undefined,
     moldMeta: styleSource.moldMeta
@@ -3358,8 +3382,8 @@ function mergeFiguresByIdsAsSingle(
     strokeWidth: styleSource.strokeWidth,
     fill:
       styleSource.kind === "mold"
-        ? styleSource.fill ?? "rgba(96,165,250,0.22)"
-        : styleSource.fill ?? "transparent",
+        ? (styleSource.fill ?? "rgba(96,165,250,0.22)")
+        : (styleSource.fill ?? "transparent"),
     opacity: styleSource.opacity ?? 1,
     dash: styleSource.dash ? [...styleSource.dash] : undefined,
     moldMeta: styleSource.moldMeta
@@ -3442,7 +3466,20 @@ export default function Canvas() {
     gridContrast,
     showPageGuides,
     pageGuideSettings,
+    activeStrokeColor,
   } = useEditor();
+
+  const withActiveStroke = useCallback(
+    (figure: Figure | null): Figure | null => {
+      if (!figure) return null;
+      return {
+        ...figure,
+        stroke: activeStrokeColor,
+        strokeMode: isAutoStrokeColor(activeStrokeColor) ? "auto" : "solid",
+      };
+    },
+    [activeStrokeColor]
+  );
 
   const isMac = useSyncExternalStore(
     () => () => {
@@ -3494,7 +3531,9 @@ export default function Canvas() {
     () => (isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)"),
     [isDark]
   );
-  const previewStroke = aci7;
+  const previewStroke = isAutoStrokeColor(activeStrokeColor)
+    ? aci7
+    : activeStrokeColor;
   const previewDash = useMemo(() => [8 / scale, 6 / scale], [scale]);
 
   const previewRemoveStroke = useMemo(() => {
@@ -3622,9 +3661,9 @@ export default function Canvas() {
     null
   );
   const segmentLengthLockCmRef = useRef<number | null>(null);
-  const segmentLengthApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
+  const segmentLengthApplyTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const [penDraft, setPenDraft] = useState<PenDraft>(null);
   const penDraftRef = useRef<PenDraft>(null);
   const [moldExtractionDraft, setMoldExtractionDraft] =
@@ -3650,13 +3689,11 @@ export default function Canvas() {
   const nodeMergePreviewRafRef = useRef<number | null>(null);
   const queueNodeMergePreview = useCallback(
     (
-      next:
-        | {
-            figureId: string;
-            fromNodeId: string;
-            toNodeId: string;
-          }
-        | null
+      next: {
+        figureId: string;
+        fromNodeId: string;
+        toNodeId: string;
+      } | null
     ) => {
       const current = nodeMergePreviewRef.current;
       const same =
@@ -3964,13 +4001,15 @@ export default function Canvas() {
     const edges = curveGeometry?.edges ?? fallbackEdges;
 
     const qty = Math.max(1, Math.round(Number(form.cutQuantity) || 1));
-    const sourceSegments: MoldSourceSegmentRef[] = draft.segments.map((seg) => ({
-      sourceDomain: seg.sourceDomain,
-      sourceId: seg.sourceId,
-      edgeId: seg.edgeId,
-      t0: seg.t0,
-      t1: seg.t1,
-    }));
+    const sourceSegments: MoldSourceSegmentRef[] = draft.segments.map(
+      (seg) => ({
+        sourceDomain: seg.sourceDomain,
+        sourceId: seg.sourceId,
+        edgeId: seg.edgeId,
+        t0: seg.t0,
+        t1: seg.t1,
+      })
+    );
 
     const sourceMold = getSingleSourceMoldFromExtractDraft(
       draft,
@@ -3980,7 +4019,8 @@ export default function Canvas() {
     const allSegmentsFromMold = draft.segments.every(
       (seg) => seg.sourceDomain === "mold"
     );
-    const sourceMode = allSegmentsFromMold && sourceMoldId ? "fromMold" : "fromDiagram";
+    const sourceMode =
+      allSegmentsFromMold && sourceMoldId ? "fromMold" : "fromDiagram";
 
     const minX = Math.min(...nodes.map((p) => p.x));
     const minY = Math.min(...nodes.map((p) => p.y));
@@ -4051,17 +4091,19 @@ export default function Canvas() {
     setSelectedFigureIds,
     setTool,
   ]);
-  
+
   // Expose hoveredOffsetBaseId for E2E tests
   React.useEffect(() => {
     if (typeof window !== "undefined") {
-      const state = (window as unknown as { __EDITOR_STATE__?: Record<string, unknown> }).__EDITOR_STATE__;
+      const state = (
+        window as unknown as { __EDITOR_STATE__?: Record<string, unknown> }
+      ).__EDITOR_STATE__;
       if (state) {
         state.hoveredOffsetBaseId = hoveredOffsetBaseId;
       }
     }
   }, [hoveredOffsetBaseId]);
-  
+
   const [cursorBadge, setCursorBadge] = useState<{
     x: number;
     y: number;
@@ -4105,8 +4147,9 @@ export default function Canvas() {
 
       const hemMeta = buildHemMetaForBase(base, anchorEdgeId ?? null);
       const seamAllowance =
-        figures.find((f) => isSeamAllowanceFigure(f) && f.parentId === baseId) ??
-        null;
+        figures.find(
+          (f) => isSeamAllowanceFigure(f) && f.parentId === baseId
+        ) ?? null;
       const hem = makeHemFigure(base, hemMeta, { seamAllowance });
       if (!hem) return;
 
@@ -4149,8 +4192,9 @@ export default function Canvas() {
     ) {
       const edgeId = hoveredOffsetEdge.edgeId;
       const existingSeam =
-        figures.find((f) => isSeamAllowanceFigure(f) && f.parentId === base.id) ??
-        null;
+        figures.find(
+          (f) => isSeamAllowanceFigure(f) && f.parentId === base.id
+        ) ?? null;
       if (existingSeam) {
         if (typeof existingSeam.offsetCm === "number") return null;
         if (
@@ -5000,7 +5044,10 @@ export default function Canvas() {
 
         for (const [figureId, hits] of hitsByFigure) {
           let currentFigure = working.find((f) => f.id === figureId) ?? null;
-          if (!currentFigure || !isFigureEligibleForContourTools(currentFigure)) {
+          if (
+            !currentFigure ||
+            !isFigureEligibleForContourTools(currentFigure)
+          ) {
             continue;
           }
           touchedIds.add(figureId);
@@ -5010,13 +5057,17 @@ export default function Canvas() {
             currentFigure = working.find((f) => f.id === figureId) ?? null;
             if (!currentFigure) break;
 
-            const edge = currentFigure.edges.find((e) => e.id === hit.edgeId) ?? null;
+            const edge =
+              currentFigure.edges.find((e) => e.id === hit.edgeId) ?? null;
             if (!edge) continue;
 
             const fromNode = getNodeById(currentFigure.nodes, edge.from);
             const toNode = getNodeById(currentFigure.nodes, edge.to);
             const fromNodeWorld = fromNode
-              ? figureLocalToWorld(currentFigure, { x: fromNode.x, y: fromNode.y })
+              ? figureLocalToWorld(currentFigure, {
+                  x: fromNode.x,
+                  y: fromNode.y,
+                })
               : null;
             const toNodeWorld = toNode
               ? figureLocalToWorld(currentFigure, { x: toNode.x, y: toNode.y })
@@ -5352,10 +5403,7 @@ export default function Canvas() {
     const nodes = transformer.nodes();
     if (!nodes.length) return;
 
-    const updates = new Map<
-      string,
-      FigureNodeTransformCommit
-    >();
+    const updates = new Map<string, FigureNodeTransformCommit>();
 
     for (const node of nodes) {
       const figId = (node.getAttr("figureId") as string | undefined) ?? null;
@@ -5625,7 +5673,8 @@ export default function Canvas() {
         ? normalizeHemMeta(
             seam.hemMeta ?? {
               widthCm:
-                typeof seam.offsetCm === "number" && Number.isFinite(seam.offsetCm)
+                typeof seam.offsetCm === "number" &&
+                Number.isFinite(seam.offsetCm)
                   ? seam.offsetCm
                   : 1,
               folds: 1,
@@ -6070,17 +6119,15 @@ export default function Canvas() {
   }, [clearSegmentLengthConstraint]);
 
   const finalizeLineFigure = useCallback(
-    (
-      pointsWorld: Vec2[],
-      joinHits: Array<JoinHit | null>,
-      closed: boolean
-    ) => {
+    (pointsWorld: Vec2[], joinHits: Array<JoinHit | null>, closed: boolean) => {
       if (pointsWorld.length < 2 || (closed && pointsWorld.length < 3)) {
         clearActiveLineDraft();
         return;
       }
 
-      const finalized = makePolylineLineFigure(pointsWorld, closed, "aci7");
+      const finalized = withActiveStroke(
+        makePolylineLineFigure(pointsWorld, closed, activeStrokeColor)
+      );
       if (finalized) {
         const hits = joinHits.filter((h): h is JoinHit => !!h);
         sendDebugLog({
@@ -6101,7 +6148,12 @@ export default function Canvas() {
 
       clearActiveLineDraft();
     },
-    [addFigureWithOptionalMerge, clearActiveLineDraft]
+    [
+      addFigureWithOptionalMerge,
+      activeStrokeColor,
+      clearActiveLineDraft,
+      withActiveStroke,
+    ]
   );
 
   useEffect(() => {
@@ -6328,10 +6380,7 @@ export default function Canvas() {
           fill: "rgba(96,165,250,0.22)",
           moldMeta: {
             baseSize: f.moldMeta?.baseSize ?? "M",
-            cutQuantity: Math.max(
-              1,
-              Math.round(f.moldMeta?.cutQuantity ?? 1)
-            ),
+            cutQuantity: Math.max(1, Math.round(f.moldMeta?.cutQuantity ?? 1)),
             cutOnFold: f.moldMeta?.cutOnFold === true,
             notes: f.moldMeta?.notes ?? "",
             printEnabled: true,
@@ -6543,7 +6592,12 @@ export default function Canvas() {
         const thresholdWorld = 10 / scale;
         const hoveredId =
           findHoveredFigureId(figures, world, thresholdWorld) ??
-          findHoveredClosedFigureOrSeamBaseId(figures, world, 60, thresholdWorld);
+          findHoveredClosedFigureOrSeamBaseId(
+            figures,
+            world,
+            60,
+            thresholdWorld
+          );
         const hoveredBase = hoveredId
           ? (figures.find((f) => f.id === hoveredId) ?? null)
           : null;
@@ -7103,7 +7157,11 @@ export default function Canvas() {
         const nextPoints = prev.pointsWorld.slice(0, -1);
         const nextHits = prev.joinHits.slice(0, -1);
         if (nextPoints.length === 0) return null;
-        return { pointsWorld: nextPoints, currentWorld: world, joinHits: nextHits };
+        return {
+          pointsWorld: nextPoints,
+          currentWorld: world,
+          joinHits: nextHits,
+        };
       });
       clearSegmentLengthConstraint();
       return;
@@ -7184,7 +7242,9 @@ export default function Canvas() {
       const thresholdWorld = 10 / scale;
       const baseIdFromClick = (() => {
         const hitId = findHoveredFigureId(figures, world, thresholdWorld);
-        const hit = hitId ? (figures.find((f) => f.id === hitId) ?? null) : null;
+        const hit = hitId
+          ? (figures.find((f) => f.id === hitId) ?? null)
+          : null;
         const hitBaseId = hit?.kind === "seam" ? (hit.parentId ?? null) : hitId;
         if (hitBaseId) return hitBaseId;
         return findHoveredClosedFigureOrSeamBaseId(
@@ -7206,20 +7266,24 @@ export default function Canvas() {
       if (!base) return;
       if (!isFigureEligibleForOffsetTool(base)) return;
       if (!base.closed && !hasClosedLoop(base)) return;
-      
+
       setSelectedFigureId(baseId);
       setOffsetTargetId(baseId);
-      
+
       const existingSeam =
         figures.find(
           (f) => isSeamAllowanceFigure(f) && f.parentId === baseId
         ) ?? null;
-      
+
       const isRemoveIntent = e.evt.metaKey || e.evt.ctrlKey;
       const edgeThresholdWorld = 18 / scale;
       const localForEdge = worldToFigureLocal(base, world);
       const outerEdgeIds = getOuterLoopEdgeIds(base);
-      const edgeHitOuter = findNearestEdgeInSet(base, localForEdge, outerEdgeIds);
+      const edgeHitOuter = findNearestEdgeInSet(
+        base,
+        localForEdge,
+        outerEdgeIds
+      );
       const edgeHit = edgeHitOuter.best
         ? edgeHitOuter
         : findNearestEdge(base, localForEdge);
@@ -7229,7 +7293,7 @@ export default function Canvas() {
           : edgeHit.best && edgeHit.bestDist <= edgeThresholdWorld
             ? edgeHit.best.edgeId
             : null;
-      
+
       // Per-edge offset
       if (clickedEdgeId && base.tool !== "circle") {
         const edgeId = clickedEdgeId;
@@ -7310,7 +7374,7 @@ export default function Canvas() {
         }
         return;
       }
-      
+
       // Remove entire seam
       if (isRemoveIntent) {
         if (existingSeam) {
@@ -7322,7 +7386,7 @@ export default function Canvas() {
         }
         return;
       }
-      
+
       // Update existing seam
       if (existingSeam) {
         const updated = recomputeSeamFigure(base, existingSeam, offsetValueCm);
@@ -7344,7 +7408,7 @@ export default function Canvas() {
         }
         return;
       }
-      
+
       // Create new seam
       const seam = makeSeamFigure(base, offsetValueCm);
       if (!seam) return;
@@ -7367,7 +7431,9 @@ export default function Canvas() {
       const thresholdWorld = 10 / scale;
       const baseIdFromClick = (() => {
         const hitId = findHoveredFigureId(figures, world, thresholdWorld);
-        const hit = hitId ? (figures.find((f) => f.id === hitId) ?? null) : null;
+        const hit = hitId
+          ? (figures.find((f) => f.id === hitId) ?? null)
+          : null;
         const hitBaseId = hit?.kind === "seam" ? (hit.parentId ?? null) : hitId;
         if (hitBaseId) return hitBaseId;
         return findHoveredClosedFigureOrSeamBaseId(
@@ -7798,11 +7864,7 @@ export default function Canvas() {
       if (!edgePick || hit.bestDist > edgeThreshold) return;
 
       // Avoid calling setState (Canvas) inside the figures state updater (EditorProvider).
-      const res = splitFigureEdge(
-        selectedFigure,
-        edgePick.edgeId,
-        edgePick.t
-      );
+      const res = splitFigureEdge(selectedFigure, edgePick.edgeId, edgePick.t);
       setFigures((prev) =>
         applySplitResultToFigureSet(prev, selectedFigureId, res)
       );
@@ -7825,7 +7887,9 @@ export default function Canvas() {
 
       const joinTolWorld =
         Math.max(6, Math.max(12, measureSnapStrengthPx) * 0.5) / scale;
-      const snapKind = resolvedDown.snap.isSnapped ? resolvedDown.snap.kind : null;
+      const snapKind = resolvedDown.snap.isSnapped
+        ? resolvedDown.snap.kind
+        : null;
       const joinKind =
         snapKind === "node" || snapKind === "edge" ? snapKind : null;
       const joinHit =
@@ -7856,9 +7920,11 @@ export default function Canvas() {
             pointIndex: 0,
             pointWorld: worldForTool,
             snapped: resolvedDown.snap.isSnapped ?? false,
-            snapKind: resolvedDown.snap.isSnapped ? resolvedDown.snap.kind : null,
+            snapKind: resolvedDown.snap.isSnapped
+              ? resolvedDown.snap.kind
+              : null,
             snapFigureId: resolvedDown.snap.isSnapped
-              ? resolvedDown.snap.figureId ?? null
+              ? (resolvedDown.snap.figureId ?? null)
               : null,
           },
         });
@@ -7884,7 +7950,9 @@ export default function Canvas() {
 
       const typedLockCm = commitSegmentLengthInputNow();
       const segmentLockPx =
-        typedLockCm != null ? typedLockCm * PX_PER_CM : getSegmentLengthLockPx();
+        typedLockCm != null
+          ? typedLockCm * PX_PER_CM
+          : getSegmentLengthLockPx();
 
       // Allow closing even with magnetJoin enabled when clicking on the first point
       // of the current figure (self-close). This makes sense UX-wise because the user
@@ -7894,11 +7962,11 @@ export default function Canvas() {
         canClose && dist(placedWorld, first) <= closeTolWorld;
 
       if (isCloseClick) {
-        const finalized = makeCurveFromPoints(pts, true, "aci7");
+        const finalized = withActiveStroke(
+          makeCurveFromPoints(pts, true, activeStrokeColor)
+        );
         if (finalized) {
-          const hits = curveDraft.joinHits.filter(
-            (h): h is JoinHit => !!h
-          );
+          const hits = curveDraft.joinHits.filter((h): h is JoinHit => !!h);
           addFigureWithOptionalMerge(finalized, hits);
         }
         setCurveDraft(null);
@@ -7907,7 +7975,11 @@ export default function Canvas() {
       }
 
       if (last && segmentLockPx != null) {
-        placedWorld = constrainPointToDistance(last, placedWorld, segmentLockPx);
+        placedWorld = constrainPointToDistance(
+          last,
+          placedWorld,
+          segmentLockPx
+        );
       }
 
       if (last && dist(placedWorld, last) < 0.5) {
@@ -7929,7 +8001,7 @@ export default function Canvas() {
               pointsWorld: [placedWorld],
               currentWorld: placedWorld,
               joinHits: [joinHit],
-          }
+            }
       );
       sendDebugLog({
         type: "draw-point",
@@ -7940,7 +8012,7 @@ export default function Canvas() {
           snapped: resolvedDown.snap.isSnapped ?? false,
           snapKind: resolvedDown.snap.isSnapped ? resolvedDown.snap.kind : null,
           snapFigureId: resolvedDown.snap.isSnapped
-            ? resolvedDown.snap.figureId ?? null
+            ? (resolvedDown.snap.figureId ?? null)
             : null,
         },
       });
@@ -7956,7 +8028,9 @@ export default function Canvas() {
 
       const joinTolWorld =
         Math.max(6, Math.max(12, measureSnapStrengthPx) * 0.5) / scale;
-      const snapKind = resolvedDown.snap.isSnapped ? resolvedDown.snap.kind : null;
+      const snapKind = resolvedDown.snap.isSnapped
+        ? resolvedDown.snap.kind
+        : null;
       const joinKind =
         snapKind === "node" || snapKind === "edge" ? snapKind : null;
       const joinHit =
@@ -7989,9 +8063,11 @@ export default function Canvas() {
             pointIndex: 0,
             pointWorld: worldForTool,
             snapped: resolvedDown.snap.isSnapped ?? false,
-            snapKind: resolvedDown.snap.isSnapped ? resolvedDown.snap.kind : null,
+            snapKind: resolvedDown.snap.isSnapped
+              ? resolvedDown.snap.kind
+              : null,
             snapFigureId: resolvedDown.snap.isSnapped
-              ? resolvedDown.snap.figureId ?? null
+              ? (resolvedDown.snap.figureId ?? null)
               : null,
           },
         });
@@ -8027,7 +8103,9 @@ export default function Canvas() {
 
       const typedLockCm = commitSegmentLengthInputNow();
       const segmentLockPx =
-        typedLockCm != null ? typedLockCm * PX_PER_CM : getSegmentLengthLockPx();
+        typedLockCm != null
+          ? typedLockCm * PX_PER_CM
+          : getSegmentLengthLockPx();
 
       // Allow closing even with magnetJoin enabled when clicking on the first point
       // of the current figure (self-close). This makes sense UX-wise because the user
@@ -8046,7 +8124,11 @@ export default function Canvas() {
           !resolvedDown.snap.isSnapped && e.evt.altKey && pts.length === 1
             ? segmentLockPx * 0.5
             : segmentLockPx;
-        placedWorld = constrainPointToDistance(last, placedWorld, lockDistancePx);
+        placedWorld = constrainPointToDistance(
+          last,
+          placedWorld,
+          lockDistancePx
+        );
       }
 
       if (!resolvedDown.snap.isSnapped && e.evt.altKey && pts.length === 1) {
@@ -8144,7 +8226,7 @@ export default function Canvas() {
           snapped: resolvedDown.snap.isSnapped ?? false,
           snapKind: resolvedDown.snap.isSnapped ? resolvedDown.snap.kind : null,
           snapFigureId: resolvedDown.snap.isSnapped
-            ? resolvedDown.snap.figureId ?? null
+            ? (resolvedDown.snap.figureId ?? null)
             : null,
         },
       });
@@ -8352,7 +8434,8 @@ export default function Canvas() {
         baseCandidate && isFigureEligibleForOffsetTool(baseCandidate)
           ? baseIdCandidate
           : null;
-      let nextHoveredHemNode: { figureId: string; nodeId: string } | null = null;
+      let nextHoveredHemNode: { figureId: string; nodeId: string } | null =
+        null;
 
       setHoveredHemBaseId((prev) => (prev === baseId ? prev : baseId));
 
@@ -9134,10 +9217,12 @@ export default function Canvas() {
       }
 
       if (finalizedPoints.length >= 2) {
-        const fig = makePolylineLineFigure(
-          finalizedPoints,
-          shouldClose,
-          "aci7"
+        const fig = withActiveStroke(
+          makePolylineLineFigure(
+            finalizedPoints,
+            shouldClose,
+            activeStrokeColor
+          )
         );
         if (fig) addFigureWithOptionalMerge(fig, []);
       }
@@ -9159,13 +9244,17 @@ export default function Canvas() {
     }
 
     if (draft.tool === "rectangle") {
-      addFigureWithOptionalMerge(makeRectFigure(a, b, "aci7"));
+      addFigureWithOptionalMerge(
+        withActiveStroke(makeRectFigure(a, b, activeStrokeColor))!
+      );
     }
     if (draft.tool === "circle") {
       const center: Vec2 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const rx = Math.abs(b.x - a.x) / 2;
       const ry = Math.abs(b.y - a.y) / 2;
-      addFigureWithOptionalMerge(makeEllipseFigure(center, rx, ry, "aci7"));
+      addFigureWithOptionalMerge(
+        withActiveStroke(makeEllipseFigure(center, rx, ry, activeStrokeColor))!
+      );
     }
 
     setDraft(null);
@@ -9240,7 +9329,14 @@ export default function Canvas() {
         listening={false}
       />
     );
-  }, [magnetEnabled, magnetJoinEnabled, magnetSnap, previewStroke, scale, tool]);
+  }, [
+    magnetEnabled,
+    magnetJoinEnabled,
+    magnetSnap,
+    previewStroke,
+    scale,
+    tool,
+  ]);
 
   const segmentLengthBadgeLabel = useMemo(() => {
     const hasSegmentDraft =
@@ -9355,14 +9451,20 @@ export default function Canvas() {
           return;
         }
 
-        if (evt.key === "Enter" && segmentLengthInputRawRef.current.trim().length) {
+        if (
+          evt.key === "Enter" &&
+          segmentLengthInputRawRef.current.trim().length
+        ) {
           evt.preventDefault();
           evt.stopPropagation();
           void commitSegmentLengthInputNow();
           return;
         }
 
-        if (evt.key === "Backspace" && segmentLengthInputRawRef.current.length > 0) {
+        if (
+          evt.key === "Backspace" &&
+          segmentLengthInputRawRef.current.length > 0
+        ) {
           evt.preventDefault();
           evt.stopPropagation();
           const nextRaw = segmentLengthInputRawRef.current.slice(0, -1);
@@ -9452,11 +9554,11 @@ export default function Canvas() {
             return;
           }
 
-          const finalized = makeCurveFromPoints(pts, false, "aci7");
+          const finalized = withActiveStroke(
+            makeCurveFromPoints(pts, false, activeStrokeColor)
+          );
           if (finalized) {
-            const hits = curveDraft.joinHits.filter(
-              (h): h is JoinHit => !!h
-            );
+            const hits = curveDraft.joinHits.filter((h): h is JoinHit => !!h);
             sendDebugLog({
               type: "draw-finalize",
               payload: {
@@ -9504,6 +9606,7 @@ export default function Canvas() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     addFigureWithOptionalMerge,
+    activeStrokeColor,
     clearSegmentLengthApplyTimer,
     clearSegmentLengthConstraint,
     clearMoldExtractionState,
@@ -9518,6 +9621,7 @@ export default function Canvas() {
     scale,
     setSegmentLengthInputRawState,
     tool,
+    withActiveStroke,
   ]);
 
   const pageGuides = useMemo(() => {
@@ -10294,8 +10398,7 @@ export default function Canvas() {
 
                       if (
                         nodeMergePreviewRef.current &&
-                        nodeMergePreviewRef.current.figureId ===
-                          ref.figureId &&
+                        nodeMergePreviewRef.current.figureId === ref.figureId &&
                         nodeMergePreviewRef.current.fromNodeId === ref.nodeId
                       ) {
                         queueNodeMergePreview(null);
@@ -12057,11 +12160,15 @@ export default function Canvas() {
                   ? HEM_STROKE
                   : isSeamAllowanceFigure(fig)
                     ? SEAM_ALLOWANCE_STROKE
-                  : isSelected
-                    ? "#2563eb"
-                    : isHoverFigure
-                    ? "#3b82f6"
-                    : resolveStrokeColor(fig.stroke, isDark);
+                    : isSelected
+                      ? "#2563eb"
+                      : isHoverFigure
+                        ? "#3b82f6"
+                        : resolveStrokeColor(
+                            fig.stroke,
+                            isDark,
+                            fig.strokeMode
+                          );
               const hasSelectedEdge =
                 !!selectedEdge && selectedEdge.figureId === baseId;
               const dimFactor = hasSelectedEdge ? (isSeam ? 0.5 : 0.25) : 1;
@@ -12570,15 +12677,15 @@ export default function Canvas() {
 
                       if (isRemoveIntent) {
                         if (existingSeam) {
-                              setFigures((prev) =>
-                                prev.filter(
-                                  (f) =>
-                                    !(
-                                      isSeamAllowanceFigure(f) &&
-                                      f.parentId === baseId
-                                    )
+                          setFigures((prev) =>
+                            prev.filter(
+                              (f) =>
+                                !(
+                                  isSeamAllowanceFigure(f) &&
+                                  f.parentId === baseId
                                 )
-                              );
+                            )
+                          );
                         }
                         return;
                       }
@@ -12799,7 +12906,11 @@ export default function Canvas() {
                         <Line
                           points={segment}
                           closed={true}
-                          fill={isDark ? "rgba(251,191,36,0.18)" : "rgba(217,119,6,0.16)"}
+                          fill={
+                            isDark
+                              ? "rgba(251,191,36,0.18)"
+                              : "rgba(217,119,6,0.16)"
+                          }
                           strokeEnabled={false}
                           listening={false}
                           name="inaa-hem-preview-fill"
@@ -12841,7 +12952,8 @@ export default function Canvas() {
                     if (!figure || !nodeIds.length) return null;
 
                     return nodeIds.map((nodeId, index) => {
-                      const node = figure.nodes.find((n) => n.id === nodeId) ?? null;
+                      const node =
+                        figure.nodes.find((n) => n.id === nodeId) ?? null;
                       if (!node) return null;
                       const worldNode = figureLocalToWorld(figure, {
                         x: node.x,
@@ -12867,7 +12979,8 @@ export default function Canvas() {
 
             {tool === "hem" && hoveredHemNode
               ? (() => {
-                  const figure = figuresById.get(hoveredHemNode.figureId) ?? null;
+                  const figure =
+                    figuresById.get(hoveredHemNode.figureId) ?? null;
                   const node =
                     figure?.nodes.find((n) => n.id === hoveredHemNode.nodeId) ??
                     null;

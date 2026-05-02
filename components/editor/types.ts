@@ -148,6 +148,7 @@ export interface FigureEdge {
   from: string;
   to: string;
   kind: EdgeKind;
+  stroke?: string;
 }
 
 export interface FigureDart {
@@ -277,6 +278,7 @@ export interface Figure {
 
   // Style
   stroke: string;
+  strokeMode?: "auto" | "solid";
   strokeWidth: number;
   fill?: string;
   opacity?: number;

@@ -28,6 +28,13 @@ import { withComputedFigureMeasures } from "./figureMeasures";
 import { figureWorldBoundingBox } from "./figurePath";
 import { figureLocalToWorld } from "./figurePath";
 import { hasClosedLoop } from "./seamFigure";
+import {
+  applyStrokeColorToRecent,
+  DEFAULT_ACTIVE_STROKE_COLOR,
+  isAutoStrokeColor,
+  isProtectedStrokeFigure,
+  normalizeStrokeColor,
+} from "./strokeColor";
 import { isDebugLogEnabled, sendDebugLog } from "@/utils/debugLog";
 
 import { add, len, mul, sub } from "./figureGeometry";
@@ -171,6 +178,12 @@ interface EditorContextType {
   selectedEdge: SelectedEdge;
   setSelectedEdge: (edge: SelectedEdge) => void;
 
+  activeStrokeColor: string;
+  setActiveStrokeColor: (color: string) => void;
+  recentStrokeColors: string[];
+  commitStrokeColor: (color: string) => void;
+  applyStrokeColorToSelection: (color: string) => boolean;
+
   // Per-edge anchor preference (session memory)
   getEdgeAnchorPreference: (
     figureId: string,
@@ -305,6 +318,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   }>({ shift: false, alt: false, meta: false, ctrl: false });
   const [selectedFigureIds, setSelectedFigureIdsState] = useState<string[]>([]);
   const [selectedEdge, setSelectedEdge] = useState<SelectedEdge>(null);
+  const [activeStrokeColor, setActiveStrokeColorState] = useState(
+    DEFAULT_ACTIVE_STROKE_COLOR
+  );
+  const [recentStrokeColors, setRecentStrokeColors] = useState<string[]>([]);
 
   const setReadOnly = useCallback((next: boolean) => {
     setReadOnlyState(next);
@@ -348,6 +365,67 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       // ignore
     }
   }, []);
+
+  React.useEffect(() => {
+    try {
+      const rawActive = localStorage.getItem("inaa:strokeColor.active");
+      const active = rawActive ? normalizeStrokeColor(rawActive) : null;
+      if (active) setActiveStrokeColorState(active);
+
+      const rawRecent = localStorage.getItem("inaa:strokeColor.recent");
+      if (rawRecent) {
+        const parsed = JSON.parse(rawRecent);
+        if (Array.isArray(parsed)) {
+          const next: string[] = [];
+          for (const item of parsed) {
+            if (typeof item !== "string") continue;
+            const normalized = normalizeStrokeColor(item);
+            if (!normalized || isAutoStrokeColor(normalized)) continue;
+            if (next.includes(normalized)) continue;
+            next.push(normalized);
+            if (next.length >= 10) break;
+          }
+          setRecentStrokeColors(next);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const setActiveStrokeColor = useCallback((color: string) => {
+    const normalized = normalizeStrokeColor(color);
+    if (!normalized) return;
+    setActiveStrokeColorState(normalized);
+    try {
+      localStorage.setItem("inaa:strokeColor.active", normalized);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const rememberRecentStrokeColor = useCallback((color: string) => {
+    if (isAutoStrokeColor(color)) return;
+    setRecentStrokeColors((prev) => {
+      const next = applyStrokeColorToRecent(prev, color);
+      try {
+        localStorage.setItem("inaa:strokeColor.recent", JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  const commitStrokeColor = useCallback(
+    (color: string) => {
+      const normalized = normalizeStrokeColor(color);
+      if (!normalized) return;
+      setActiveStrokeColor(normalized);
+      rememberRecentStrokeColor(normalized);
+    },
+    [rememberRecentStrokeColor, setActiveStrokeColor]
+  );
 
   type ClipboardPayload = {
     figures: Figure[];
@@ -910,6 +988,95 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setSelectedEdge(null);
   }, []);
 
+  const applyStrokeColorToSelection = useCallback(
+    (color: string): boolean => {
+      const normalized = normalizeStrokeColor(color);
+      if (!normalized) return false;
+
+      commitStrokeColor(normalized);
+      if (readOnly) return false;
+
+      if (selectedEdge) {
+        const figure = (figures ?? []).find(
+          (f) => f.id === selectedEdge.figureId
+        );
+        if (!figure || isProtectedStrokeFigure(figure)) return false;
+        const edge = figure.edges.find((e) => e.id === selectedEdge.edgeId);
+        if (!edge) return false;
+
+        const nextEdges = figure.edges.map((e) => {
+          if (e.id !== selectedEdge.edgeId) return e;
+          if (isAutoStrokeColor(normalized)) {
+            if (!e.stroke) return e;
+            const nextEdge = { ...e };
+            delete nextEdge.stroke;
+            return nextEdge;
+          }
+          return e.stroke === normalized ? e : { ...e, stroke: normalized };
+        });
+
+        if (
+          nextEdges.every((edgeItem, index) => edgeItem === figure.edges[index])
+        ) {
+          return false;
+        }
+
+        setFigures((prev) =>
+          prev.map((f) => (f.id === figure.id ? { ...f, edges: nextEdges } : f))
+        );
+        return true;
+      }
+
+      const ids = new Set(selectedFigureIds);
+      if (!ids.size) return false;
+
+      let changed = false;
+      const nextFigures = (figures ?? []).map((figure) => {
+        if (!ids.has(figure.id)) return figure;
+        if (isProtectedStrokeFigure(figure)) return figure;
+
+        const nextEdges = figure.edges.map((edge) => {
+          if (!edge.stroke) return edge;
+          const nextEdge = { ...edge };
+          delete nextEdge.stroke;
+          return nextEdge;
+        });
+        const nextStrokeMode: Figure["strokeMode"] = isAutoStrokeColor(
+          normalized
+        )
+          ? "auto"
+          : "solid";
+        const nextStroke = normalized;
+        const edgesChanged = nextEdges.some(
+          (edge, index) => edge !== figure.edges[index]
+        );
+        const strokeChanged =
+          figure.stroke !== nextStroke || figure.strokeMode !== nextStrokeMode;
+
+        if (!edgesChanged && !strokeChanged) return figure;
+        changed = true;
+        return {
+          ...figure,
+          stroke: nextStroke,
+          strokeMode: nextStrokeMode,
+          edges: nextEdges,
+        };
+      });
+
+      if (!changed) return false;
+      setFigures(nextFigures);
+      return true;
+    },
+    [
+      commitStrokeColor,
+      figures,
+      readOnly,
+      selectedEdge,
+      selectedFigureIds,
+      setFigures,
+    ]
+  );
+
   const canCopy = useMemo(() => {
     return selectedFigureIds.length > 0 || Boolean(selectedEdge);
   }, [selectedEdge, selectedFigureIds.length]);
@@ -1176,6 +1343,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       y: f.y,
       rotation: f.rotation || 0,
       closed: f.closed,
+      stroke: f.stroke,
+      strokeMode: f.strokeMode,
+      strokeWidth: f.strokeWidth,
       offsetCm: f.offsetCm,
       hemMeta: f.hemMeta,
       seamSegments: f.seamSegments,
@@ -1220,6 +1390,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         from: e.from,
         to: e.to,
         kind: e.kind,
+        stroke: e.stroke,
       })),
     });
 
@@ -1243,6 +1414,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         guidesCount: guides.length,
         projectId,
         projectName,
+        activeStrokeColor,
+        recentStrokeColors,
       }),
       getPosition: () => position,
       getScale: () => scale,
@@ -1330,6 +1503,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     };
   }, [
     figures,
+    activeStrokeColor,
     gridContrast,
     magnetEnabled,
     magnetJoinEnabled,
@@ -1342,6 +1516,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     position,
     projectId,
     projectName,
+    recentStrokeColors,
     scale,
     selectedFigureId,
     selectedFigureIds,
@@ -1473,6 +1648,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
         selectedEdge,
         setSelectedEdge,
+        activeStrokeColor,
+        setActiveStrokeColor,
+        recentStrokeColors,
+        commitStrokeColor,
+        applyStrokeColorToSelection,
         getEdgeAnchorPreference,
         setEdgeAnchorPreference,
         deleteSelected,

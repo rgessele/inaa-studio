@@ -28,6 +28,7 @@ import {
 } from "./figureGeometry";
 import { formatCm, pxToCm } from "./measureUnits";
 import { hasClosedLoop } from "./seamFigure";
+import { resolveStrokeColor as resolveEditorStrokeColor } from "./strokeColor";
 
 export type {
   ExportSettings,
@@ -786,6 +787,12 @@ export async function generateTiledPDF(
         return;
       }
 
+      const isTechnicalStrokeFigure = figure.kind === "seam";
+      const figureStroke = isTechnicalStrokeFigure
+        ? "#000000"
+        : resolveEditorStrokeColor(figure.stroke, false, figure.strokeMode);
+      const hasEdgeStrokeOverrides =
+        !isTechnicalStrokeFigure && figure.edges.some((edge) => !!edge.stroke);
       const seamPolylines = seamSegmentWorldPolylines(figure);
       if (seamPolylines.length > 0) {
         for (const poly of seamPolylines) {
@@ -811,6 +818,59 @@ export async function generateTiledPDF(
             })
           );
         }
+      } else if (hasEdgeStrokeOverrides) {
+        const poly = figureWorldPolyline(figure, 60);
+        if (figure.closed && poly.length >= 6) {
+          const shiftedFill: number[] = [];
+          for (let i = 0; i < poly.length; i += 2) {
+            shiftedFill.push(poly[i] - tileX, poly[i + 1] - tileY);
+          }
+          tileLayer.add(
+            new Konva.Line({
+              points: shiftedFill,
+              stroke: "transparent",
+              strokeWidth: 0,
+              closed: true,
+              fill: "transparent",
+              opacity: figure.opacity ?? 1,
+              listening: false,
+              perfectDrawEnabled: false,
+              shadowForStrokeEnabled: false,
+            })
+          );
+        }
+
+        for (const edge of figure.edges) {
+          const edgePts = edgeLocalPoints(
+            figure,
+            edge,
+            edge.kind === "line" ? 2 : 60
+          );
+          if (edgePts.length < 2) continue;
+          const shifted: number[] = [];
+          for (const point of edgePts) {
+            const world = figureLocalToWorld(figure, point);
+            shifted.push(world.x - tileX, world.y - tileY);
+          }
+          tileLayer.add(
+            new Konva.Line({
+              points: shifted,
+              stroke: edge.stroke
+                ? resolveEditorStrokeColor(edge.stroke, false, "solid")
+                : figureStroke,
+              strokeWidth: figure.strokeWidth || 1,
+              closed: false,
+              fill: undefined,
+              opacity: figure.opacity ?? 1,
+              dash: figure.dash,
+              lineCap: "round",
+              lineJoin: "round",
+              perfectDrawEnabled: false,
+              shadowForStrokeEnabled: false,
+              listening: false,
+            })
+          );
+        }
       } else {
         const poly = figureWorldPolyline(figure, 60);
         if (poly.length < 4) return;
@@ -823,7 +883,7 @@ export async function generateTiledPDF(
         tileLayer.add(
           new Konva.Line({
             points: shifted,
-            stroke: "#000000",
+            stroke: figureStroke,
             strokeWidth: figure.strokeWidth || 1,
             closed: figure.closed,
             fill: figure.closed ? "transparent" : undefined,

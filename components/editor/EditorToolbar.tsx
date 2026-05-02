@@ -11,6 +11,7 @@ import React, {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Magnet } from "lucide-react";
 import { useEditor } from "./EditorContext";
+import { StrokeColorPicker } from "./StrokeColorPicker";
 import {
   DrawingTool,
   Tool,
@@ -19,6 +20,7 @@ import {
   type NodesDisplayMode,
   type PointLabelsMode,
 } from "./types";
+import { isProtectedStrokeFigure, strokeColorToSolidHex } from "./strokeColor";
 import { getToolIcon } from "./ToolCursorIcons";
 import {
   createDefaultExportSettings,
@@ -243,9 +245,7 @@ const MEASURE_MODE_OPTIONS: ToolbarModeOption<MeasureDisplayMode>[] = [
     mode: "hover",
     label: "Hover",
     summary: "Figura em foco",
-    details: [
-      "Exibe as medidas da figura em hover e da figura selecionada.",
-    ],
+    details: ["Exibe as medidas da figura em hover e da figura selecionada."],
     renderIcon: (className) => renderMeasureDisplayModeIcon("hover", className),
     testId: "measures-mode-option-hover",
   },
@@ -291,9 +291,7 @@ const POINT_LABELS_MODE_OPTIONS: ToolbarModeOption<PointLabelsMode>[] = [
     mode: "numGlobal",
     label: "Numeração global",
     summary: "1, 2, 3...",
-    details: [
-      "Numera todos os pontos em sequência única no projeto inteiro.",
-    ],
+    details: ["Numera todos os pontos em sequência única no projeto inteiro."],
     renderIcon: (className) =>
       renderPointLabelsModeIcon("numGlobal", className),
     testId: "point-labels-mode-option-numGlobal",
@@ -364,17 +362,24 @@ export function EditorToolbar() {
     magnetJoinEnabled,
     setMagnetJoinEnabled,
     selectedFigureId,
+    selectedFigureIds,
+    selectedEdge,
     deleteSelected,
     canCopy,
     copySelection,
     canPaste,
     paste,
+    activeStrokeColor,
+    recentStrokeColors,
+    applyStrokeColorToSelection,
     lineToolMode,
     setLineToolMode,
   } = useEditor();
   const [showExportModal, setShowExportModal] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
+  const [isStrokeColorOpen, setIsStrokeColorOpen] = useState(false);
+  const strokeColorWrapperRef = useRef<HTMLDivElement | null>(null);
 
   const [exportSettings, setExportSettings] = useState<ExportSettings>(() =>
     createDefaultExportSettings()
@@ -394,6 +399,22 @@ export function EditorToolbar() {
     searchParams.get("embedded") === "1" || searchParams.get("embed") === "1";
   const printOnly = searchParams.get("printOnly") === "1";
   const printOnlyReadOnly = readOnly && printOnly;
+  const isDark = useIsDarkMode();
+  const activeStrokeHex = useMemo(
+    () => strokeColorToSolidHex(activeStrokeColor, isDark),
+    [activeStrokeColor, isDark]
+  );
+  const hasProtectedOnlyStrokeSelection = useMemo(() => {
+    if (selectedEdge) {
+      const figure = figures.find((f) => f.id === selectedEdge.figureId);
+      return Boolean(figure && isProtectedStrokeFigure(figure));
+    }
+    if (!selectedFigureIds.length) return false;
+    const selected = selectedFigureIds
+      .map((id) => figures.find((f) => f.id === id) ?? null)
+      .filter((f): f is NonNullable<typeof f> => Boolean(f));
+    return selected.length > 0 && selected.every(isProtectedStrokeFigure);
+  }, [figures, selectedEdge, selectedFigureIds]);
   const noShapesToExportMessage = useMemo(() => {
     const moldCount = figures.filter((f) => f.kind === "mold").length;
     const printableMoldCount = figures.filter(
@@ -418,7 +439,11 @@ export function EditorToolbar() {
       return "Nenhum molde ativo para impressão. Verifique visibilidade e impressão na lista de moldes.";
     }
 
-    if (!includeConventionalFigures && conventionalCount > 0 && printableMoldCount === 0) {
+    if (
+      !includeConventionalFigures &&
+      conventionalCount > 0 &&
+      printableMoldCount === 0
+    ) {
       return 'Nenhum molde ativo para impressão. Extraia um molde ou ative "Imprimir figuras convencionais".';
     }
 
@@ -442,15 +467,12 @@ export function EditorToolbar() {
     const exportedBaseIds = new Set(
       [...activeMolds, ...conventionalFigures].map((f) => f.id)
     );
-    const seams =
-      includeSeamAllowance
-        ? figures.filter(
-            (f) =>
-              f.kind === "seam" &&
-              !!f.parentId &&
-              exportedBaseIds.has(f.parentId)
-          )
-        : [];
+    const seams = includeSeamAllowance
+      ? figures.filter(
+          (f) =>
+            f.kind === "seam" && !!f.parentId && exportedBaseIds.has(f.parentId)
+        )
+      : [];
 
     return [...activeMolds, ...seams, ...conventionalFigures];
   }, [figures, includeConventionalFigures, includeMolds, includeSeamAllowance]);
@@ -458,6 +480,30 @@ export function EditorToolbar() {
   const urlWantsExportModal = useMemo(() => {
     return searchParams.get("export") === "pdf";
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!isStrokeColorOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (
+        strokeColorWrapperRef.current &&
+        !strokeColorWrapperRef.current.contains(event.target as Node)
+      ) {
+        setIsStrokeColorOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsStrokeColorOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isStrokeColorOpen]);
 
   const isExportModalOpen = showExportModal || urlWantsExportModal;
 
@@ -812,16 +858,16 @@ export function EditorToolbar() {
               <span className="material-symbols-outlined text-[22px]">
                 download
               </span>
-                <ToolbarTooltip
-                  isMac={isMac}
-                  title="Exportar"
-                  expanded={exportTooltip.expanded}
-                  details={[
-                    "Abre as opções de exportação e impressão.",
-                    "Use para gerar o PDF paginado de impressão.",
-                  ]}
-                />
-              </button>
+              <ToolbarTooltip
+                isMac={isMac}
+                title="Exportar"
+                expanded={exportTooltip.expanded}
+                details={[
+                  "Abre as opções de exportação e impressão.",
+                  "Use para gerar o PDF paginado de impressão.",
+                ]}
+              />
+            </button>
 
             <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
 
@@ -946,6 +992,50 @@ export function EditorToolbar() {
                 details={["Apaga a figura selecionada."]}
               />
             </button>
+
+            <div ref={strokeColorWrapperRef} className="relative w-full">
+              <button
+                type="button"
+                data-testid="stroke-color-button"
+                onClick={() => setIsStrokeColorOpen((open) => !open)}
+                disabled={readOnly}
+                className={`group relative w-full aspect-square flex items-center justify-center rounded transition-all ${
+                  readOnly
+                    ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                    : isStrokeColorOpen
+                      ? "bg-primary/10 text-primary border border-primary/20 dark:bg-primary/20 dark:text-primary-light dark:border-primary/40 shadow-sm"
+                      : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+                }`}
+                aria-label="Cor da linha"
+                aria-expanded={isStrokeColorOpen}
+                aria-haspopup="dialog"
+              >
+                <span
+                  className="h-5 w-5 rounded-sm border border-gray-300 shadow-sm dark:border-gray-600"
+                  style={{ backgroundColor: activeStrokeHex }}
+                />
+                <ToolbarTooltip
+                  isMac={isMac}
+                  title="Cor da linha"
+                  expanded={false}
+                  details={["Escolhe a cor das próximas linhas e da seleção."]}
+                />
+              </button>
+
+              {isStrokeColorOpen ? (
+                <div className="absolute left-full top-0 z-[120] ml-2">
+                  <StrokeColorPicker
+                    key={activeStrokeColor}
+                    value={activeStrokeColor}
+                    recentColors={recentStrokeColors}
+                    isDark={isDark}
+                    hasProtectedOnlySelection={hasProtectedOnlyStrokeSelection}
+                    onCommit={applyStrokeColorToSelection}
+                    onCancel={() => setIsStrokeColorOpen(false)}
+                  />
+                </div>
+              ) : null}
+            </div>
 
             <div className="col-span-full h-px w-full bg-gray-200 dark:bg-gray-700 my-1"></div>
 
@@ -2044,7 +2134,11 @@ function LineToolButton({
                   }`}
                 >
                   <span className="flex h-8 w-8 items-center justify-center rounded-md border border-current/15 bg-current/5">
-                    {getToolIcon(option.icon, "toolbar", "w-5 h-5 stroke-current")}
+                    {getToolIcon(
+                      option.icon,
+                      "toolbar",
+                      "w-5 h-5 stroke-current"
+                    )}
                   </span>
                   <span className="flex flex-col">
                     <span className="text-sm font-medium leading-tight">
@@ -2174,4 +2268,20 @@ function useDelayedTooltip(hasDetails: boolean) {
   }, []);
 
   return { expanded, onMouseEnter, onMouseLeave };
+}
+
+function useIsDarkMode() {
+  return useSyncExternalStore(
+    (callback) => {
+      if (typeof document === "undefined") return () => {};
+      const root = document.documentElement;
+      const observer = new MutationObserver(callback);
+      observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+      return () => observer.disconnect();
+    },
+    () =>
+      typeof document !== "undefined" &&
+      document.documentElement.classList.contains("dark"),
+    () => false
+  );
 }

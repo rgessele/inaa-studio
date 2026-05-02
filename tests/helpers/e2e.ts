@@ -83,6 +83,7 @@ declare global {
         snap?: unknown;
         projectId: string | null;
         projectName: string;
+        activeStrokeColor?: string;
       };
       getPosition?: () => { x: number; y: number };
       getScale?: () => number;
@@ -101,6 +102,9 @@ declare global {
         y: number;
         rotation: number;
         closed: boolean;
+        stroke?: string;
+        strokeMode?: "auto" | "solid";
+        strokeWidth?: number;
         offsetCm?: number | Record<string, number>;
         seamSegments?: number[][];
         seamSegmentEdgeIds?: string[];
@@ -135,7 +139,13 @@ declare global {
           inHandle: { x: number; y: number } | null;
           outHandle: { x: number; y: number } | null;
         }>;
-        edges: Array<{ id: string; from: string; to: string; kind: string }>;
+        edges: Array<{
+          id: string;
+          from: string;
+          to: string;
+          kind: string;
+          stroke?: string;
+        }>;
         piques?: Array<{
           id: string;
           edgeId: string;

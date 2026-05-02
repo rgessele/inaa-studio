@@ -137,11 +137,13 @@ function resolveAci7(isDark: boolean): string {
 
 function resolveStrokeColor(
   stroke: string | undefined,
-  isDark: boolean
+  isDark: boolean,
+  mode?: "auto" | "solid"
 ): string {
   if (!stroke) return resolveAci7(isDark);
   const s = stroke.toLowerCase();
   if (s === "aci7") return resolveAci7(isDark);
+  if (mode === "solid") return stroke;
   // Back-compat: older projects defaulted to black; treat that as "auto".
   if (s === "#000" || s === "#000000") return resolveAci7(isDark);
   return stroke;
@@ -298,9 +300,19 @@ const FigureRenderer = ({
   // Compute polyline data. For figures with branches (e.g., merged figures
   // with a line coming off an edge), we need to render edge-by-edge instead
   // of a single polyline.
-  const { pts, contourPts, isSimpleContour, edgeSegments } = React.useMemo(() => {
+  const { pts, contourPts, isSimpleContour, edgeSegments } = React.useMemo<{
+    pts: number[];
+    contourPts: number[];
+    isSimpleContour: boolean;
+    edgeSegments: Array<{ edgeId: string; points: number[] }>;
+  }>(() => {
     if (isTextFigure) {
-      return { pts: [], contourPts: [], isSimpleContour: true, edgeSegments: [] };
+      return {
+        pts: [],
+        contourPts: [],
+        isSimpleContour: true,
+        edgeSegments: [],
+      };
     }
     const polyPts = figureLocalPolyline(figure, 60);
     const outerLoopPts = (() => {
@@ -322,8 +334,9 @@ const FigureRenderer = ({
       degree.set(e.to, (degree.get(e.to) ?? 0) + 1);
     }
     const hasBranch = Array.from(degree.values()).some((d) => d > 2);
-    const degree1Count = Array.from(degree.values()).filter((d) => d === 1)
-      .length;
+    const degree1Count = Array.from(degree.values()).filter(
+      (d) => d === 1
+    ).length;
     const forceSegments =
       figure.tool === "line" && figure.edges.length > 1 && !figure.closed;
     const isOrderedPath = figure.edges.every((edge, idx) => {
@@ -336,8 +349,7 @@ const FigureRenderer = ({
       degree1Count === 0 &&
       isOrderedPath &&
       figure.edges.length > 1 &&
-      figure.edges[figure.edges.length - 1].to ===
-        figure.edges[0].from;
+      figure.edges[figure.edges.length - 1].to === figure.edges[0].from;
 
     if (!forceSegments && !hasBranch && (isOrderedOpen || isOrderedClosed)) {
       return {
@@ -349,15 +361,19 @@ const FigureRenderer = ({
     }
 
     // Figure has branches - render each edge separately
-    const segments: number[][] = [];
+    const segments: Array<{ edgeId: string; points: number[] }> = [];
     for (const edge of figure.edges) {
-      const edgePts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 2 : 60);
+      const edgePts = edgeLocalPoints(
+        figure,
+        edge,
+        edge.kind === "line" ? 2 : 60
+      );
       if (edgePts.length >= 2) {
         const flat: number[] = [];
         for (const p of edgePts) {
           flat.push(p.x, p.y);
         }
-        segments.push(flat);
+        segments.push({ edgeId: edge.id, points: flat });
       }
     }
     return {
@@ -373,8 +389,7 @@ const FigureRenderer = ({
   const pointLabelFontSize = 15 / scale;
   const pointLabelOffsetDist = 14 / scale;
 
-  const figureName =
-    figure.kind === "seam" ? "" : (figure.name ?? "").trim();
+  const figureName = figure.kind === "seam" ? "" : (figure.name ?? "").trim();
   const nameFontSizePx = (() => {
     const v = figure.nameFontSizePx;
     if (!Number.isFinite(v ?? NaN)) return 24;
@@ -496,6 +511,42 @@ const FigureRenderer = ({
 
   const handleSize = 10 / scale;
   const handleGap = 6 / scale;
+  const hasEdgeStrokeOverrides = figure.edges.some((edge) => !!edge.stroke);
+
+  const renderEdgeStrokeLines = React.useCallback(() => {
+    return figure.edges.map((edge) => {
+      const edgePts = edgeLocalPoints(
+        figure,
+        edge,
+        edge.kind === "line" ? 2 : 60
+      );
+      if (edgePts.length < 2) return null;
+      const flat: number[] = [];
+      for (const p of edgePts) flat.push(p.x, p.y);
+      return (
+        <Line
+          key={`edge-stroke:${figure.id}:${edge.id}`}
+          points={flat}
+          stroke={resolveStrokeColor(
+            edge.stroke ?? figure.stroke,
+            isDark,
+            edge.stroke ? "solid" : figure.strokeMode
+          )}
+          strokeWidth={strokeWidth}
+          fill={"transparent"}
+          fillEnabled={false}
+          closed={false}
+          dash={dash}
+          lineCap="round"
+          lineJoin="round"
+          hitStrokeWidth={hitStrokeWidth}
+          perfectDrawEnabled={false}
+          shadowForStrokeEnabled={false}
+          listening={listening}
+        />
+      );
+    });
+  }, [dash, figure, hitStrokeWidth, isDark, listening, strokeWidth]);
 
   const textValue = (figure.textValue ?? "").toString();
   const textFontSizePx = (() => {
@@ -507,7 +558,9 @@ const FigureRenderer = ({
     figure.textFontFamily ??
     "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
   const textAlign = figure.textAlign ?? "left";
-  const textFill = figure.textFill ?? resolveStrokeColor(figure.stroke, isDark);
+  const textFill =
+    figure.textFill ??
+    resolveStrokeColor(figure.stroke, isDark, figure.strokeMode);
   const textLineHeight = (() => {
     const v = figure.textLineHeight;
     if (!Number.isFinite(v ?? NaN)) return 1.25;
@@ -664,7 +717,28 @@ const FigureRenderer = ({
           })
         : null}
 
-      {figure.kind === "seam" && figure.seamSegments?.length ? (
+      {figure.kind !== "seam" && hasEdgeStrokeOverrides ? (
+        <>
+          {figure.closed &&
+          contourPts.length >= 6 &&
+          hasVisibleFill(figure.fill) ? (
+            <Line
+              points={contourPts}
+              strokeWidth={0}
+              stroke={"transparent"}
+              strokeEnabled={false}
+              fill={figure.fill ?? "transparent"}
+              fillEnabled={hitFillEnabled}
+              closed={true}
+              listening={false}
+              perfectDrawEnabled={false}
+              shadowForStrokeEnabled={false}
+              name="inaa-fill-edge-strokes"
+            />
+          ) : null}
+          {renderEdgeStrokeLines()}
+        </>
+      ) : figure.kind === "seam" && figure.seamSegments?.length ? (
         figure.seamSegments.map((segment, idx) => (
           <Line
             key={`seam-seg:${figure.id}:${idx}`}
@@ -704,24 +778,31 @@ const FigureRenderer = ({
           ) : null}
 
           {/* Render edge-by-edge for branched/unordered figures */}
-          {edgeSegments.map((segment, idx) => (
-            <Line
-              key={`edge-seg:${figure.id}:${idx}`}
-              points={segment}
-              stroke={stroke}
-              strokeWidth={strokeWidth}
-              fill={"transparent"}
-              fillEnabled={false}
-              closed={false}
-              dash={dash}
-              lineCap="round"
-              lineJoin="round"
-              hitStrokeWidth={hitStrokeWidth}
-              perfectDrawEnabled={false}
-              shadowForStrokeEnabled={false}
-              listening={listening}
-            />
-          ))}
+          {edgeSegments.map((segment, idx) => {
+            const edge = figure.edges.find((e) => e.id === segment.edgeId);
+            return (
+              <Line
+                key={`edge-seg:${figure.id}:${idx}`}
+                points={segment.points}
+                stroke={
+                  edge?.stroke
+                    ? resolveStrokeColor(edge.stroke, isDark, "solid")
+                    : stroke
+                }
+                strokeWidth={strokeWidth}
+                fill={"transparent"}
+                fillEnabled={false}
+                closed={false}
+                dash={dash}
+                lineCap="round"
+                lineJoin="round"
+                hitStrokeWidth={hitStrokeWidth}
+                perfectDrawEnabled={false}
+                shadowForStrokeEnabled={false}
+                listening={listening}
+              />
+            );
+          })}
         </>
       ) : (
         <Line
