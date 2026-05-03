@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { ImportProjectsButton } from "@/components/dashboard/ImportProjectsButton";
 import { NewProjectButton } from "@/components/dashboard/NewProjectButton";
 import { ThemeToggleButton } from "@/components/dashboard/ThemeToggleButton";
 import { DashboardClient } from "@/components/dashboard/DashboardClient";
@@ -19,6 +20,12 @@ export default async function DashboardPage() {
 
   if (!user) {
     redirect("/login");
+  }
+
+  try {
+    await supabase.rpc("ensure_bootstrap_admin");
+  } catch {
+    // Ignore if RPC doesn't exist yet.
   }
 
   const { data: profile } = await supabase
@@ -173,10 +180,19 @@ export default async function DashboardPage() {
             </p>
           </div>
 
-          <NewProjectButton className="bg-primary hover:bg-primary-hover text-white px-5 py-2.5 rounded-lg shadow-lg shadow-black/20 dark:shadow-black/40 flex items-center gap-2 font-medium transition-all transform hover:-translate-y-0.5">
-            <span className="material-symbols-outlined text-[22px]">add</span>
-            Novo Projeto
-          </NewProjectButton>
+          <div className="flex flex-wrap items-center gap-3">
+            {isAdmin ? (
+              <ImportProjectsButton className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-5 py-2.5 font-medium text-gray-900 shadow-lg shadow-black/5 transition-all hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-600 dark:bg-surface-dark dark:text-gray-100 dark:shadow-black/20 dark:hover:border-gray-500 dark:hover:bg-gray-800">
+                <span className="material-symbols-outlined text-[22px]">upload_file</span>
+                Importar
+              </ImportProjectsButton>
+            ) : null}
+
+            <NewProjectButton className="bg-primary hover:bg-primary-hover text-white px-5 py-2.5 rounded-lg shadow-lg shadow-black/20 dark:shadow-black/40 flex items-center gap-2 font-medium transition-all transform hover:-translate-y-0.5">
+              <span className="material-symbols-outlined text-[22px]">add</span>
+              Novo Projeto
+            </NewProjectButton>
+          </div>
         </div>
 
         {error ? (
