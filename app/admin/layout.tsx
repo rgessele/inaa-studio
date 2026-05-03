@@ -59,7 +59,7 @@ export default async function AdminLayout({
   const navLink = (href: string, label: string) => (
     <Link
       href={href}
-      className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-200 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
+      className="whitespace-nowrap px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-200 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
     >
       {label}
     </Link>
@@ -101,13 +101,13 @@ export default async function AdminLayout({
             <div className="flex items-center gap-4">
               <Link
                 href="/dashboard"
-                className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-200 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
+                className="hidden sm:inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-200 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
                 title="Ir para o Dashboard"
+                aria-label="Ir para o Dashboard"
               >
                 <span className="material-symbols-outlined text-[18px]">
                   dashboard
                 </span>
-                Dashboard
               </Link>
               <NotificationBell />
               <SupportHelpButton />
@@ -154,7 +154,16 @@ export default async function AdminLayout({
             {navLink("/admin/users", "Usuários")}
             {navLink("/admin/notifications", "Notificações")}
             {navLink("/admin/settings", "Configurações")}
-            {navLink("/dashboard", "Dashboard")}
+            <Link
+              href="/dashboard"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-700 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-200 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
+              title="Ir para o Dashboard"
+              aria-label="Ir para o Dashboard"
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                dashboard
+              </span>
+            </Link>
           </div>
         </div>
       </nav>
