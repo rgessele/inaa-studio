@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { InlineSpinner } from "@/components/InlineSpinner";
 
 interface SaveProjectModalProps {
   isOpen: boolean;
@@ -98,10 +99,11 @@ export function SaveProjectModal({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={!projectName.trim() || isSaving}
             >
-              {isSaving ? "Salvando..." : confirmLabel}
+              {isSaving ? <InlineSpinner className="h-4 w-4" /> : null}
+              <span>{isSaving ? "Salvando..." : confirmLabel}</span>
             </button>
           </div>
         </form>

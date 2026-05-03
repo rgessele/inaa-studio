@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { InlineSpinner } from "@/components/InlineSpinner";
 
 type ConfirmModalSubmitButtonProps = {
   idleText: string;
@@ -47,9 +48,10 @@ export function ConfirmModalSubmitButton({
           setOpen(true);
         }}
         disabled={submitting}
-        className={`${className} disabled:opacity-60 disabled:cursor-not-allowed`}
+        className={`inline-flex items-center justify-center gap-2 ${className} disabled:opacity-60 disabled:cursor-not-allowed`}
       >
-        {submitting ? pendingText : idleText}
+        {submitting ? <InlineSpinner className="h-4 w-4" /> : null}
+        <span>{submitting ? pendingText : idleText}</span>
       </button>
 
       {open ? (
@@ -82,9 +84,10 @@ export function ConfirmModalSubmitButton({
                   setSubmitting(true);
                   formRef.current.requestSubmit();
                 }}
-                className={`${confirmButtonClassName ?? "h-9 px-3 rounded-md bg-red-600 hover:bg-red-700 text-white text-sm"} disabled:opacity-60 disabled:cursor-not-allowed`}
+                className={`inline-flex items-center justify-center gap-2 ${confirmButtonClassName ?? "h-9 px-3 rounded-md bg-red-600 hover:bg-red-700 text-white text-sm"} disabled:opacity-60 disabled:cursor-not-allowed`}
               >
-                {submitting ? pendingText : "Confirmar"}
+                {submitting ? <InlineSpinner className="h-4 w-4" /> : null}
+                <span>{submitting ? pendingText : "Confirmar"}</span>
               </button>
             </div>
           </div>

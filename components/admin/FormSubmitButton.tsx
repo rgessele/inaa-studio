@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useFormStatus } from "react-dom";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 
 type FormSubmitButtonProps = {
   idleText: string;
@@ -14,16 +14,11 @@ export function FormSubmitButton({
   pendingText,
   className,
 }: FormSubmitButtonProps) {
-  const { pending } = useFormStatus();
-
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      aria-busy={pending}
-      className={`${className} disabled:opacity-60 disabled:cursor-not-allowed`}
-    >
-      {pending ? pendingText : idleText}
-    </button>
+    <PendingSubmitButton
+      idleText={idleText}
+      pendingText={pendingText}
+      className={className}
+    />
   );
 }

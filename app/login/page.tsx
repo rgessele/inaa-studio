@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { loginWithPassword } from "@/app/login/actions";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { LoginToasts } from "@/components/auth/LoginToasts";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -73,12 +74,11 @@ export default async function LoginPage({
               />
             </div>
 
-            <button
-              type="submit"
-              className="w-full rounded-md bg-primary px-4 py-2 text-white hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-offset-2 focus:ring-offset-surface-light dark:focus:ring-offset-surface-dark disabled:opacity-50"
-            >
-              Entrar
-            </button>
+            <PendingSubmitButton
+              idleText="Entrar"
+              pendingText="Entrando..."
+              className="w-full rounded-md bg-primary px-4 py-2 text-white hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-offset-2 focus:ring-offset-surface-light dark:focus:ring-offset-surface-dark"
+            />
           </form>
 
           <div className="mt-4 flex items-center justify-between text-sm">

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { InlineSpinner } from "@/components/InlineSpinner";
 import { toast } from "@/utils/toast";
 
 export function ResetPasswordClient() {
@@ -13,8 +14,10 @@ export function ResetPasswordClient() {
 
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isNavigating, startNavigationTransition] = useTransition();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const isBusy = loading || isNavigating;
 
   useEffect(() => {
     const run = async () => {
@@ -41,6 +44,7 @@ export function ResetPasswordClient() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isBusy) return;
 
     if (!password || password.length < 8) {
       toast("A senha deve ter pelo menos 8 caracteres.", "error");
@@ -61,8 +65,10 @@ export function ResetPasswordClient() {
       }
 
       toast("Senha atualizada com sucesso.", "success");
-      router.push("/dashboard");
-      router.refresh();
+      startNavigationTransition(() => {
+        router.push("/dashboard");
+        router.refresh();
+      });
     } catch {
       toast("Não foi possível atualizar a senha.", "error");
     } finally {
@@ -93,7 +99,7 @@ export function ResetPasswordClient() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                disabled={loading}
+                disabled={isBusy}
                 className="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-surface-dark px-3 py-2 shadow-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:border-gray-500 dark:focus:ring-gray-700"
                 placeholder="••••••••"
               />
@@ -108,7 +114,7 @@ export function ResetPasswordClient() {
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 required
-                disabled={loading}
+                disabled={isBusy}
                 className="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-surface-dark px-3 py-2 shadow-sm focus:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:border-gray-500 dark:focus:ring-gray-700"
                 placeholder="••••••••"
               />
@@ -116,10 +122,11 @@ export function ResetPasswordClient() {
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full rounded-md bg-primary px-4 py-2 text-white hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-offset-2 focus:ring-offset-surface-light dark:focus:ring-offset-surface-dark disabled:opacity-50"
+              disabled={isBusy}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-white hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-offset-2 focus:ring-offset-surface-light dark:focus:ring-offset-surface-dark disabled:opacity-50"
             >
-              {loading ? "Salvando..." : "Salvar senha"}
+              {isBusy ? <InlineSpinner className="h-4 w-4" /> : null}
+              <span>{isBusy ? "Salvando..." : "Salvar senha"}</span>
             </button>
           </form>
         )}

@@ -1,8 +1,15 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { InlineSpinner } from "@/components/InlineSpinner";
 import { createClient } from "@/lib/supabase/client";
 import {
   getPaperDimensionsCm,
@@ -25,6 +32,7 @@ export function NewProjectButton({
   const [open, setOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isOpeningProject, startOpeningProjectTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState("");
@@ -39,6 +47,7 @@ export function NewProjectButton({
     if (!coverFile) return null;
     return URL.createObjectURL(coverFile);
   }, [coverFile]);
+  const isBusy = isSubmitting || isOpeningProject;
 
   useEffect(() => {
     setIsClient(true);
@@ -79,7 +88,7 @@ export function NewProjectButton({
   };
 
   const onCreate = async () => {
-    if (!canSubmit || isSubmitting) return;
+    if (!canSubmit || isBusy) return;
 
     setIsSubmitting(true);
     setError(null);
@@ -179,7 +188,9 @@ export function NewProjectButton({
       }
 
       setOpen(false);
-      router.push(`/editor/${projectId}`);
+      startOpeningProjectTransition(() => {
+        router.push(`/editor/${projectId}`);
+      });
     } catch {
       setError("Erro inesperado ao criar projeto.");
     } finally {
@@ -192,9 +203,10 @@ export function NewProjectButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
+        disabled={isBusy}
         className={
           className ??
-          "inline-flex items-center rounded-md bg-blue-600 px-6 py-3 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          "inline-flex items-center rounded-md bg-blue-600 px-6 py-3 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
         }
       >
         {children ?? (
@@ -210,14 +222,14 @@ export function NewProjectButton({
             <div className="fixed inset-0 z-[1000] flex items-center justify-center">
               <div
                 className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-                onClick={() => (!isSubmitting ? setOpen(false) : null)}
+                onClick={() => (!isBusy ? setOpen(false) : null)}
               />
 
               <div className="relative w-[92vw] max-w-5xl rounded-2xl bg-white shadow-xl">
                 <button
                   type="button"
                   aria-label="Fechar"
-                  onClick={() => (!isSubmitting ? setOpen(false) : null)}
+                  onClick={() => (!isBusy ? setOpen(false) : null)}
                   className="absolute right-4 top-4 text-gray-500 hover:text-gray-800"
                 >
                   <span className="material-symbols-outlined">close</span>
@@ -350,17 +362,21 @@ export function NewProjectButton({
                         <button
                           type="button"
                           onClick={onCreate}
-                          disabled={!canSubmit || isSubmitting}
+                          disabled={!canSubmit || isBusy}
                           className={`inline-flex items-center gap-2 rounded-lg px-6 py-3 text-base font-medium transition-colors ${
-                            !canSubmit || isSubmitting
+                            !canSubmit || isBusy
                               ? "bg-gray-200 text-gray-500"
                               : "bg-blue-600 text-white hover:bg-blue-700"
                           }`}
                         >
-                          <span className="material-symbols-outlined">
-                            add_circle
-                          </span>
-                          {isSubmitting ? "Criando..." : "Criar Projeto"}
+                          {isBusy ? (
+                            <InlineSpinner className="h-5 w-5" />
+                          ) : (
+                            <span className="material-symbols-outlined">
+                              add_circle
+                            </span>
+                          )}
+                          {isBusy ? "Criando..." : "Criar Projeto"}
                         </button>
                       </div>
                     </div>

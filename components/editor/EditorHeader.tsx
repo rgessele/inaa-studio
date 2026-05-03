@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import Image from "next/image";
 import { ViewMenu } from "./ViewMenu";
 import { useEditor } from "./EditorContext";
@@ -15,6 +21,7 @@ import { ThemeToggleButton } from "@/components/theme/ThemeToggleButton";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { SupportHelpButton } from "@/components/support/SupportHelpButton";
 import { MembersAreaButton } from "@/components/support/MembersAreaButton";
+import { InlineSpinner } from "@/components/InlineSpinner";
 import { importPatternPdf } from "./pdfPatternImport";
 
 function isE2EAutomationActive(): boolean {
@@ -52,6 +59,7 @@ export function EditorHeader() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showSaveAsModal, setShowSaveAsModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isNavigatingDashboard, startDashboardTransition] = useTransition();
   const [isImportingPdf, setIsImportingPdf] = useState(false);
   const [userInfo, setUserInfo] = useState<{
     userId: string;
@@ -819,9 +827,12 @@ export function EditorHeader() {
     [importFigures, readOnly, showToast]
   );
 
-  const handleBackToDashboard = () => {
-    router.push("/dashboard");
-  };
+  const handleBackToDashboard = useCallback(() => {
+    if (isNavigatingDashboard) return;
+    startDashboardTransition(() => {
+      router.push("/dashboard");
+    });
+  }, [isNavigatingDashboard, router, startDashboardTransition]);
 
   return (
     <>
@@ -890,9 +901,13 @@ export function EditorHeader() {
               className="group relative bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-4 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={isSaving}
             >
-              <span className="material-symbols-outlined text-[16px]">
-                save
-              </span>
+              {isSaving ? (
+                <InlineSpinner className="h-4 w-4" />
+              ) : (
+                <span className="material-symbols-outlined text-[16px]">
+                  save
+                </span>
+              )}
               {isSaving ? "Salvando..." : "Salvar"}
               <HeaderTooltip
                 title="Salvar Projeto"
@@ -903,12 +918,18 @@ export function EditorHeader() {
           )}
           <button
             onClick={handleBackToDashboard}
-            className="bg-primary hover:bg-primary-hover text-white text-xs font-medium px-3 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2"
+            className="bg-primary hover:bg-primary-hover text-white text-xs font-medium px-3 py-1.5 rounded shadow-sm transition-colors flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+            disabled={isNavigatingDashboard}
+            aria-busy={isNavigatingDashboard}
           >
-            <span className="material-symbols-outlined text-[16px]">
-              dashboard
-            </span>
-            Dashboard
+            {isNavigatingDashboard ? (
+              <InlineSpinner className="h-4 w-4" />
+            ) : (
+              <span className="material-symbols-outlined text-[16px]">
+                dashboard
+              </span>
+            )}
+            {isNavigatingDashboard ? "Abrindo..." : "Dashboard"}
           </button>
           <div className="flex items-center">
             <NotificationBell />
