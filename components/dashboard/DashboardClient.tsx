@@ -1884,18 +1884,18 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
               href={`/editor/${project.id}`}
               className={
                 viewMode === "grid"
-                  ? "group bg-surface-light dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-floating transition-all duration-300 flex flex-col"
+                  ? `group relative bg-surface-light dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-gray-700 overflow-visible hover:shadow-floating transition-all duration-300 flex flex-col ${openMenuForProjectId === project.id ? "z-30" : "z-0"}`
                   : "group bg-surface-light dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-floating transition-all duration-300 flex flex-col sm:flex-row"
               }
             >
               <div
                 className={
                   viewMode === "grid"
-                    ? "relative h-48 w-full bg-gray-200 dark:bg-gray-700"
+                    ? "relative h-48 w-full bg-gray-200 dark:bg-gray-700 rounded-t-xl"
                     : "relative h-28 w-full sm:w-56 sm:h-auto bg-gray-200 dark:bg-gray-700 shrink-0"
                 }
               >
-                <div className="absolute inset-0 overflow-hidden">
+                <div className="absolute inset-0 overflow-hidden rounded-t-xl">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     alt={project.name}
@@ -1934,7 +1934,7 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
                           e.preventDefault();
                           e.stopPropagation();
                         }}
-                        className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-200/20 bg-surface-light/95 dark:bg-surface-dark/95 backdrop-blur shadow-floating overflow-hidden"
+                        className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-200/20 bg-surface-light/95 dark:bg-surface-dark/95 backdrop-blur shadow-floating overflow-hidden z-50"
                       >
                         <MenuItem
                           label="Duplicar"
