@@ -1882,6 +1882,8 @@ export function DashboardClient({ projects }: { projects: Project[] }) {
             <Link
               key={project.id}
               href={`/editor/${project.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
               className={
                 viewMode === "grid"
                   ? `group relative bg-surface-light dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-gray-700 overflow-visible hover:shadow-floating transition-all duration-300 flex flex-col ${openMenuForProjectId === project.id ? "z-30" : "z-0"}`
