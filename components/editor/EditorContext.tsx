@@ -163,7 +163,13 @@ interface EditorContextType {
   lineToolMode: LineToolMode;
   setLineToolMode: (mode: LineToolMode) => void;
 
-  modifierKeys: { shift: boolean; alt: boolean; meta: boolean; ctrl: boolean };
+  modifierKeys: {
+    shift: boolean;
+    alt: boolean;
+    meta: boolean;
+    ctrl: boolean;
+    space: boolean;
+  };
   figures: Figure[];
   setFigures: (
     figures: Figure[] | ((prev: Figure[]) => Figure[]),
@@ -316,7 +322,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     alt: boolean;
     meta: boolean;
     ctrl: boolean;
-  }>({ shift: false, alt: false, meta: false, ctrl: false });
+    space: boolean;
+  }>({ shift: false, alt: false, meta: false, ctrl: false, space: false });
   const [selectedFigureIds, setSelectedFigureIdsState] = useState<string[]>([]);
   const [selectedEdge, setSelectedEdge] = useState<SelectedEdge>(null);
   const [activeStrokeColor, setActiveStrokeColorState] = useState(
@@ -512,19 +519,27 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         alt: e.altKey,
         meta: e.metaKey,
         ctrl: e.ctrlKey,
+        space: e.code === "Space" || e.key === " ",
       };
       setModifierKeys((prev) =>
         prev.shift === next.shift &&
         prev.alt === next.alt &&
         prev.meta === next.meta &&
-        prev.ctrl === next.ctrl
+        prev.ctrl === next.ctrl &&
+        prev.space === next.space
           ? prev
           : next
       );
     };
 
     const onBlur = () => {
-      setModifierKeys({ shift: false, alt: false, meta: false, ctrl: false });
+      setModifierKeys({
+        shift: false,
+        alt: false,
+        meta: false,
+        ctrl: false,
+        space: false,
+      });
     };
 
     window.addEventListener("keydown", onKey);

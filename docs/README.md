@@ -22,6 +22,7 @@
 - [Extração de moldes](./specs/espec-extracao-moldes.md)
 - [Cor de traço em linhas](./specs/line-stroke-color-spec.md)
 - [Modos da ferramenta de linha](./specs/line-tool-modes-spec.md)
+- [Preview de medida e remoção de nós](./specs/node-tool-measure-preview-spec.md)
 
 ## Implementação
 

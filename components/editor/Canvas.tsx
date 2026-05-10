@@ -321,6 +321,30 @@ type EdgeHover = {
   snapKind?: "mid";
 } | null;
 
+type NodeMeasurePreview = {
+  figureId: string;
+  nodeId: string;
+  currentWorld: Vec2;
+} | null;
+
+type NodeMeasureCandidate = {
+  figureId: string;
+  edgeId: string;
+  t: number;
+  pointLocal: Vec2;
+  pointWorld: Vec2;
+};
+
+type ResolvedNodeMeasurePreview = {
+  figureId: string;
+  nodeId: string;
+  originWorld: Vec2;
+  endWorld: Vec2;
+  lengthPx: number;
+  locked: boolean;
+  candidate: NodeMeasureCandidate | null;
+};
+
 type HoveredPique = {
   figureId: string;
   piqueId: string;
@@ -2070,6 +2094,137 @@ function applySplitResultToFigureSet(
   return changed ? next : prev;
 }
 
+function getRemovableNodeJoin(figure: Figure, nodeId: string): {
+  edgeA: FigureEdge;
+  edgeB: FigureEdge;
+  fromNodeId: string;
+  toNodeId: string;
+} | null {
+  const minNodes = figure.closed ? 4 : 3;
+  if (figure.nodes.length < minNodes) return null;
+
+  const adjacent = figure.edges.filter(
+    (edge) => edge.from === nodeId || edge.to === nodeId
+  );
+  if (adjacent.length !== 2) return null;
+
+  const [edgeA, edgeB] = adjacent;
+  if (edgeA.to === nodeId && edgeB.from === nodeId) {
+    return {
+      edgeA,
+      edgeB,
+      fromNodeId: edgeA.from,
+      toNodeId: edgeB.to,
+    };
+  }
+  if (edgeB.to === nodeId && edgeA.from === nodeId) {
+    return {
+      edgeA,
+      edgeB,
+      fromNodeId: edgeB.from,
+      toNodeId: edgeA.to,
+    };
+  }
+
+  return null;
+}
+
+function canRemoveFigureNode(figure: Figure, nodeId: string): boolean {
+  return getRemovableNodeJoin(figure, nodeId) !== null;
+}
+
+function removeFigureNode(figure: Figure, nodeId: string): NodeRemoveResult {
+  const join = getRemovableNodeJoin(figure, nodeId);
+  if (!join) return null;
+  if (join.fromNodeId === join.toNodeId) return null;
+
+  const edgeIndexA = figure.edges.findIndex((edge) => edge.id === join.edgeA.id);
+  const edgeIndexB = figure.edges.findIndex((edge) => edge.id === join.edgeB.id);
+  if (edgeIndexA === -1 || edgeIndexB === -1) return null;
+
+  const replacementEdge: FigureEdge = {
+    id: id("e"),
+    from: join.fromNodeId,
+    to: join.toNodeId,
+    kind: "line",
+    stroke: join.edgeA.stroke ?? join.edgeB.stroke,
+  };
+
+  const removedEdgeIds: [string, string] = [join.edgeA.id, join.edgeB.id];
+  const removedEdgeIdSet = new Set(removedEdgeIds);
+  const nextEdges = figure.edges.filter((edge) => !removedEdgeIdSet.has(edge.id));
+  nextEdges.splice(Math.min(edgeIndexA, edgeIndexB), 0, replacementEdge);
+
+  const nextHemMeta = figure.hemMeta
+    ? {
+        ...figure.hemMeta,
+        controlNodeIds: figure.hemMeta.controlNodeIds?.filter(
+          (idValue) => idValue !== nodeId
+        ),
+      }
+    : undefined;
+
+  const nextFigure = markCurveCustomSnapshotDirtyIfPresent(
+    breakStyledLinkIfNeeded({
+      ...figure,
+      nodes: figure.nodes.filter((node) => node.id !== nodeId),
+      edges: nextEdges,
+      piques: figure.piques?.filter(
+        (pique) => !removedEdgeIdSet.has(pique.edgeId)
+      ),
+      darts: figure.darts?.filter(
+        (dart) =>
+          dart.aNodeId !== nodeId &&
+          dart.bNodeId !== nodeId &&
+          dart.cNodeId !== nodeId
+      ),
+      hemMeta: nextHemMeta,
+    })
+  );
+
+  return {
+    figure: nextFigure,
+    removedNodeId: nodeId,
+    removedEdgeIds,
+    replacementEdgeId: replacementEdge.id,
+    selectedNodeId: join.toNodeId,
+  };
+}
+
+function applyRemoveNodeResultToFigureSet(
+  prev: Figure[],
+  figureId: string,
+  result: NonNullable<NodeRemoveResult>
+): Figure[] {
+  const removedEdgeIdSet = new Set(result.removedEdgeIds);
+  let changed = false;
+
+  const next = prev.map((f) => {
+    if (f.id === figureId) {
+      changed = true;
+      return result.figure;
+    }
+
+    if (f.kind !== "seam" || f.parentId !== figureId) return f;
+    if (!f.offsetCm || typeof f.offsetCm !== "object") return f;
+    const offsetMap = f.offsetCm;
+
+    const inherited =
+      result.removedEdgeIds
+        .map((edgeId) => offsetMap[edgeId])
+        .find((value) => Number.isFinite(value) && (value ?? 0) > 0) ?? null;
+
+    const nextOffsets: Record<string, number> = { ...offsetMap };
+    for (const edgeId of removedEdgeIdSet) delete nextOffsets[edgeId];
+    if (inherited != null) nextOffsets[result.replacementEdgeId] = inherited;
+
+    changed = true;
+    return { ...f, offsetCm: nextOffsets };
+  });
+
+  return changed ? next : prev;
+}
+
 function splitFigureEdge(
   figure: Figure,
   edgeId: string,
@@ -2749,6 +2904,98 @@ function constrainPointToDistance(
   };
 }
 
+function segmentCircleIntersections(
+  center: Vec2,
+  radius: number,
+  a: Vec2,
+  b: Vec2
+): Array<{ point: Vec2; t: number }> {
+  if (!Number.isFinite(radius) || radius <= 0) return [];
+  const d = sub(b, a);
+  const f = sub(a, center);
+  const aa = d.x * d.x + d.y * d.y;
+  if (!Number.isFinite(aa) || aa < 1e-9) return [];
+
+  const bb = 2 * (f.x * d.x + f.y * d.y);
+  const cc = f.x * f.x + f.y * f.y - radius * radius;
+  const disc = bb * bb - 4 * aa * cc;
+  if (!Number.isFinite(disc) || disc < 0) return [];
+
+  const sqrtDisc = Math.sqrt(Math.max(0, disc));
+  const out: Array<{ point: Vec2; t: number }> = [];
+  for (const t of [(-bb - sqrtDisc) / (2 * aa), (-bb + sqrtDisc) / (2 * aa)]) {
+    if (!Number.isFinite(t) || t < 0 || t > 1) continue;
+    const point = lerp(a, b, t);
+    if (out.some((hit) => dist(hit.point, point) < 1e-4)) continue;
+    out.push({ point, t });
+  }
+  return out;
+}
+
+function findNodeMeasureCandidate(
+  figure: Figure,
+  originLocal: Vec2,
+  rawEndLocal: Vec2,
+  lockedLengthPx: number | null,
+  thresholdLocal: number
+): NodeMeasureCandidate | null {
+  if (!Number.isFinite(thresholdLocal) || thresholdLocal <= 0) return null;
+
+  const targetLocal =
+    lockedLengthPx != null && lockedLengthPx > 0
+      ? constrainPointToDistance(originLocal, rawEndLocal, lockedLengthPx)
+      : rawEndLocal;
+
+  let best: {
+    edgeId: string;
+    t: number;
+    pointLocal: Vec2;
+    cost: number;
+  } | null = null;
+
+  for (const edge of figure.edges) {
+    const pts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 1 : 120);
+    if (pts.length < 2) continue;
+
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+
+      const candidates =
+        lockedLengthPx != null && lockedLengthPx > 0
+          ? segmentCircleIntersections(originLocal, lockedLengthPx, a, b)
+          : (() => {
+              const hit = pointToSegmentDistance(rawEndLocal, a, b);
+              return [{ point: lerp(a, b, hit.t), t: hit.t }];
+            })();
+
+      for (const candidate of candidates) {
+        const cost = dist(candidate.point, targetLocal);
+        if (!Number.isFinite(cost) || cost > thresholdLocal) continue;
+        const t = (i + candidate.t) / (pts.length - 1);
+        if (t <= 0.001 || t >= 0.999) continue;
+        if (!best || cost < best.cost) {
+          best = {
+            edgeId: edge.id,
+            t,
+            pointLocal: candidate.point,
+            cost,
+          };
+        }
+      }
+    }
+  }
+
+  if (!best) return null;
+  return {
+    figureId: figure.id,
+    edgeId: best.edgeId,
+    t: best.t,
+    pointLocal: best.pointLocal,
+    pointWorld: figureLocalToWorld(figure, best.pointLocal),
+  };
+}
+
 function computeRectLikeCorners(
   start: Vec2,
   raw: Vec2,
@@ -2934,6 +3181,14 @@ type JoinHit = {
 type JoinNodeResult = {
   figure: Figure;
   nodeId: string;
+} | null;
+
+type NodeRemoveResult = {
+  figure: Figure;
+  removedNodeId: string;
+  removedEdgeIds: [string, string];
+  replacementEdgeId: string;
+  selectedNodeId: string | null;
 } | null;
 
 function findJoinTarget(
@@ -3719,6 +3974,14 @@ export default function Canvas() {
     startLocal: Vec2;
     currentLocal: Vec2;
   } | null>(null);
+  const [nodeMeasurePreview, setNodeMeasurePreview] =
+    useState<NodeMeasurePreview>(null);
+  const nodeMeasurePreviewRef = useRef<NodeMeasurePreview>(null);
+  useEffect(() => {
+    nodeMeasurePreviewRef.current = nodeMeasurePreview;
+  }, [nodeMeasurePreview]);
+  const nodeMeasureResolvedPreviewRef =
+    useRef<ResolvedNodeMeasurePreview | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<EdgeHover>(null);
   const [hoveredPique, setHoveredPique] = useState<HoveredPique>(null);
   const [hoveredMirrorLinkFigureId, setHoveredMirrorLinkFigureId] = useState<
@@ -5235,6 +5498,9 @@ export default function Canvas() {
       setHoveredEdge(null);
       setHoveredNodeId(null);
       setNodeAngleGuide(null);
+      setNodeMeasurePreview(null);
+      nodeMeasurePreviewRef.current = null;
+      nodeMeasureResolvedPreviewRef.current = null;
     }
 
     // When leaving curve tool, clear unfinished multi-click curve.
@@ -5286,6 +5552,83 @@ export default function Canvas() {
       ? figures.find((f) => f.id === selectedFigureId)
       : null;
   }, [figures, selectedFigureId]);
+
+  const nodeMeasureResolvedPreview = useMemo<ResolvedNodeMeasurePreview | null>(() => {
+    if (tool !== "node" || !nodeMeasurePreview) return null;
+    if (!selectedFigure || selectedFigure.id !== nodeMeasurePreview.figureId) {
+      return null;
+    }
+
+    const originNode =
+      selectedFigure.nodes.find((n) => n.id === nodeMeasurePreview.nodeId) ??
+      null;
+    if (!originNode) return null;
+
+    const originLocal: Vec2 = { x: originNode.x, y: originNode.y };
+    const rawEndLocal = worldToFigureLocal(
+      selectedFigure,
+      nodeMeasurePreview.currentWorld
+    );
+    const lockedLengthPx =
+      segmentLengthLockCm != null &&
+      Number.isFinite(segmentLengthLockCm) &&
+      segmentLengthLockCm > 0
+        ? segmentLengthLockCm * PX_PER_CM
+        : null;
+    const thresholdLocal = 12 / scale;
+    const candidate = findNodeMeasureCandidate(
+      selectedFigure,
+      originLocal,
+      rawEndLocal,
+      lockedLengthPx,
+      thresholdLocal
+    );
+    const endLocal = candidate
+      ? candidate.pointLocal
+      : lockedLengthPx != null
+        ? constrainPointToDistance(originLocal, rawEndLocal, lockedLengthPx)
+        : rawEndLocal;
+    const originWorld = figureLocalToWorld(selectedFigure, originLocal);
+    const endWorld = candidate
+      ? candidate.pointWorld
+      : figureLocalToWorld(selectedFigure, endLocal);
+
+    return {
+      figureId: selectedFigure.id,
+      nodeId: originNode.id,
+      originWorld,
+      endWorld,
+      lengthPx: dist(originWorld, endWorld),
+      locked: lockedLengthPx != null,
+      candidate,
+    };
+  }, [
+    nodeMeasurePreview,
+    scale,
+    segmentLengthLockCm,
+    selectedFigure,
+    tool,
+  ]);
+
+  useEffect(() => {
+    nodeMeasureResolvedPreviewRef.current = nodeMeasureResolvedPreview;
+  }, [nodeMeasureResolvedPreview]);
+
+  useEffect(() => {
+    if (!nodeMeasurePreview) return;
+    if (tool !== "node") {
+      setNodeMeasurePreview(null);
+      nodeMeasurePreviewRef.current = null;
+      nodeMeasureResolvedPreviewRef.current = null;
+      return;
+    }
+    const figure = figures.find((f) => f.id === nodeMeasurePreview.figureId);
+    if (!figure || !figure.nodes.some((n) => n.id === nodeMeasurePreview.nodeId)) {
+      setNodeMeasurePreview(null);
+      nodeMeasurePreviewRef.current = null;
+      nodeMeasureResolvedPreviewRef.current = null;
+    }
+  }, [figures, nodeMeasurePreview, tool]);
 
   const selectedIdsSet = useMemo(() => {
     return new Set<string>(selectedFigureIds);
@@ -6130,6 +6473,63 @@ export default function Canvas() {
     clearSegmentLengthConstraint();
   }, [clearSegmentLengthConstraint]);
 
+  const removeNodeById = useCallback(
+    (figureId: string, nodeId: string) => {
+      const figure = figures.find((f) => f.id === figureId) ?? null;
+      if (!figure) return false;
+
+      const result = removeFigureNode(figure, nodeId);
+      if (!result) return false;
+
+      const nextSelection = result.selectedNodeId
+        ? {
+            figureId,
+            nodeId: result.selectedNodeId,
+          }
+        : null;
+
+      setFigures((prev) =>
+        applyRemoveNodeResultToFigureSet(prev, figureId, result)
+      );
+
+      setSelectedFigureIds([figureId]);
+      if (selectedEdge?.figureId === figureId) setSelectedEdge(null);
+      setNodeSelection(
+        nextSelection
+          ? {
+              figureId: nextSelection.figureId,
+              nodeId: nextSelection.nodeId,
+              handle: null,
+            }
+          : null
+      );
+      setHoveredNodeId(null);
+      setHoveredEdge(null);
+      setNodeMeasurePreview(null);
+      nodeMeasurePreviewRef.current = null;
+      nodeMeasureResolvedPreviewRef.current = null;
+      clearSegmentLengthConstraint();
+      sendDebugLog({
+        type: "node-click",
+        payload: {
+          action: "remove-node",
+          figureId,
+          nodeId,
+          selectedNodeId: nextSelection?.nodeId ?? null,
+        },
+      });
+      return true;
+    },
+    [
+      clearSegmentLengthConstraint,
+      figures,
+      selectedEdge?.figureId,
+      setFigures,
+      setSelectedEdge,
+      setSelectedFigureIds,
+    ]
+  );
+
   const finalizeLineFigure = useCallback(
     (pointsWorld: Vec2[], joinHits: Array<JoinHit | null>, closed: boolean) => {
       if (pointsWorld.length < 2 || (closed && pointsWorld.length < 3)) {
@@ -6180,7 +6580,9 @@ export default function Canvas() {
   useEffect(() => {
     const isLineDraftActive = tool === "line" && !!lineDraft;
     const isCurveDraftActive = tool === "curve" && !!curveDraft;
-    const hasActiveSegmentDraft = isLineDraftActive || isCurveDraftActive;
+    const isNodeMeasurePreviewActive = tool === "node" && !!nodeMeasurePreview;
+    const hasActiveSegmentDraft =
+      isLineDraftActive || isCurveDraftActive || isNodeMeasurePreviewActive;
     if (hasActiveSegmentDraft) return;
     if (
       segmentLengthInputRawRef.current.trim().length === 0 &&
@@ -6189,7 +6591,13 @@ export default function Canvas() {
       return;
     }
     clearSegmentLengthConstraint();
-  }, [clearSegmentLengthConstraint, curveDraft, lineDraft, tool]);
+  }, [
+    clearSegmentLengthConstraint,
+    curveDraft,
+    lineDraft,
+    nodeMeasurePreview,
+    tool,
+  ]);
 
   useEffect(() => {
     if (!edgeContextMenu) return;
@@ -6883,6 +7291,52 @@ export default function Canvas() {
 
     const isBackground =
       e.target === stage || e.target === backgroundRef.current;
+
+    if (tool === "node" && isLeftClick && nodeMeasurePreviewRef.current) {
+      e.evt.preventDefault();
+      const resolvedPreview = nodeMeasureResolvedPreviewRef.current;
+      const candidate = resolvedPreview?.candidate ?? null;
+      if (
+        candidate &&
+        selectedFigure &&
+        candidate.figureId === selectedFigure.id
+      ) {
+        const res = splitFigureEdge(
+          selectedFigure,
+          candidate.edgeId,
+          candidate.t
+        );
+        setFigures((prev) =>
+          applySplitResultToFigureSet(prev, selectedFigure.id, res)
+        );
+        if (res.newNodeId) {
+          setSelectedFigureIds([selectedFigure.id]);
+          setNodeSelection({
+            figureId: selectedFigure.id,
+            nodeId: res.newNodeId,
+            handle: null,
+          });
+          sendDebugLog({
+            type: "node-click",
+            payload: {
+              action: "measure-preview-split",
+              figureId: selectedFigure.id,
+              edgeId: candidate.edgeId,
+              t: candidate.t,
+              lengthPx: resolvedPreview?.lengthPx ?? null,
+              locked: resolvedPreview?.locked ?? false,
+            },
+          });
+        }
+        setHoveredEdge(null);
+        setHoveredNodeId(null);
+        nodeMeasurePreviewRef.current = null;
+        nodeMeasureResolvedPreviewRef.current = null;
+        setNodeMeasurePreview(null);
+        clearSegmentLengthConstraint();
+      }
+      return;
+    }
 
     // Detect if the pointer landed on a Transformer anchor, border, or rotation
     // handle. We do this by walking the Konva parent chain from the event target
@@ -8569,6 +9023,15 @@ export default function Canvas() {
       modifierKeys.ctrl;
     const worldForTool = worldForToolRaw;
 
+    if (tool === "node" && nodeMeasurePreviewRef.current) {
+      setNodeMeasurePreview((prev) =>
+        prev ? { ...prev, currentWorld: worldForTool } : prev
+      );
+      if (hoveredEdge) setHoveredEdge(null);
+      if (hoveredNodeId) setHoveredNodeId(null);
+      return;
+    }
+
     if (tool !== "measure") {
       if (
         resolvedMove.snap.isSnapped &&
@@ -9395,7 +9858,9 @@ export default function Canvas() {
 
   const segmentLengthBadgeLabel = useMemo(() => {
     const hasSegmentDraft =
-      (tool === "line" && !!lineDraft) || (tool === "curve" && !!curveDraft);
+      (tool === "line" && !!lineDraft) ||
+      (tool === "curve" && !!curveDraft) ||
+      (tool === "node" && !!nodeMeasurePreview);
     if (!hasSegmentDraft) return null;
     const raw = segmentLengthInputRaw.trim();
     if (raw.length > 0) return `Comprimento: ${raw} cm`;
@@ -9410,7 +9875,14 @@ export default function Canvas() {
       )} cm`;
     }
     return null;
-  }, [curveDraft, lineDraft, segmentLengthInputRaw, segmentLengthLockCm, tool]);
+  }, [
+    curveDraft,
+    lineDraft,
+    nodeMeasurePreview,
+    segmentLengthInputRaw,
+    segmentLengthLockCm,
+    tool,
+  ]);
 
   useEffect(() => {
     const onKeyDown = (evt: KeyboardEvent) => {
@@ -9423,6 +9895,9 @@ export default function Canvas() {
         setPenDraft(null);
         dragNodeRef.current = null;
         dragHandleRef.current = null;
+        nodeMeasurePreviewRef.current = null;
+        nodeMeasureResolvedPreviewRef.current = null;
+        setNodeMeasurePreview(null);
         clearMoldExtractionState();
         clearSegmentLengthConstraint();
       }
@@ -9481,8 +9956,38 @@ export default function Canvas() {
           target.isContentEditable);
       const hasSegmentDraft =
         (tool === "line" && !!currentLineDraft) ||
-        (tool === "curve" && !!curveDraft);
+        (tool === "curve" && !!curveDraft) ||
+        (tool === "node" && !!nodeMeasurePreviewRef.current);
       if (hasSegmentDraft && !isTypingInField) {
+        if (
+          tool === "node" &&
+          nodeMeasurePreviewRef.current &&
+          (evt.key === " " || evt.code === "Space")
+        ) {
+          evt.preventDefault();
+          evt.stopPropagation();
+          if (evt.repeat) return;
+          if (
+            segmentLengthInputRawRef.current.trim().length > 0 ||
+            segmentLengthLockCmRef.current != null
+          ) {
+            clearSegmentLengthConstraint();
+            return;
+          }
+
+          const resolved = nodeMeasureResolvedPreviewRef.current;
+          if (
+            resolved &&
+            Number.isFinite(resolved.lengthPx) &&
+            resolved.lengthPx > 0
+          ) {
+            setSegmentLengthLockCmState(
+              Math.max(0.01, pxToCm(resolved.lengthPx))
+            );
+          }
+          return;
+        }
+
         const isDigit = evt.key.length === 1 && /[0-9]/.test(evt.key);
         const isDecimalSeparator = evt.key === "," || evt.key === ".";
         const hasModifier = evt.metaKey || evt.ctrlKey || evt.altKey;
@@ -9675,6 +10180,7 @@ export default function Canvas() {
     scheduleSegmentLengthInputCommit,
     scale,
     setSegmentLengthInputRawState,
+    setSegmentLengthLockCmState,
     tool,
     withActiveStroke,
   ]);
@@ -10339,6 +10845,17 @@ export default function Canvas() {
             nodeSelection?.figureId === selectedFigure.id &&
             nodeSelection.nodeId === n.id &&
             nodeSelection.handle === null;
+          const isRemoveNodePreview =
+            (modifierKeys.meta || modifierKeys.ctrl) &&
+            hoveredNodeId === n.id &&
+            canRemoveFigureNode(selectedFigure, n.id);
+          const isMergeNodePreview =
+            nodeMergePreview?.figureId === selectedFigure.id &&
+            nodeMergePreview.fromNodeId === n.id;
+          const nodeWorld = figureLocalToWorld(selectedFigure, {
+            x: n.x,
+            y: n.y,
+          });
 
           return (
             <React.Fragment key={n.id}>
@@ -10371,6 +10888,10 @@ export default function Canvas() {
                 opacity={0.001}
                 draggable
                 onDragStart={() => {
+                  nodeMeasurePreviewRef.current = null;
+                  nodeMeasureResolvedPreviewRef.current = null;
+                  setNodeMeasurePreview(null);
+                  clearSegmentLengthConstraint();
                   dragNodeRef.current = {
                     figureId: selectedFigure.id,
                     nodeId: n.id,
@@ -10546,6 +11067,17 @@ export default function Canvas() {
                 }}
                 onPointerDown={(ev) => {
                   ev.cancelBubble = true;
+                  const native = ev.evt as PointerEvent | MouseEvent;
+                  if (native.metaKey || native.ctrlKey) {
+                    if (removeNodeById(selectedFigure.id, n.id)) {
+                      native.preventDefault();
+                      return;
+                    }
+                  }
+                  nodeMeasurePreviewRef.current = null;
+                  nodeMeasureResolvedPreviewRef.current = null;
+                  setNodeMeasurePreview(null);
+                  clearSegmentLengthConstraint();
                   setNodeSelection({
                     figureId: selectedFigure.id,
                     nodeId: n.id,
@@ -10554,10 +11086,43 @@ export default function Canvas() {
                 }}
                 onMouseDown={(ev) => {
                   ev.cancelBubble = true;
+                  const native = ev.evt as MouseEvent;
+                  if (native.metaKey || native.ctrlKey) {
+                    if (removeNodeById(selectedFigure.id, n.id)) {
+                      native.preventDefault();
+                      return;
+                    }
+                  }
+                  nodeMeasurePreviewRef.current = null;
+                  nodeMeasureResolvedPreviewRef.current = null;
+                  setNodeMeasurePreview(null);
+                  clearSegmentLengthConstraint();
                   setNodeSelection({
                     figureId: selectedFigure.id,
                     nodeId: n.id,
                     handle: null,
+                  });
+                }}
+                onClick={(ev) => {
+                  ev.cancelBubble = true;
+                  const native = ev.evt as MouseEvent;
+                  if (native.metaKey || native.ctrlKey) return;
+                  setNodeSelection({
+                    figureId: selectedFigure.id,
+                    nodeId: n.id,
+                    handle: null,
+                  });
+                  setHoveredEdge(null);
+                  clearSegmentLengthConstraint();
+                  nodeMeasurePreviewRef.current = {
+                    figureId: selectedFigure.id,
+                    nodeId: n.id,
+                    currentWorld: nodeWorld,
+                  };
+                  setNodeMeasurePreview({
+                    figureId: selectedFigure.id,
+                    nodeId: n.id,
+                    currentWorld: nodeWorld,
                   });
                 }}
               />
@@ -10568,16 +11133,18 @@ export default function Canvas() {
                 y={n.y}
                 radius={rNode}
                 fill={
-                  nodeMergePreview?.figureId === selectedFigure.id &&
-                  nodeMergePreview.fromNodeId === n.id
+                  isRemoveNodePreview
+                    ? previewRemoveStroke
+                    : isMergeNodePreview
                     ? previewRemoveStroke
                     : isSelectedNode
                       ? "#2563eb"
                       : "#ffffff"
                 }
                 stroke={
-                  nodeMergePreview?.figureId === selectedFigure.id &&
-                  nodeMergePreview.fromNodeId === n.id
+                  isRemoveNodePreview
+                    ? previewRemoveStroke
+                    : isMergeNodePreview
                     ? previewRemoveStroke
                     : "#2563eb"
                 }
@@ -10585,8 +11152,7 @@ export default function Canvas() {
                 listening={false}
               />
 
-              {nodeMergePreview?.figureId === selectedFigure.id &&
-              nodeMergePreview.fromNodeId === n.id ? (
+              {isMergeNodePreview || isRemoveNodePreview ? (
                 <Circle
                   x={n.x}
                   y={n.y}
@@ -10609,6 +11175,10 @@ export default function Canvas() {
                   strokeWidth={1 / scale}
                   draggable
                   onDragStart={() => {
+                    nodeMeasurePreviewRef.current = null;
+                    nodeMeasureResolvedPreviewRef.current = null;
+                    setNodeMeasurePreview(null);
+                    clearSegmentLengthConstraint();
                     setNodeSelection({
                       figureId: selectedFigure.id,
                       nodeId: n.id,
@@ -10664,6 +11234,10 @@ export default function Canvas() {
                   }}
                   onPointerDown={(ev) => {
                     ev.cancelBubble = true;
+                    nodeMeasurePreviewRef.current = null;
+                    nodeMeasureResolvedPreviewRef.current = null;
+                    setNodeMeasurePreview(null);
+                    clearSegmentLengthConstraint();
                     setNodeSelection({
                       figureId: selectedFigure.id,
                       nodeId: n.id,
@@ -10672,6 +11246,10 @@ export default function Canvas() {
                   }}
                   onMouseDown={(ev) => {
                     ev.cancelBubble = true;
+                    nodeMeasurePreviewRef.current = null;
+                    nodeMeasureResolvedPreviewRef.current = null;
+                    setNodeMeasurePreview(null);
+                    clearSegmentLengthConstraint();
                     setNodeSelection({
                       figureId: selectedFigure.id,
                       nodeId: n.id,
@@ -10692,6 +11270,10 @@ export default function Canvas() {
                   strokeWidth={1 / scale}
                   draggable
                   onDragStart={() => {
+                    nodeMeasurePreviewRef.current = null;
+                    nodeMeasureResolvedPreviewRef.current = null;
+                    setNodeMeasurePreview(null);
+                    clearSegmentLengthConstraint();
                     setNodeSelection({
                       figureId: selectedFigure.id,
                       nodeId: n.id,
@@ -10747,6 +11329,10 @@ export default function Canvas() {
                   }}
                   onPointerDown={(ev) => {
                     ev.cancelBubble = true;
+                    nodeMeasurePreviewRef.current = null;
+                    nodeMeasureResolvedPreviewRef.current = null;
+                    setNodeMeasurePreview(null);
+                    clearSegmentLengthConstraint();
                     setNodeSelection({
                       figureId: selectedFigure.id,
                       nodeId: n.id,
@@ -10755,6 +11341,10 @@ export default function Canvas() {
                   }}
                   onMouseDown={(ev) => {
                     ev.cancelBubble = true;
+                    nodeMeasurePreviewRef.current = null;
+                    nodeMeasureResolvedPreviewRef.current = null;
+                    setNodeMeasurePreview(null);
+                    clearSegmentLengthConstraint();
                     setNodeSelection({
                       figureId: selectedFigure.id,
                       nodeId: n.id,
@@ -10770,13 +11360,18 @@ export default function Canvas() {
     );
   }, [
     aci7,
+    clearSegmentLengthConstraint,
     figures,
     handleAccentStroke,
+    hoveredNodeId,
     mergeFigureNodes,
+    modifierKeys.ctrl,
+    modifierKeys.meta,
     nodeMergePreview,
     nodeSelection,
     previewRemoveStroke,
     queueNodeMergePreview,
+    removeNodeById,
     scale,
     selectedFigure,
     setFigures,
@@ -10957,6 +11552,78 @@ export default function Canvas() {
       </Group>
     );
   }, [hoveredEdge, scale, selectedFigure, tool]);
+
+  const nodeMeasurePreviewOverlay = useMemo(() => {
+    if (tool !== "node" || !nodeMeasureResolvedPreview) return null;
+
+    const a = nodeMeasureResolvedPreview.originWorld;
+    const b = nodeMeasureResolvedPreview.endWorld;
+    if (!isFiniteVec2(a) || !isFiniteVec2(b)) return null;
+    if (nodeMeasureResolvedPreview.lengthPx < 0.5) return null;
+
+    const stroke = nodeMeasureResolvedPreview.candidate
+      ? "#16a34a"
+      : "#2563eb";
+    const mid = lerp(a, b, 0.5);
+    const tangent = sub(b, a);
+    const angleDeg = normalizeUprightAngleDeg(
+      (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI
+    );
+    const label = formatCm(pxToCm(nodeMeasureResolvedPreview.lengthPx), 2);
+    const offset = 12 / scale;
+    const normal = norm(perp(tangent));
+    const labelPos = add(mid, mul(normal, offset));
+    const fontSize = 11 / scale;
+    const textWidth = 110 / scale;
+
+    return (
+      <>
+        <Line
+          points={[a.x, a.y, b.x, b.y]}
+          stroke={stroke}
+          strokeWidth={1.5 / scale}
+          dash={[6 / scale, 4 / scale]}
+          opacity={0.95}
+          listening={false}
+          lineCap="round"
+        />
+        <Circle
+          x={a.x}
+          y={a.y}
+          radius={3.5 / scale}
+          fill="#ffffff"
+          stroke="#2563eb"
+          strokeWidth={1 / scale}
+          listening={false}
+        />
+        <Circle
+          x={b.x}
+          y={b.y}
+          radius={(nodeMeasureResolvedPreview.candidate ? 5 : 3.5) / scale}
+          fill={nodeMeasureResolvedPreview.candidate ? stroke : "#ffffff"}
+          stroke={stroke}
+          strokeWidth={1.25 / scale}
+          listening={false}
+        />
+        <Text
+          x={labelPos.x}
+          y={labelPos.y}
+          offsetX={textWidth / 2}
+          offsetY={fontSize / 2}
+          rotation={angleDeg}
+          width={textWidth}
+          align="center"
+          text={label}
+          fontSize={fontSize}
+          fill={stroke}
+          opacity={0.95}
+          fontStyle="bold"
+          listening={false}
+          name="inaa-node-measure-preview"
+        />
+      </>
+    );
+  }, [nodeMeasureResolvedPreview, scale, tool]);
 
   const piqueHoverOverlay = useMemo(() => {
     if (tool !== "pique") return null;
@@ -13091,6 +13758,8 @@ export default function Canvas() {
             {edgeHoverOverlay}
 
             {nodeSplitMeasuresPreviewOverlay}
+
+            {nodeMeasurePreviewOverlay}
 
             {piqueHoverOverlay}
 

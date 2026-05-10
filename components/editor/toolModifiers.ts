@@ -1,6 +1,12 @@
 import type { Tool } from "./types";
 
-export type ModifierKey = "shift" | "alt" | "meta" | "ctrl" | "cmdOrCtrl";
+export type ModifierKey =
+  | "shift"
+  | "alt"
+  | "meta"
+  | "ctrl"
+  | "cmdOrCtrl"
+  | "space";
 
 export type PlatformKind = "mac" | "win";
 
@@ -41,6 +47,16 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
       key: "alt",
       label: { mac: "⌥", win: "Alt" },
       descriptionPtBr: "Travar prévia de split no meio",
+    },
+    {
+      key: "space",
+      label: { mac: "Space", win: "Space" },
+      descriptionPtBr: "Travar/liberar medida",
+    },
+    {
+      key: "cmdOrCtrl",
+      label: { mac: "⌘ + clique", win: "Ctrl + clique" },
+      descriptionPtBr: "Remover nó",
     },
   ],
   pan: [],
@@ -166,12 +182,19 @@ export function detectPlatformKind(): PlatformKind {
 }
 
 export function isModifierActive(
-  mods: { shift: boolean; alt: boolean; meta: boolean; ctrl: boolean },
+  mods: {
+    shift: boolean;
+    alt: boolean;
+    meta: boolean;
+    ctrl: boolean;
+    space?: boolean;
+  },
   key: ModifierKey
 ): boolean {
   if (key === "shift") return mods.shift;
   if (key === "alt") return mods.alt;
   if (key === "meta") return mods.meta;
   if (key === "cmdOrCtrl") return mods.meta || mods.ctrl;
+  if (key === "space") return mods.space === true;
   return mods.ctrl;
 }
