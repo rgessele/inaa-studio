@@ -9959,11 +9959,7 @@ export default function Canvas() {
         (tool === "curve" && !!curveDraft) ||
         (tool === "node" && !!nodeMeasurePreviewRef.current);
       if (hasSegmentDraft && !isTypingInField) {
-        if (
-          tool === "node" &&
-          nodeMeasurePreviewRef.current &&
-          (evt.key === " " || evt.code === "Space")
-        ) {
+        if (evt.key === " " || evt.code === "Space") {
           evt.preventDefault();
           evt.stopPropagation();
           if (evt.repeat) return;
@@ -9975,15 +9971,33 @@ export default function Canvas() {
             return;
           }
 
-          const resolved = nodeMeasureResolvedPreviewRef.current;
-          if (
-            resolved &&
-            Number.isFinite(resolved.lengthPx) &&
-            resolved.lengthPx > 0
-          ) {
-            setSegmentLengthLockCmState(
-              Math.max(0.01, pxToCm(resolved.lengthPx))
-            );
+          let lengthPx: number | null = null;
+
+          if (tool === "line" && currentLineDraft) {
+            const last =
+              currentLineDraft.pointsWorld[
+                currentLineDraft.pointsWorld.length - 1
+              ] ?? null;
+            const live = currentLineDraft.currentWorld;
+            if (last && live) {
+              const rawLengthPx = dist(last, live);
+              lengthPx =
+                (evt.altKey || modifierKeys.alt) &&
+                currentLineDraft.pointsWorld.length === 1
+                  ? rawLengthPx * 2
+                  : rawLengthPx;
+            }
+          } else if (tool === "curve" && curveDraft) {
+            const last =
+              curveDraft.pointsWorld[curveDraft.pointsWorld.length - 1] ?? null;
+            const live = curveDraft.currentWorld;
+            if (last && live) lengthPx = dist(last, live);
+          } else if (tool === "node" && nodeMeasurePreviewRef.current) {
+            lengthPx = nodeMeasureResolvedPreviewRef.current?.lengthPx ?? null;
+          }
+
+          if (Number.isFinite(lengthPx) && (lengthPx ?? 0) > 0) {
+            setSegmentLengthLockCmState(Math.max(0.01, pxToCm(lengthPx!)));
           }
           return;
         }
@@ -10176,6 +10190,7 @@ export default function Canvas() {
     lineToolMode,
     magnetJoinEnabled,
     moldConfirmDialog,
+    modifierKeys.alt,
     openMoldConfirmDialog,
     scheduleSegmentLengthInputCommit,
     scale,

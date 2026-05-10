@@ -90,6 +90,11 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
       descriptionPtBr: "Desenhar a partir do centro",
     },
     {
+      key: "space",
+      label: { mac: "Space", win: "Space" },
+      descriptionPtBr: "Travar/liberar medida",
+    },
+    {
       key: "cmdOrCtrl",
       label: { mac: "⌘", win: "Ctrl" },
       descriptionPtBr: "Alta precisão (1mm)",
@@ -137,6 +142,11 @@ export const TOOL_MODIFIER_TAGS: Record<Tool, ToolModifierTag[]> = {
     },
   ],
   curve: [
+    {
+      key: "space",
+      label: { mac: "Space", win: "Space" },
+      descriptionPtBr: "Travar/liberar medida",
+    },
     {
       key: "cmdOrCtrl",
       label: { mac: "⌘", win: "Ctrl" },
