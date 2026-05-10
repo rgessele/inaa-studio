@@ -28,12 +28,18 @@ export default async function LoginPage({
             error={error || undefined}
           />
           <div className="text-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.png"
-              alt="Inaá Studio"
-              className="mx-auto h-14 w-auto object-contain"
-            />
+            <Link
+              href="/dashboard"
+              className="mx-auto inline-flex rounded-md focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700"
+              title="Ir para o Dashboard"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo.png"
+                alt="Inaá Studio"
+                className="h-14 w-auto object-contain"
+              />
+            </Link>
             <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
               Faça login para acessar seus projetos
             </p>

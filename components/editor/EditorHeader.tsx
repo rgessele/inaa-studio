@@ -839,15 +839,23 @@ export function EditorHeader() {
       <header className="h-12 bg-surface-light dark:bg-surface-dark border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 shrink-0 z-20 shadow-subtle relative">
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex items-center shrink-0">
-            {/* Logo */}
-            <Image
-              src="/logo.png"
-              alt="Inaá Studio"
-              width={140}
-              height={36}
-              className="h-9 w-auto object-contain"
-              priority
-            />
+            <button
+              type="button"
+              onClick={handleBackToDashboard}
+              disabled={isNavigatingDashboard}
+              className="inline-flex items-center rounded-md focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700 disabled:cursor-wait"
+              title="Ir para o Dashboard"
+              aria-label="Ir para o Dashboard"
+            >
+              <Image
+                src="/logo.png"
+                alt="Inaá Studio"
+                width={140}
+                height={36}
+                className="h-9 w-auto object-contain"
+                priority
+              />
+            </button>
           </div>
           <div className="hidden md:flex ml-6 text-xs text-text-muted dark:text-text-muted-dark gap-1">
             <FileMenu

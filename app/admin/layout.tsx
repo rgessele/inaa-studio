@@ -73,12 +73,18 @@ export default async function AdminLayout({
           <div className="flex justify-between h-16 items-center">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/logo.png"
-                  alt="Inaá Studio"
-                  className="h-9 w-auto object-contain"
-                />
+                <Link
+                  href="/dashboard"
+                  className="inline-flex items-center rounded-md focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700"
+                  title="Ir para o Dashboard"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/logo.png"
+                    alt="Inaá Studio"
+                    className="h-9 w-auto object-contain"
+                  />
+                </Link>
                 <span
                   className="inline-flex items-center justify-center h-8 w-8 rounded-md text-gray-900 dark:text-accent-gold"
                   title="Admin"

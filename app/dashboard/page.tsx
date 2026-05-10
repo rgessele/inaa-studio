@@ -106,12 +106,18 @@ export default async function DashboardPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
             <div className="flex-shrink-0 flex items-center gap-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/logo.png"
-                alt="Inaá Studio"
-                className="h-9 w-auto object-contain"
-              />
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center rounded-md focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700"
+                title="Ir para o Dashboard"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/logo.png"
+                  alt="Inaá Studio"
+                  className="h-9 w-auto object-contain"
+                />
+              </Link>
             </div>
 
             <div className="flex items-center gap-4">
