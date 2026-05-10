@@ -101,8 +101,8 @@ import {
   type FigureNodeTransformCommit,
 } from "./selectionTransform";
 
-const MIN_ZOOM_SCALE = 0.1;
-const MAX_ZOOM_SCALE = 10;
+const MIN_ZOOM_SCALE = 0.05;
+const MAX_ZOOM_SCALE = 50;
 const ZOOM_FACTOR = 1.08;
 const DENSE_MOLD_NODE_OVERLAY_THRESHOLD = 96;
 const SEGMENT_LENGTH_INPUT_DEBOUNCE_MS = 450;
@@ -3871,7 +3871,7 @@ export default function Canvas() {
       const raw = edgeWorldSamples(figure, edge);
       if (raw.length < 2) return;
 
-      const connectTolWorld = 8 / Math.max(0.1, scale);
+      const connectTolWorld = 8 / Math.max(MIN_ZOOM_SCALE, scale);
       let oriented = raw;
       let t0 = 0;
       let t1 = 1;
@@ -3966,7 +3966,7 @@ export default function Canvas() {
 
     const first = path[0]!;
     const last = path[path.length - 1]!;
-    if (dist(first, last) <= 8 / Math.max(0.1, scale)) {
+    if (dist(first, last) <= 8 / Math.max(MIN_ZOOM_SCALE, scale)) {
       path.pop();
     }
 
@@ -3975,7 +3975,7 @@ export default function Canvas() {
       return;
     }
 
-    const closeTolWorld = 8 / Math.max(0.1, scale);
+    const closeTolWorld = 8 / Math.max(MIN_ZOOM_SCALE, scale);
     const sourceFiguresById = new Map(figures.map((f) => [f.id, f]));
     const curveGeometry = buildClosedMoldGeometryFromSegments(
       draft.segments,
@@ -7274,7 +7274,7 @@ export default function Canvas() {
 
     if (tool === "extractMold" && e.evt.button === 0) {
       const thresholdWorld = 14 / scale;
-      const connectTolWorld = 8 / Math.max(0.1, scale);
+      const connectTolWorld = 8 / Math.max(MIN_ZOOM_SCALE, scale);
       const candidates = figures.filter((f) =>
         isFigureEligibleForExtractSource(f)
       );
@@ -8782,7 +8782,7 @@ export default function Canvas() {
 
     if (tool === "extractMold") {
       const thresholdWorld = 14 / scale;
-      const connectTolWorld = 8 / Math.max(0.1, scale);
+      const connectTolWorld = 8 / Math.max(MIN_ZOOM_SCALE, scale);
       const candidates = figures.filter((f) =>
         isFigureEligibleForExtractSource(f)
       );
@@ -9018,7 +9018,7 @@ export default function Canvas() {
       const last = current.pointsWorld[current.pointsWorld.length - 1] ?? null;
       const nextWorld = worldForTool;
       const minSampleWorld =
-        (current.highPrecision ? 1 : 2) / Math.max(0.1, scale);
+        (current.highPrecision ? 1 : 2) / Math.max(MIN_ZOOM_SCALE, scale);
 
       let nextPoints = current.pointsWorld;
       if (!last || dist(last, nextWorld) >= minSampleWorld) {
@@ -9249,12 +9249,12 @@ export default function Canvas() {
           y: (pos.y - position.y) / scale,
         };
         const last = rawPoints[rawPoints.length - 1] ?? null;
-        if (!last || dist(last, upWorld) >= 0.5 / Math.max(0.1, scale)) {
+        if (!last || dist(last, upWorld) >= 0.5 / Math.max(MIN_ZOOM_SCALE, scale)) {
           rawPoints = [...rawPoints, upWorld];
         }
       }
 
-      const closeTolWorld = 10 / Math.max(0.1, scale);
+      const closeTolWorld = 10 / Math.max(MIN_ZOOM_SCALE, scale);
       const shouldClose =
         rawPoints.length >= 3 &&
         dist(rawPoints[0], rawPoints[rawPoints.length - 1]) <= closeTolWorld;
@@ -9451,7 +9451,7 @@ export default function Canvas() {
           if (!currentDraft || currentDraft.segments.length === 0) return;
           const nextSegments = currentDraft.segments.slice(0, -1);
           const nextPath = buildPathFromExtractSegments(nextSegments);
-          const connectTolWorld = 8 / Math.max(0.1, scale);
+          const connectTolWorld = 8 / Math.max(MIN_ZOOM_SCALE, scale);
           const nextClosed =
             nextPath.length >= 3 &&
             dist(nextPath[0]!, nextPath[nextPath.length - 1]!) <=
@@ -9928,7 +9928,7 @@ export default function Canvas() {
 
     const first = pts[0];
     const last = pts[pts.length - 1];
-    const closeTolWorld = 10 / Math.max(0.1, scale);
+    const closeTolWorld = 10 / Math.max(MIN_ZOOM_SCALE, scale);
     const canClose = pts.length >= 3;
     const isClosePreview = canClose && dist(first, last) <= closeTolWorld;
 
