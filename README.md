@@ -46,8 +46,8 @@ Ferramenta para criação de projetos de modelagem
    ```
 
 3. Configure o Supabase:
-   - Siga as instruções em [docs/SUPABASE_SETUP.md](./docs/SUPABASE_SETUP.md)
-   - Para detalhes do painel admin, veja [docs/ADMIN_GUIDE.md](./docs/ADMIN_GUIDE.md)
+   - Siga as instruções em [Configuração do Supabase](./docs/setup/supabase-setup.md)
+   - Para detalhes do painel admin, veja [Guia do Admin](./docs/guides/admin-guide.md)
    - Copie `.env.local.example` para `.env.local`
    - Adicione suas credenciais do Supabase
 

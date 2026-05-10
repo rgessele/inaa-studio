@@ -9,13 +9,13 @@ This document describes the implementation of the SHIFT key constraint for creat
 ### 1. Deformable Rectangles ✅
 
 - **Requirement**: Don't use Konva.Rect. Generate Konva.Line with 'closed: true' and 4 calculated points.
-- **Status**: Already implemented (see NODE_TOOL_IMPLEMENTATION.md)
+- **Status**: Already implemented (see node-tool-implementation.md)
 - **Implementation**: Rectangles are created with 4-point closed paths using `createRectanglePoints(width, height)`
 
 ### 2. Deformable Ellipses (Circles) ✅
 
 - **Requirement**: Don't use Konva.Circle. Generate Konva.Path with Bézier curves or high-resolution polygon.
-- **Status**: Already implemented (see NODE_TOOL_IMPLEMENTATION.md)
+- **Status**: Already implemented (see node-tool-implementation.md)
 - **Implementation**: Circles are created with 32-point closed paths using `createCirclePoints(radius, segments = 32)`
 
 ### 3. SHIFT Constraint ✅ (NEW)
@@ -163,6 +163,6 @@ Potential improvements:
 
 ## Related Documentation
 
-- `NODE_TOOL_IMPLEMENTATION.md` - Details on deformable shape architecture
-- `NODE_TOOL_SUMMARY.md` - Summary of node tool functionality
-- `NODE_TOOL_TESTING.md` - Test cases for node editing
+- `node-tool-implementation.md` - Details on deformable shape architecture
+- `../history/node-tool-summary.md` - Summary of node tool functionality
+- `../testing/node-tool-testing.md` - Test cases for node editing

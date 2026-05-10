@@ -43,7 +43,7 @@ A dart (pence) is a triangular fold sewn into fabric to add shape and contour to
    - Visual ASCII diagrams
    - Console-accessible test suite
 
-3. **`DART_TOOL_IMPLEMENTATION.md`** (336 lines)
+3. **`../implementation/dart-tool-implementation.md`** (336 lines)
    - Comprehensive implementation guide
    - Technical documentation
    - Usage instructions

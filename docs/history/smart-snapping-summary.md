@@ -80,8 +80,8 @@ All criteria from Issue #14 successfully met:
    - Added `handleNodeAnchorDragStart` function
 
 3. **Documentation**:
-   - `SMART_SNAPPING_IMPLEMENTATION.md` - Technical details
-   - `SMART_SNAPPING_VERIFICATION.md` - Testing guide
+   - `../implementation/smart-snapping-implementation.md` - Technical details
+   - `../testing/smart-snapping-verification.md` - Testing guide
 
 ## Code Review Results
 

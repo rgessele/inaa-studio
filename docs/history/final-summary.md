@@ -39,19 +39,19 @@ All acceptance criteria from issue #17 have been met. The dart tool is fully fun
    - Visual ASCII diagrams
    - Example usage code
 
-3. **`DART_TOOL_IMPLEMENTATION.md`** (336 lines)
+3. **`../implementation/dart-tool-implementation.md`** (336 lines)
    - Complete technical guide
    - Algorithm explanations
    - API documentation
    - Future enhancements list
 
-4. **`DART_TOOL_VISUAL_GUIDE.md`** (285 lines)
+4. **`../guides/dart-tool-visual-guide.md`** (285 lines)
    - ASCII art diagrams
    - Usage examples
    - UI screenshots (text-based)
    - Common use cases
 
-5. **`PR_SUMMARY_DART_TOOL.md`** (255 lines)
+5. **`pr-summary-dart-tool.md`** (255 lines)
    - Comprehensive PR summary
    - Testing checklist
    - Integration points
@@ -245,7 +245,7 @@ const normal = {
 
 ## 🔮 Future Enhancements
 
-Documented in DART_TOOL_IMPLEMENTATION.md:
+Documented in ../implementation/dart-tool-implementation.md:
 
 1. **Interactive positioning** - Click and drag to position dart
 2. **Multiple darts** - Support several darts per shape

@@ -116,8 +116,8 @@ Always test:
 - `components/editor/Canvas.tsx` - Main implementation
 - `components/editor/types.ts` - Type definitions
 - `components/editor/EditorToolbar.tsx` - Tool button
-- `NODE_TOOL_IMPLEMENTATION.md` - Technical specification
-- `NODE_TOOL_TESTING.md` - Test cases
+- `../implementation/node-tool-implementation.md` - Technical specification
+- `../testing/node-tool-testing.md` - Test cases
 
 ## Common Pitfalls to Avoid
 

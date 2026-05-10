@@ -18,7 +18,7 @@ Core export functionality module containing:
 - `generateSVG()`: Exports designs as scalable vector graphics
 - Helper functions: `drawCropMarks()`, `drawPageNumber()`
 
-### 2. `EXPORT_GUIDE.md` (156 lines)
+### 2. `../guides/export-guide.md` (156 lines)
 
 Comprehensive user guide in Portuguese covering:
 
@@ -28,7 +28,7 @@ Comprehensive user guide in Portuguese covering:
 - Troubleshooting tips
 - Best practices
 
-### 3. `VISUAL_VERIFICATION.md` (198 lines)
+### 3. `../testing/visual-verification.md` (198 lines)
 
 Technical verification document including:
 
@@ -202,8 +202,8 @@ Scale ratio: 1:1 ✓
 
 Three comprehensive documents created:
 
-1. **EXPORT_GUIDE.md** - User-facing guide in Portuguese
-2. **VISUAL_VERIFICATION.md** - Technical verification checklist
+1. **../guides/export-guide.md** - User-facing guide in Portuguese
+2. **../testing/visual-verification.md** - Technical verification checklist
 3. This summary - Implementation details
 
 ## Dependencies

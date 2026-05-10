@@ -159,7 +159,7 @@ Isso mantém o modelo de dados limpo e evita acumulação de valores de escala.
 
 ## 📚 Documentação Criada
 
-### 1. `SELECTION_TRANSFORMATION_GUIDE.md`
+### 1. `../guides/selection-transformation-guide.md`
 
 - Guia completo para usuários
 - Documentação técnica da implementação
@@ -167,7 +167,7 @@ Isso mantém o modelo de dados limpo e evita acumulação de valores de escala.
 - Detalhes de comportamento especial para curvas
 - Limitações conhecidas
 
-### 2. `TESTING_TRANSFORMATION.md`
+### 2. `../testing/testing-transformation.md`
 
 - Checklist completo de testes
 - Casos de teste específicos para cada tipo de forma

@@ -61,22 +61,22 @@ Este PR implementa o **Sistema de Seleção e Transformação** completo para o 
 
 Criados 4 documentos completos:
 
-1. **SELECTION_TRANSFORMATION_GUIDE.md**
+1. **../guides/selection-transformation-guide.md**
    - Guia técnico completo
    - Como usar cada funcionalidade
    - Detalhes de implementação
 
-2. **TESTING_TRANSFORMATION.md**
+2. **../testing/testing-transformation.md**
    - Checklist de testes completo
    - Casos de teste específicos
    - Edge cases e limitações
 
-3. **IMPLEMENTATION_SUMMARY.md**
+3. **implementation-summary.md**
    - Resumo completo da implementação
    - Decisões de design
    - Aprendizados e próximos passos
 
-4. **QUICK_VISUAL_GUIDE.md**
+4. **../guides/quick-visual-guide.md**
    - Guia visual rápido para usuários
    - Atalhos de teclado
    - Exemplos de fluxo de trabalho

@@ -223,7 +223,7 @@ inaa-studio/
 │   └── Toast.tsx             # NEW: Notifications
 ├── lib/
 │   └── projects.ts           # NEW: Project CRUD operations
-└── TESTING_SAVE_LOAD.md      # NEW: Testing guide
+└── ../testing/testing-save-load.md      # NEW: Testing guide
 ```
 
 ## Code Patterns to Follow

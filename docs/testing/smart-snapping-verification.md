@@ -224,6 +224,6 @@ When verifying this feature in code review:
 
 ## Related Documentation
 
-- `SMART_SNAPPING_IMPLEMENTATION.md` - Technical implementation details
-- `NODE_TOOL_IMPLEMENTATION.md` - Node tool feature overview
+- `../implementation/smart-snapping-implementation.md` - Technical implementation details
+- `../implementation/node-tool-implementation.md` - Node tool feature overview
 - Issue #14 - Original feature request and acceptance criteria
