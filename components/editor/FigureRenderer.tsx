@@ -65,6 +65,12 @@ interface FigureRendererProps {
 
 const DENSE_LINEAR_CONTOUR_THRESHOLD = 96;
 
+// Points sampled per cubic edge for the on-screen stroke/fill. 60 was far more
+// than needed (a circle = 4 cubics = ~240 pts); 40 stays visually smooth while
+// cutting CPU/GPU vertex work by a third. Kept zoom-independent on purpose so
+// the polyline useMemo is not invalidated on every zoom step.
+const RENDER_CUBIC_STEPS = 40;
+
 type Vec2 = { x: number; y: number };
 
 function len(v: Vec2): number {
@@ -314,17 +320,7 @@ const FigureRenderer = ({
         edgeSegments: [],
       };
     }
-    const polyPts = figureLocalPolyline(figure, 60);
-    const outerLoopPts = (() => {
-      if (!figure.closed) return [] as number[];
-      const sampled = buildSampledOuterLoopContour(figure, 60);
-      if (sampled.length >= 6) return sampled;
-      const outer = getOuterLoopPolygon(figure);
-      if (outer.length < 3) return [] as number[];
-      const flat: number[] = [];
-      for (const p of outer) flat.push(p.x, p.y);
-      return flat.length >= 6 ? flat : [];
-    })();
+    const polyPts = figureLocalPolyline(figure, RENDER_CUBIC_STEPS);
 
     // Check if any node has degree > 2 (branching). If so, the standard
     // polyline traversal will fail, so we render edge-by-edge instead.
@@ -352,13 +348,28 @@ const FigureRenderer = ({
       figure.edges[figure.edges.length - 1].to === figure.edges[0].from;
 
     if (!forceSegments && !hasBranch && (isOrderedOpen || isOrderedClosed)) {
+      // Ordered simple contour: figureLocalPolyline already returns the full
+      // loop, so reuse it for both stroke and fill instead of walking the outer
+      // loop a second time (the old buildSampledOuterLoopContour pass).
       return {
         pts: polyPts,
-        contourPts: outerLoopPts.length >= 6 ? outerLoopPts : polyPts,
+        contourPts: polyPts,
         isSimpleContour: true,
         edgeSegments: [],
       };
     }
+
+    // Branch / unordered case only: the fill needs an outer-loop contour.
+    const outerLoopPts = (() => {
+      if (!figure.closed) return [] as number[];
+      const sampled = buildSampledOuterLoopContour(figure, RENDER_CUBIC_STEPS);
+      if (sampled.length >= 6) return sampled;
+      const outer = getOuterLoopPolygon(figure);
+      if (outer.length < 3) return [] as number[];
+      const flat: number[] = [];
+      for (const p of outer) flat.push(p.x, p.y);
+      return flat.length >= 6 ? flat : [];
+    })();
 
     // Figure has branches - render each edge separately
     const segments: Array<{ edgeId: string; points: number[] }> = [];
@@ -366,7 +377,7 @@ const FigureRenderer = ({
       const edgePts = edgeLocalPoints(
         figure,
         edge,
-        edge.kind === "line" ? 2 : 60
+        edge.kind === "line" ? 2 : RENDER_CUBIC_STEPS
       );
       if (edgePts.length >= 2) {
         const flat: number[] = [];
