@@ -1,5 +1,5 @@
 import React from "react";
-import { Circle, Group } from "react-konva";
+import { Group, Shape } from "react-konva";
 import { Figure } from "./types";
 
 interface NodeOverlayProps {
@@ -29,27 +29,31 @@ const NodeOverlayRenderer = ({
 
   const r = 3 / scale;
   const strokeWidth = 1 / scale;
-  const fill = "transparent";
+  const nodes = figure.nodes;
 
+  // Draw every node dot in a single Konva Shape (one scene-graph node, one
+  // stroke pass) instead of one <Circle> per node. A dense imported/hand-drawn
+  // figure can have hundreds of nodes; N Circles inflate the scene graph and
+  // per-frame draw cost, whereas this is a single path.
   return (
     <Group x={x} y={y} rotation={rotation} listening={false}>
-      {figure.nodes.map((n) => (
-        <Circle
-          key={n.id}
-          x={n.x}
-          y={n.y}
-          name="inaa-node-point"
-          radius={r}
-          fill={fill}
-          stroke={nodeStroke ?? stroke}
-          strokeWidth={strokeWidth}
-          opacity={opacity}
-          listening={false}
-          perfectDrawEnabled={false}
-          shadowForStrokeEnabled={false}
-          hitStrokeWidth={0} // Not interactive
-        />
-      ))}
+      <Shape
+        name="inaa-node-point"
+        listening={false}
+        perfectDrawEnabled={false}
+        shadowForStrokeEnabled={false}
+        stroke={nodeStroke ?? stroke}
+        strokeWidth={strokeWidth}
+        opacity={opacity}
+        sceneFunc={(ctx, shape) => {
+          ctx.beginPath();
+          for (const n of nodes) {
+            ctx.moveTo(n.x + r, n.y);
+            ctx.arc(n.x, n.y, r, 0, Math.PI * 2, false);
+          }
+          ctx.strokeShape(shape);
+        }}
+      />
     </Group>
   );
 };
