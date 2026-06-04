@@ -5436,6 +5436,12 @@ export default function Canvas() {
     snappedToNodeId?: string | null;
   } | null>(null);
 
+  // A node/handle drag emits many move ticks. We want exactly ONE undo entry for
+  // the whole gesture: the first tick commits to history (pushing the pre-drag
+  // state), and every later tick updates the live geometry without saving
+  // history. Reset on each drag start.
+  const nodeEditHistoryCommittedRef = useRef(false);
+
   const mergeFigureNodes = useCallback(
     (figure: Figure, fromNodeId: string, toNodeId: string): Figure => {
       if (fromNodeId === toNodeId) return figure;
@@ -11225,6 +11231,7 @@ export default function Canvas() {
                   nodeMeasureResolvedPreviewRef.current = null;
                   setNodeMeasurePreview(null);
                   clearSegmentLengthConstraint();
+                  nodeEditHistoryCommittedRef.current = false;
                   dragNodeRef.current = {
                     figureId: selectedFigure.id,
                     nodeId: n.id,
@@ -11323,6 +11330,8 @@ export default function Canvas() {
                     currentLocal: { x: nx, y: ny },
                   });
 
+                  const saveHist = !nodeEditHistoryCommittedRef.current;
+                  nodeEditHistoryCommittedRef.current = true;
                   setFigures((prev) =>
                     prev.map((f) => {
                       if (f.id !== ref.figureId) return f;
@@ -11348,7 +11357,8 @@ export default function Canvas() {
                           };
                         }),
                       };
-                    })
+                    }),
+                    saveHist
                   );
                 }}
                 onDragEnd={() => {
@@ -11517,6 +11527,7 @@ export default function Canvas() {
                       nodeId: n.id,
                       handle: "in",
                     });
+                    nodeEditHistoryCommittedRef.current = false;
                   }}
                   onDragMove={(ev) => {
                     let nx = ev.target.x();
@@ -11539,6 +11550,8 @@ export default function Canvas() {
                         ev.target.position({ x: nx, y: ny });
                       }
                     }
+                    const saveHist = !nodeEditHistoryCommittedRef.current;
+                    nodeEditHistoryCommittedRef.current = true;
                     setFigures((prev) =>
                       prev.map((f) => {
                         if (f.id !== selectedFigure.id) return f;
@@ -11562,7 +11575,8 @@ export default function Canvas() {
                             return next;
                           }),
                         };
-                      })
+                      }),
+                      saveHist
                     );
                   }}
                   onPointerDown={(ev) => {
@@ -11612,6 +11626,7 @@ export default function Canvas() {
                       nodeId: n.id,
                       handle: "out",
                     });
+                    nodeEditHistoryCommittedRef.current = false;
                   }}
                   onDragMove={(ev) => {
                     let nx = ev.target.x();
@@ -11634,6 +11649,8 @@ export default function Canvas() {
                         ev.target.position({ x: nx, y: ny });
                       }
                     }
+                    const saveHist = !nodeEditHistoryCommittedRef.current;
+                    nodeEditHistoryCommittedRef.current = true;
                     setFigures((prev) =>
                       prev.map((f) => {
                         if (f.id !== selectedFigure.id) return f;
@@ -11657,7 +11674,8 @@ export default function Canvas() {
                             return next;
                           }),
                         };
-                      })
+                      }),
+                      saveHist
                     );
                   }}
                   onPointerDown={(ev) => {
