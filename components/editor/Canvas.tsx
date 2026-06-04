@@ -5009,6 +5009,27 @@ export default function Canvas() {
   const panRafRef = useRef<number | null>(null);
   const panPositionRef = useRef<Vec2 | null>(null);
 
+  // rAF coalescing for pointer-move and wheel. Native pointermove/wheel fire at
+  // 60-120+ Hz; processing every one synchronously (heavy hover/snap scans, or a
+  // full re-render per zoom tick) backs up the main thread on a weak machine.
+  // We instead process the latest event once per animation frame.
+  const pointerMoveRafRef = useRef<number | null>(null);
+  const pendingPointerMoveRef =
+    useRef<Konva.KonvaEventObject<PointerEvent | MouseEvent> | null>(null);
+  const wheelRafRef = useRef<number | null>(null);
+  const pendingZoomRef = useRef<{ scale: number; position: Vec2 } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pointerMoveRafRef.current !== null) {
+        cancelAnimationFrame(pointerMoveRafRef.current);
+      }
+      if (wheelRafRef.current !== null) {
+        cancelAnimationFrame(wheelRafRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (!isPanning) return;
 
@@ -6621,6 +6642,31 @@ export default function Canvas() {
       setCursorBadge(null);
       scheduleCursorBadgeIdleShow();
 
+      // Accumulate zoom/pan into a pending ref so a dense stream of wheel events
+      // (trackpad pinch/momentum) composes correctly and commits to React state
+      // only once per animation frame. Base off the pending value (or the synced
+      // refs) so each event builds on the last without a stale snapshot.
+      const base = pendingZoomRef.current ?? {
+        scale: scaleRef.current,
+        position: positionRef.current,
+      };
+
+      const scheduleZoomCommit = () => {
+        if (wheelRafRef.current !== null) return;
+        wheelRafRef.current = requestAnimationFrame(() => {
+          wheelRafRef.current = null;
+          const pending = pendingZoomRef.current;
+          pendingZoomRef.current = null;
+          if (!pending) return;
+          // Keep the synced refs current immediately so the next event's base is
+          // correct even before React re-renders.
+          scaleRef.current = pending.scale;
+          positionRef.current = pending.position;
+          setScale(pending.scale);
+          setPosition(pending.position);
+        });
+      };
+
       // Trackpad pan is typically reported as wheel events with small deltas.
       // Pinch-zoom usually sets ctrlKey=true on macOS.
       const isTrackpadWheel =
@@ -6628,38 +6674,36 @@ export default function Canvas() {
         (Math.abs(e.evt.deltaX) > 0 || Math.abs(e.evt.deltaY) < 50);
 
       if (!e.evt.ctrlKey && isTrackpadWheel) {
-        setPosition({
-          x: position.x - e.evt.deltaX,
-          y: position.y - e.evt.deltaY,
-        });
+        pendingZoomRef.current = {
+          scale: base.scale,
+          position: {
+            x: base.position.x - e.evt.deltaX,
+            y: base.position.y - e.evt.deltaY,
+          },
+        };
+        scheduleZoomCommit();
         return;
       }
 
       const direction = e.evt.deltaY > 0 ? -1 : 1;
       const factor = direction > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
-      const nextScale = clamp(scale * factor, MIN_ZOOM_SCALE, MAX_ZOOM_SCALE);
+      const nextScale = clamp(base.scale * factor, MIN_ZOOM_SCALE, MAX_ZOOM_SCALE);
 
       const mousePointTo = {
-        x: (pointer.x - position.x) / scale,
-        y: (pointer.y - position.y) / scale,
+        x: (pointer.x - base.position.x) / base.scale,
+        y: (pointer.y - base.position.y) / base.scale,
       };
 
-      const nextPosition = {
-        x: pointer.x - mousePointTo.x * nextScale,
-        y: pointer.y - mousePointTo.y * nextScale,
+      pendingZoomRef.current = {
+        scale: nextScale,
+        position: {
+          x: pointer.x - mousePointTo.x * nextScale,
+          y: pointer.y - mousePointTo.y * nextScale,
+        },
       };
-
-      setScale(nextScale);
-      setPosition(nextPosition);
+      scheduleZoomCommit();
     },
-    [
-      position.x,
-      position.y,
-      scheduleCursorBadgeIdleShow,
-      scale,
-      setPosition,
-      setScale,
-    ]
+    [scheduleCursorBadgeIdleShow, setPosition, setScale]
   );
 
   const parseCmInput = useCallback((raw: string): number | null => {
@@ -13053,8 +13097,17 @@ export default function Canvas() {
           onWheel={handleWheel}
           onPointerDown={handlePointerDown}
           onPointerMove={(e) => {
-            handlePointerMove(e);
-            handleCurvePointerMove(e);
+            // Coalesce: store the latest event and process once per frame.
+            pendingPointerMoveRef.current = e;
+            if (pointerMoveRafRef.current !== null) return;
+            pointerMoveRafRef.current = requestAnimationFrame(() => {
+              pointerMoveRafRef.current = null;
+              const ev = pendingPointerMoveRef.current;
+              pendingPointerMoveRef.current = null;
+              if (!ev) return;
+              handlePointerMove(ev);
+              handleCurvePointerMove(ev);
+            });
           }}
           onPointerUp={handlePointerUp}
           onContextMenu={(e) => {
