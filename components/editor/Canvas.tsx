@@ -343,6 +343,31 @@ type ResolvedNodeMeasurePreview = {
   lengthPx: number;
   locked: boolean;
   candidate: NodeMeasureCandidate | null;
+  /**
+   * World-space polyline of the measured path. For a contour-following measure
+   * this traces the figure edges (curvature included); for the straight
+   * fallback it is just [originWorld, endWorld].
+   */
+  pathWorld: Vec2[];
+};
+
+// --- Node-tool contour measuring -------------------------------------------
+// A "branch" is the contour walked from the origin node along one incident
+// edge, hopping across connected edges until a junction, an open end, or the
+// loop closes. It keeps the flattened polyline plus an arc-length -> (edgeId,
+// edge-parameter t) mapping so a measured arc position can be turned back into
+// a concrete edge split.
+type NodeContourSample = { s: number; t: number; p: Vec2 };
+type NodeContourRun = {
+  edgeId: string;
+  sStart: number;
+  sEnd: number;
+  samples: NodeContourSample[];
+};
+type NodeContourBranch = {
+  runs: NodeContourRun[];
+  pts: Vec2[];
+  totalLenPx: number;
 };
 
 type HoveredPique = {
@@ -2904,96 +2929,236 @@ function constrainPointToDistance(
   };
 }
 
-function segmentCircleIntersections(
-  center: Vec2,
-  radius: number,
-  a: Vec2,
-  b: Vec2
-): Array<{ point: Vec2; t: number }> {
-  if (!Number.isFinite(radius) || radius <= 0) return [];
-  const d = sub(b, a);
-  const f = sub(a, center);
-  const aa = d.x * d.x + d.y * d.y;
-  if (!Number.isFinite(aa) || aa < 1e-9) return [];
-
-  const bb = 2 * (f.x * d.x + f.y * d.y);
-  const cc = f.x * f.x + f.y * f.y - radius * radius;
-  const disc = bb * bb - 4 * aa * cc;
-  if (!Number.isFinite(disc) || disc < 0) return [];
-
-  const sqrtDisc = Math.sqrt(Math.max(0, disc));
-  const out: Array<{ point: Vec2; t: number }> = [];
-  for (const t of [(-bb - sqrtDisc) / (2 * aa), (-bb + sqrtDisc) / (2 * aa)]) {
-    if (!Number.isFinite(t) || t < 0 || t > 1) continue;
-    const point = lerp(a, b, t);
-    if (out.some((hit) => dist(hit.point, point) < 1e-4)) continue;
-    out.push({ point, t });
-  }
-  return out;
-}
-
-function findNodeMeasureCandidate(
+/**
+ * Build the contour branches reachable from `originNodeId`. Starting from each
+ * edge incident to the origin node, the contour is walked (in local
+ * coordinates) along degree-2 chains; at a junction (node with >1 onward edge)
+ * the walk FORKS, yielding one branch per onward edge so the cursor can pick
+ * which exit to follow. A branch ends at an open end, when it would revisit an
+ * edge, or when it returns to the origin (closed loop). The result is the set
+ * of simple paths leaving the origin, capped for safety.
+ */
+function buildNodeContourBranches(
   figure: Figure,
-  originLocal: Vec2,
-  rawEndLocal: Vec2,
-  lockedLengthPx: number | null,
-  thresholdLocal: number
-): NodeMeasureCandidate | null {
-  if (!Number.isFinite(thresholdLocal) || thresholdLocal <= 0) return null;
+  originNodeId: string,
+  cubicSteps: number
+): NodeContourBranch[] {
+  const incident = new Map<string, FigureEdge[]>();
+  for (const e of figure.edges) {
+    const fromList = incident.get(e.from) ?? [];
+    fromList.push(e);
+    incident.set(e.from, fromList);
+    const toList = incident.get(e.to) ?? [];
+    toList.push(e);
+    incident.set(e.to, toList);
+  }
 
-  const targetLocal =
-    lockedLengthPx != null && lockedLengthPx > 0
-      ? constrainPointToDistance(originLocal, rawEndLocal, lockedLengthPx)
-      : rawEndLocal;
+  const branches: NodeContourBranch[] = [];
+  const MAX_BRANCHES = 64;
+  const MAX_DEPTH = figure.edges.length + 2;
+  let truncated = false;
 
-  let best: {
-    edgeId: string;
-    t: number;
-    pointLocal: Vec2;
-    cost: number;
-  } | null = null;
+  const finalize = (
+    runs: NodeContourRun[],
+    pts: Vec2[],
+    totalLenPx: number
+  ): void => {
+    if (pts.length >= 2 && totalLenPx > 1e-6) {
+      branches.push({ runs, pts, totalLenPx });
+    }
+  };
 
-  for (const edge of figure.edges) {
-    const pts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 1 : 120);
-    if (pts.length < 2) continue;
+  // Append `edge` (entered from `fromNodeId`) onto the running path, mutating
+  // `runs`/`pts`/`usedEdges` and advancing `sRef.s`. Returns the node reached,
+  // or null when the edge cannot be appended.
+  const appendEdge = (
+    edge: FigureEdge,
+    fromNodeId: string,
+    runs: NodeContourRun[],
+    pts: Vec2[],
+    sRef: { s: number },
+    usedEdges: Set<string>
+  ): { nextNodeId: string } | null => {
+    if (usedEdges.has(edge.id)) return null;
+    const rawPts = edgeLocalPoints(
+      figure,
+      edge,
+      edge.kind === "line" ? 1 : cubicSteps
+    );
+    if (rawPts.length < 2) return null;
+    usedEdges.add(edge.id);
 
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = pts[i];
-      const b = pts[i + 1];
+    const forward = edge.from === fromNodeId;
+    const nextNodeId = forward ? edge.to : edge.from;
+    const n = rawPts.length - 1;
 
-      const candidates =
-        lockedLengthPx != null && lockedLengthPx > 0
-          ? segmentCircleIntersections(originLocal, lockedLengthPx, a, b)
-          : (() => {
-              const hit = pointToSegmentDistance(rawEndLocal, a, b);
-              return [{ point: lerp(a, b, hit.t), t: hit.t }];
-            })();
+    // Edge-parameter t is index/n in the edge's own from->to orientation,
+    // regardless of which way we traverse it.
+    const order: number[] = [];
+    if (forward) {
+      for (let i = 0; i <= n; i++) order.push(i);
+    } else {
+      for (let i = n; i >= 0; i--) order.push(i);
+    }
 
-      for (const candidate of candidates) {
-        const cost = dist(candidate.point, targetLocal);
-        if (!Number.isFinite(cost) || cost > thresholdLocal) continue;
-        const t = (i + candidate.t) / (pts.length - 1);
-        if (t <= 0.001 || t >= 0.999) continue;
-        if (!best || cost < best.cost) {
-          best = {
-            edgeId: edge.id,
-            t,
-            pointLocal: candidate.point,
-            cost,
-          };
-        }
+    const samples: NodeContourSample[] = [];
+    const sStart = sRef.s;
+    for (let k = 0; k < order.length; k++) {
+      const idx = order[k];
+      const p = rawPts[idx];
+      if (k === 0) {
+        if (pts.length === 0) pts.push(p);
+        samples.push({ s: sRef.s, t: idx / n, p });
+      } else {
+        const prevP = pts[pts.length - 1];
+        sRef.s += dist(prevP, p);
+        pts.push(p);
+        samples.push({ s: sRef.s, t: idx / n, p });
       }
     }
+    runs.push({ edgeId: edge.id, sStart, sEnd: sRef.s, samples });
+    return { nextNodeId };
+  };
+
+  // Walk a path; extend in place along degree-2 chains, fork at junctions.
+  const walkPath = (
+    firstEdge: FigureEdge,
+    firstFromNodeId: string,
+    runs: NodeContourRun[],
+    pts: Vec2[],
+    sRef: { s: number },
+    usedEdges: Set<string>,
+    depth: number
+  ): void => {
+    let edge = firstEdge;
+    let fromNodeId = firstFromNodeId;
+    let d = depth;
+
+    for (;;) {
+      if (branches.length >= MAX_BRANCHES) {
+        truncated = true;
+        finalize(runs, pts, sRef.s);
+        return;
+      }
+      if (d > MAX_DEPTH) {
+        finalize(runs, pts, sRef.s);
+        return;
+      }
+
+      const res = appendEdge(edge, fromNodeId, runs, pts, sRef, usedEdges);
+      if (!res) {
+        finalize(runs, pts, sRef.s);
+        return;
+      }
+      d++;
+
+      const nextNodeId = res.nextNodeId;
+      if (nextNodeId === originNodeId) {
+        finalize(runs, pts, sRef.s); // closed loop fully walked
+        return;
+      }
+
+      const continuations = (incident.get(nextNodeId) ?? []).filter(
+        (e) => e.id !== edge.id && !usedEdges.has(e.id)
+      );
+
+      if (continuations.length === 0) {
+        finalize(runs, pts, sRef.s); // open end / dead end
+        return;
+      }
+      if (continuations.length === 1) {
+        edge = continuations[0];
+        fromNodeId = nextNodeId;
+        continue; // extend in place
+      }
+
+      // Junction: fork into each onward edge with a cloned path state. The
+      // existing run/point objects are never mutated, so shallow clones are
+      // safe and cheap.
+      for (const cont of continuations) {
+        if (branches.length >= MAX_BRANCHES) {
+          truncated = true;
+          break;
+        }
+        walkPath(
+          cont,
+          nextNodeId,
+          runs.slice(),
+          pts.slice(),
+          { s: sRef.s },
+          new Set(usedEdges),
+          d
+        );
+      }
+      return; // path fully expanded through its forks
+    }
+  };
+
+  for (const startEdge of incident.get(originNodeId) ?? []) {
+    walkPath(startEdge, originNodeId, [], [], { s: 0 }, new Set(), 0);
   }
 
-  if (!best) return null;
-  return {
-    figureId: figure.id,
-    edgeId: best.edgeId,
-    t: best.t,
-    pointLocal: best.pointLocal,
-    pointWorld: figureLocalToWorld(figure, best.pointLocal),
-  };
+  if (truncated) {
+    console.warn(
+      `[node-measure] contour branches capped at ${MAX_BRANCHES} for figure ${figure.id}; some paths past junctions were dropped.`
+    );
+  }
+
+  return branches;
+}
+
+/** Project a local point onto a branch polyline; returns arc length + distance. */
+function projectPointToContourBranch(
+  branch: NodeContourBranch,
+  p: Vec2
+): { s: number; point: Vec2; d: number } | null {
+  const pts = branch.pts;
+  if (pts.length < 2) return null;
+  let bestD = Number.POSITIVE_INFINITY;
+  let bestS = 0;
+  let bestPoint = pts[0];
+  let cum = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const segLen = dist(a, b);
+    const hit = pointToSegmentDistance(p, a, b);
+    if (hit.d < bestD) {
+      bestD = hit.d;
+      bestS = cum + hit.t * segLen;
+      bestPoint = lerp(a, b, hit.t);
+    }
+    cum += segLen;
+  }
+  if (!Number.isFinite(bestD)) return null;
+  return { s: bestS, point: bestPoint, d: bestD };
+}
+
+/** Map an arc-length position along a branch back to a concrete (edgeId, t). */
+function contourBranchAtArcLength(
+  branch: NodeContourBranch,
+  sTarget: number
+): { pLocal: Vec2; edgeId: string; t: number } | null {
+  const s = clamp(sTarget, 0, branch.totalLenPx);
+  for (const run of branch.runs) {
+    if (s < run.sStart - 1e-6 || s > run.sEnd + 1e-6) continue;
+    const samples = run.samples;
+    for (let i = 0; i < samples.length - 1; i++) {
+      const a = samples[i];
+      const b = samples[i + 1];
+      const lo = Math.min(a.s, b.s);
+      const hi = Math.max(a.s, b.s);
+      if (s < lo - 1e-6 || s > hi + 1e-6) continue;
+      const span = b.s - a.s;
+      const u = Math.abs(span) > 1e-9 ? (s - a.s) / span : 0;
+      const t = a.t + (b.t - a.t) * u;
+      return { pLocal: lerp(a.p, b.p, u), edgeId: run.edgeId, t: clamp(t, 0, 1) };
+    }
+  }
+  const lastRun = branch.runs[branch.runs.length - 1];
+  if (!lastRun || lastRun.samples.length === 0) return null;
+  const last = lastRun.samples[lastRun.samples.length - 1];
+  return { pLocal: last.p, edgeId: lastRun.edgeId, t: clamp(last.t, 0, 1) };
 }
 
 function computeRectLikeCorners(
@@ -5553,6 +5718,24 @@ export default function Canvas() {
       : null;
   }, [figures, selectedFigureId]);
 
+  const nodeMeasureOriginNodeId = nodeMeasurePreview?.nodeId ?? null;
+  const nodeMeasureFigureId = nodeMeasurePreview?.figureId ?? null;
+
+  // The contour walked from the origin node is independent of the live cursor,
+  // so build it only when the figure geometry or origin node changes.
+  const nodeMeasureContour = useMemo<NodeContourBranch[] | null>(() => {
+    if (tool !== "node" || !nodeMeasureFigureId || !nodeMeasureOriginNodeId) {
+      return null;
+    }
+    if (!selectedFigure || selectedFigure.id !== nodeMeasureFigureId) {
+      return null;
+    }
+    if (!selectedFigure.nodes.some((n) => n.id === nodeMeasureOriginNodeId)) {
+      return null;
+    }
+    return buildNodeContourBranches(selectedFigure, nodeMeasureOriginNodeId, 64);
+  }, [tool, nodeMeasureFigureId, nodeMeasureOriginNodeId, selectedFigure]);
+
   const nodeMeasureResolvedPreview = useMemo<ResolvedNodeMeasurePreview | null>(() => {
     if (tool !== "node" || !nodeMeasurePreview) return null;
     if (!selectedFigure || selectedFigure.id !== nodeMeasurePreview.figureId) {
@@ -5569,6 +5752,7 @@ export default function Canvas() {
       selectedFigure,
       nodeMeasurePreview.currentWorld
     );
+    const originWorld = figureLocalToWorld(selectedFigure, originLocal);
     const lockedLengthPx =
       segmentLengthLockCm != null &&
       Number.isFinite(segmentLengthLockCm) &&
@@ -5576,23 +5760,89 @@ export default function Canvas() {
         ? segmentLengthLockCm * PX_PER_CM
         : null;
     const thresholdLocal = 12 / scale;
-    const candidate = findNodeMeasureCandidate(
-      selectedFigure,
-      originLocal,
-      rawEndLocal,
-      lockedLengthPx,
-      thresholdLocal
-    );
-    const endLocal = candidate
-      ? candidate.pointLocal
-      : lockedLengthPx != null
+    const branches = nodeMeasureContour;
+
+    // Build a contour-following result for a target arc length on a branch.
+    const resolveOnBranch = (
+      branch: NodeContourBranch,
+      sTarget: number
+    ): ResolvedNodeMeasurePreview | null => {
+      const hit = contourBranchAtArcLength(branch, sTarget);
+      if (!hit) return null;
+      // Reject splits that fall on top of an existing node.
+      if (hit.t <= 0.001 || hit.t >= 0.999) return null;
+      const pathLocal = slicePolylineByArcLength(branch.pts, 0, sTarget);
+      if (pathLocal.length < 2) return null;
+      const pathWorld = pathLocal.map((p) =>
+        figureLocalToWorld(selectedFigure, p)
+      );
+      const pointWorld = figureLocalToWorld(selectedFigure, hit.pLocal);
+      pathWorld[pathWorld.length - 1] = pointWorld;
+      return {
+        figureId: selectedFigure.id,
+        nodeId: originNode.id,
+        originWorld,
+        endWorld: pointWorld,
+        lengthPx: sTarget,
+        locked: lockedLengthPx != null,
+        candidate: {
+          figureId: selectedFigure.id,
+          edgeId: hit.edgeId,
+          t: hit.t,
+          pointLocal: hit.pLocal,
+          pointWorld,
+        },
+        pathWorld,
+      };
+    };
+
+    if (branches && branches.length > 0) {
+      if (lockedLengthPx != null) {
+        // Locked: the cursor only picks the direction; the endpoint sits at the
+        // fixed arc length, on whichever branch lands it closest to the cursor.
+        let best: { branch: NodeContourBranch; dEnd: number } | null = null;
+        for (const branch of branches) {
+          if (lockedLengthPx > branch.totalLenPx + 1e-6) continue;
+          const hit = contourBranchAtArcLength(branch, lockedLengthPx);
+          if (!hit) continue;
+          const dEnd = dist(hit.pLocal, rawEndLocal);
+          if (!best || dEnd < best.dEnd) best = { branch, dEnd };
+        }
+        if (best) {
+          const resolved = resolveOnBranch(best.branch, lockedLengthPx);
+          if (resolved) return resolved;
+        }
+      } else {
+        // Free: walk to the cursor's projection on the nearest branch. Ties
+        // (e.g. both directions of a closed loop) prefer the shorter arc.
+        let best:
+          | { branch: NodeContourBranch; s: number; d: number }
+          | null = null;
+        for (const branch of branches) {
+          const pr = projectPointToContourBranch(branch, rawEndLocal);
+          if (!pr) continue;
+          if (
+            !best ||
+            pr.d < best.d - 1e-3 ||
+            (Math.abs(pr.d - best.d) <= 1e-3 && pr.s < best.s)
+          ) {
+            best = { branch, s: pr.s, d: pr.d };
+          }
+        }
+        if (best && best.d <= thresholdLocal) {
+          const resolved = resolveOnBranch(best.branch, best.s);
+          if (resolved) return resolved;
+        }
+      }
+    }
+
+    // Fallback: straight free measure when the cursor is away from the contour
+    // (or there is no walkable contour from this node).
+    const endLocal =
+      lockedLengthPx != null
         ? constrainPointToDistance(originLocal, rawEndLocal, lockedLengthPx)
         : rawEndLocal;
-    const originWorld = figureLocalToWorld(selectedFigure, originLocal);
-    const endWorld = candidate
-      ? candidate.pointWorld
-      : figureLocalToWorld(selectedFigure, endLocal);
-
+    const endWorld = figureLocalToWorld(selectedFigure, endLocal);
     return {
       figureId: selectedFigure.id,
       nodeId: originNode.id,
@@ -5600,9 +5850,11 @@ export default function Canvas() {
       endWorld,
       lengthPx: dist(originWorld, endWorld),
       locked: lockedLengthPx != null,
-      candidate,
+      candidate: null,
+      pathWorld: [originWorld, endWorld],
     };
   }, [
+    nodeMeasureContour,
     nodeMeasurePreview,
     scale,
     segmentLengthLockCm,
@@ -11579,8 +11831,18 @@ export default function Canvas() {
     const stroke = nodeMeasureResolvedPreview.candidate
       ? "#16a34a"
       : "#2563eb";
-    const mid = lerp(a, b, 0.5);
-    const tangent = sub(b, a);
+    // Trace the measured path (curvature included); fall back to a straight
+    // segment when there is no contour polyline.
+    const path =
+      nodeMeasureResolvedPreview.pathWorld.length >= 2 &&
+      nodeMeasureResolvedPreview.pathWorld.every(isFiniteVec2)
+        ? nodeMeasureResolvedPreview.pathWorld
+        : [a, b];
+    const linePoints: number[] = [];
+    for (const p of path) linePoints.push(p.x, p.y);
+    const mt = midAndTangent(path);
+    const mid = mt?.mid ?? lerp(a, b, 0.5);
+    const tangent = mt?.tangent ?? sub(b, a);
     const angleDeg = normalizeUprightAngleDeg(
       (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI
     );
@@ -11594,13 +11856,14 @@ export default function Canvas() {
     return (
       <>
         <Line
-          points={[a.x, a.y, b.x, b.y]}
+          points={linePoints}
           stroke={stroke}
           strokeWidth={1.5 / scale}
           dash={[6 / scale, 4 / scale]}
           opacity={0.95}
           listening={false}
           lineCap="round"
+          lineJoin="round"
         />
         <Circle
           x={a.x}
