@@ -6437,6 +6437,18 @@ export default function Canvas() {
     };
   }, [position.x, position.y, scale, size.width, size.height]);
 
+  // Per-figure world bounding boxes for viewport culling. Keyed on `figures`,
+  // so this recomputes only when geometry changes — NOT on pan/zoom (those just
+  // re-run the cheap intersection test below).
+  const figureWorldBoundsById = useMemo(() => {
+    const map = new Map<
+      string,
+      { x: number; y: number; width: number; height: number } | null
+    >();
+    for (const f of figures) map.set(f.id, figureWorldBoundingBox(f));
+    return map;
+  }, [figures]);
+
   const guidePreviewPendingRef = useRef<Map<string, number> | null>(null);
   const guidePreviewRafRef = useRef<number | null>(null);
   const [guidePreviewValues, setGuidePreviewValues] = useState<Map<
@@ -13224,6 +13236,23 @@ export default function Canvas() {
               const isSeam = fig.kind === "seam" && !!fig.parentId;
               const baseId = isSeam ? fig.parentId! : fig.id;
               const isSelected = selectedIdsSet.has(baseId);
+
+              // Viewport culling: skip figures whose world bbox doesn't
+              // intersect the padded viewport. Selected figures are never culled
+              // (few of them, and they may be mid-drag with a preview offset).
+              if (!isSelected) {
+                const bb = figureWorldBoundsById.get(fig.id);
+                if (bb) {
+                  const padX = (viewportWorld.x1 - viewportWorld.x0) * 0.15;
+                  const padY = (viewportWorld.y1 - viewportWorld.y0) * 0.15;
+                  const offscreen =
+                    bb.x > viewportWorld.x1 + padX ||
+                    bb.x + bb.width < viewportWorld.x0 - padX ||
+                    bb.y > viewportWorld.y1 + padY ||
+                    bb.y + bb.height < viewportWorld.y0 - padY;
+                  if (offscreen) return null;
+                }
+              }
               const isRemovePreview =
                 tool === "offset" &&
                 hoveredOffsetBaseId != null &&
