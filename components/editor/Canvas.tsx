@@ -107,6 +107,16 @@ const ZOOM_FACTOR = 1.08;
 const DENSE_MOLD_NODE_OVERLAY_THRESHOLD = 96;
 const SEGMENT_LENGTH_INPUT_DEBOUNCE_MS = 450;
 
+// Cap the backing-store resolution of the interactive canvases. On a HiDPI
+// all-in-one (devicePixelRatio 2+), rendering every layer at full DPR means ~4x
+// the pixels to fill each frame, which a weak integrated GPU cannot sustain.
+// This is set before any Stage/Layer mounts. Raster export sets its own higher
+// pixelRatio per call (export.ts), so quality there is unaffected.
+const MAX_LIVE_PIXEL_RATIO = 1.5;
+if (typeof window !== "undefined") {
+  Konva.pixelRatio = Math.min(window.devicePixelRatio || 1, MAX_LIVE_PIXEL_RATIO);
+}
+
 type Vec2 = { x: number; y: number };
 
 type OffsetPreviewLogInput = {

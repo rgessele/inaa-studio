@@ -666,10 +666,12 @@ const FigureRenderer = ({
         ? figure.piques.map((p) => {
             const edge = figure.edges.find((e) => e.id === p.edgeId) ?? null;
             if (!edge) return null;
+            // 32 arc-length samples locate the pique to sub-pixel accuracy;
+            // 120 was wasted CPU (this runs in the render body).
             const edgePts = edgeLocalPoints(
               figure,
               edge,
-              edge.kind === "line" ? 2 : 120
+              edge.kind === "line" ? 2 : 32
             );
             if (edgePts.length < 2) return null;
 

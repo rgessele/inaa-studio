@@ -1,5 +1,14 @@
 import { useState, useCallback } from "react";
 
+// Cap the undo stack so a long editing/drawing session cannot grow memory
+// without bound. Each entry is a full document snapshot, so on low-RAM
+// machines an uncapped stack causes GC thrash and eventual swapping.
+const MAX_HISTORY = 50;
+
+function trimPast<T>(past: T[]): T[] {
+  return past.length > MAX_HISTORY ? past.slice(past.length - MAX_HISTORY) : past;
+}
+
 interface HistoryState<T> {
   past: T[];
   present: T | null;
@@ -51,10 +60,10 @@ export function useHistory<T>(
             ? (newState as (prev: T | null) => T)(current.present)
             : newState;
 
-        // If there's a present state, save it to past
+        // If there's a present state, save it to past (bounded by MAX_HISTORY).
         const newPast =
           current.present !== null
-            ? [...current.past, current.present]
+            ? trimPast([...current.past, current.present])
             : current.past;
 
         return {
@@ -99,7 +108,7 @@ export function useHistory<T>(
       return {
         past:
           current.present !== null
-            ? [...current.past, current.present]
+            ? trimPast([...current.past, current.present])
             : current.past,
         present: next,
         future: newFuture,
