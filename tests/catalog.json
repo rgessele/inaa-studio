@@ -125,6 +125,31 @@
       "risk": "high",
       "e2e": ["tests/point-labels.export.spec.ts"],
       "notes": "Valida fluxo de export em PDF com chavinha de figuras convencionais e download em modal rolável."
+    },
+    {
+      "id": "tool.seamHemSimplify",
+      "title": "Margem de costura / Bainha: contornos simplificados (RDP) na geração",
+      "risk": "high",
+      "e2e": [
+        "tests/offset.any-closed.spec.ts",
+        "tests/offset.visual.spec.ts",
+        "tests/hem.preview.spec.ts"
+      ],
+      "notes": "makeSeamFigure/makeHemFigure aplicam Douglas-Peucker (~0,2mm) ao offset, evitando o inchaço de ~1000+ nós por curva. Contorno deve permanecer visualmente idêntico."
+    },
+    {
+      "id": "editor.contextMenuDrawGuard",
+      "title": "Menu de contexto: suprimido ao desenhar curva/reta",
+      "risk": "low",
+      "e2e": ["tests/curve.tool.spec.ts", "tests/line.tool.spec.ts"],
+      "notes": "Com curve/line ativos, o clique direito apenas desfaz o último ponto; o menu de contexto da figura não abre por cima."
+    },
+    {
+      "id": "tool.strokeColorApplyClose",
+      "title": "Cor da linha: \"Aplicar\" confirma e fecha o seletor",
+      "risk": "low",
+      "e2e": ["tests/stroke-color.spec.ts"],
+      "notes": "O botão Aplicar aplica a cor e fecha o popover (feedback visível), mesmo quando a cor já foi aplicada ao vivo por preset/recente."
     }
   ]
 }
