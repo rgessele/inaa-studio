@@ -1,10 +1,18 @@
 import { PX_PER_CM } from "./constants";
 import { add, dist, mul, sub } from "./figureGeometry";
+import { simplifyClosedPolygonRdp, simplifyPolylineRdp } from "./geometrySimplify";
 import { edgeLocalPoints, figureLocalPolyline } from "./figurePath";
 import type { Figure, FigureEdge, FigureNode } from "./types";
 
 export const SEAM_ALLOWANCE_STROKE = "#6366f1";
 export const SEAM_ALLOWANCE_DASH = [5, 5];
+
+// Max perpendicular deviation (px) allowed when thinning the densely-sampled
+// offset polyline into persisted seam nodes. 0.02 cm ≈ 0.2 mm — far below
+// pattern-cutting accuracy, yet collapses ~1400-point curved seams to a few
+// dozen nodes. Without this, every cubic edge of the source mold was being
+// persisted as ~120 corner/line points (see makeSeamFigure).
+export const SEAM_SIMPLIFY_TOLERANCE_PX = 0.02 * PX_PER_CM;
 
 type Vec2 = { x: number; y: number };
 
@@ -1535,8 +1543,12 @@ function offsetClosedPolylineUniform(
     }
     if (poly.length < 3) return null;
     
-    // Use the new polygon offset algorithm
-    return offsetPolygonOutward(poly, offsetPx);
+    // Use the new polygon offset algorithm, then thin the dense result so the
+    // circle seam is stored as a handful of nodes instead of ~60.
+    return simplifyClosedPolygonRdp(
+      offsetPolygonOutward(poly, offsetPx),
+      SEAM_SIMPLIFY_TOLERANCE_PX
+    );
   }
 
   // If the outer loop contains curves, offset a denser polyline so the
@@ -1556,7 +1568,13 @@ function offsetClosedPolylineUniform(
         poly.pop();
       }
       if (poly.length >= 3) {
-        return offsetPolygonOutward(poly, offsetPx);
+        // The mold's curves were flattened at ~120 points per cubic edge; thin
+        // the offset contour back down so the seam keeps a few dozen nodes
+        // (within ~0.2 mm of the dense polyline) instead of ~1000+.
+        return simplifyClosedPolygonRdp(
+          offsetPolygonOutward(poly, offsetPx),
+          SEAM_SIMPLIFY_TOLERANCE_PX
+        );
       }
     }
   }
@@ -1636,7 +1654,10 @@ function offsetClosedPolylinePerEdge(
     const outwardSign = loopDir
       ? loopOutwardSign
       : computeEdgeOutwardSign(pts, outerPoly, 5);
-    const offsetSeg = offsetPolylineByNormal(pts, outwardSign, offsetPx);
+    const offsetSeg = simplifyPolylineRdp(
+      offsetPolylineByNormal(pts, outwardSign, offsetPx),
+      SEAM_SIMPLIFY_TOLERANCE_PX
+    );
     if (offsetSeg.length >= 2) {
       segmentsByEdge.set(edge.id, { points: offsetSeg, edgeIndex });
     }
