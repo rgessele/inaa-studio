@@ -13144,6 +13144,13 @@ export default function Canvas() {
             // Disable browser context menu inside the canvas.
             e.evt.preventDefault();
 
+            // While drawing with the curve/line tools, right-click means "undo
+            // the last placed point" (handled in handlePointerDown). Don't also
+            // open the figure/edge context menu on top of it.
+            if (tool === "curve" || tool === "line") {
+              return;
+            }
+
             const stage = stageRef.current;
             if (!stage) return;
 
