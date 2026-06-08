@@ -1032,6 +1032,7 @@ export function EditorToolbar() {
                     hasProtectedOnlySelection={hasProtectedOnlyStrokeSelection}
                     onCommit={applyStrokeColorToSelection}
                     onCancel={() => setIsStrokeColorOpen(false)}
+                    onClose={() => setIsStrokeColorOpen(false)}
                   />
                 </div>
               ) : null}
