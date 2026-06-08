@@ -57,7 +57,7 @@ async function getStageBox(
 test("linha: Enter com 1 ponto cancela", async ({ page }) => {
   await gotoEditor(page);
 
-  await page.getByRole("button", { name: "Linha" }).click();
+  await page.getByTestId("line-tool-button").click();
   await expect
     .poll(
       async () =>
@@ -94,7 +94,7 @@ test("linha: Enter com 1 ponto cancela", async ({ page }) => {
 test("linha: fecha ao clicar no primeiro nó", async ({ page }) => {
   await gotoEditor(page);
 
-  await page.getByRole("button", { name: "Linha" }).click();
+  await page.getByTestId("line-tool-button").click();
   await expect
     .poll(
       async () =>
@@ -150,7 +150,7 @@ test("linha: fecha ao clicar no primeiro nó", async ({ page }) => {
 test("linha: Enter com 2 pontos não duplica nós", async ({ page }) => {
   await gotoEditor(page);
 
-  await page.getByRole("button", { name: "Linha" }).click();
+  await page.getByTestId("line-tool-button").click();
   await expect
     .poll(
       async () =>
@@ -201,7 +201,7 @@ test("linha: trava comprimento digitado e libera no próximo segmento", async ({
 }) => {
   await gotoEditor(page);
 
-  await page.getByRole("button", { name: "Linha" }).click();
+  await page.getByTestId("line-tool-button").click();
   await expect
     .poll(
       async () =>
@@ -261,7 +261,7 @@ test("linha: trava comprimento digitado e libera no próximo segmento", async ({
 test("visual: linha não duplica ponto no preview", async ({ page }) => {
   await gotoEditor(page);
 
-  await page.getByRole("button", { name: "Linha" }).click();
+  await page.getByTestId("line-tool-button").click();
   await expect
     .poll(
       async () =>
@@ -295,7 +295,7 @@ test("visual: linha não duplica ponto no preview", async ({ page }) => {
 test("visual: guia de ângulo aparece em 90/180", async ({ page }) => {
   await gotoEditor(page);
 
-  await page.getByRole("button", { name: "Linha" }).click();
+  await page.getByTestId("line-tool-button").click();
   await expect
     .poll(
       async () =>
@@ -350,7 +350,7 @@ test("com magnetJoin ativo, clicar no primeiro ponto FECHA a figura", async ({
   console.log("magnetJoinEnabled:", magnetJoinEnabled);
   expect(magnetJoinEnabled).toBe(true);
 
-  await page.getByRole("button", { name: "Linha" }).click();
+  await page.getByTestId("line-tool-button").click();
   await expect
     .poll(
       async () =>
