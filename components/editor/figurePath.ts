@@ -400,6 +400,48 @@ export function figureLocalPolyline(
   return toPointArray(points);
 }
 
+export interface LocalBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Axis-aligned bounding box of a Figure in its LOCAL coordinate space,
+ * derived from the sampled contour polyline. Falls back to the raw node
+ * positions when the polyline cannot be built. Returns null when the figure
+ * has no usable geometry.
+ */
+export function figureLocalBounds(
+  figure: Figure,
+  cubicSteps: number = 24
+): LocalBounds | null {
+  let flat = figureLocalPolyline(figure, cubicSteps);
+  if (flat.length < 4) {
+    // Fallback to raw node coordinates.
+    flat = [];
+    for (const n of figure.nodes) flat.push(n.x, n.y);
+  }
+  if (flat.length < 2) return null;
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i + 1 < flat.length; i += 2) {
+    const x = flat[i]!;
+    const y = flat[i + 1]!;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
 export function worldToFigureLocal(
   figure: Pick<Figure, "x" | "y" | "rotation">,
   world: Vec2
