@@ -6,7 +6,7 @@ on:
     branches: [main, master]
 jobs:
   test:
-    timeout-minutes: 60
+    timeout-minutes: 90
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,13 +18,39 @@ jobs:
 
       - name: Lint
         run: npm run lint
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "v=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.v }}
+
       - name: Install Playwright Browsers
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        shell: bash
         run: |
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            npx playwright install --with-deps
-          else
-            npx playwright install
-          fi
+          # `npx playwright install` intermittently hangs on the macOS runner
+          # right after the first browser downloads, eating the whole job
+          # timeout. Run each attempt under a hard per-attempt timeout (perl
+          # alarm — macOS has no GNU `timeout`) and retry. The result is cached,
+          # so this only needs to succeed once per Playwright version.
+          for i in 1 2 3 4; do
+            echo "::group::Playwright install attempt $i"
+            if perl -e 'alarm 900; exec @ARGV' npx playwright install; then
+              echo "::endgroup::"
+              echo "Playwright install succeeded on attempt $i"
+              exit 0
+            fi
+            echo "::endgroup::"
+            echo "Attempt $i failed or hung; retrying..."
+            sleep 5
+          done
+          echo "Playwright install failed after all attempts"
+          exit 1
 
       - name: Enforce catalog update (editor changes)
         if: ${{ github.event_name == 'pull_request' }}
