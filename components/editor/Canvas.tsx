@@ -21,6 +21,7 @@ import {
   Group,
   Layer,
   Line,
+  Path,
   Rect,
   Stage,
   Text,
@@ -65,6 +66,7 @@ import {
   figureWorldPolyline,
   worldToFigureLocal,
 } from "./figurePath";
+import { computeGrainArrowLength } from "./moldDoc";
 import {
   breakStyledLinkIfNeeded,
   markCurveCustomSnapshotDirtyIfPresent,
@@ -116,6 +118,33 @@ const MAX_LIVE_PIXEL_RATIO = 1.5;
 if (typeof window !== "undefined") {
   Konva.pixelRatio = Math.min(window.devicePixelRatio || 1, MAX_LIVE_PIXEL_RATIO);
 }
+
+// Rotation handle: blue disc with a white circular-arrow glyph (Lucide
+// "rotate-cw", same icon set as the app UI), applied only to the Transformer's
+// `rotater` anchor via anchorStyleFunc — resize anchors keep the default
+// square style. The SVG is loaded once and painted as the anchor's fill
+// pattern.
+const ROTATE_HANDLE_SIZE_PX = 18; // screen px; Transformer anchors ignore zoom
+const ROTATE_HANDLE_ICON_PX = 40; // intrinsic px of the SVG below
+const ROTATE_HANDLE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><circle cx="20" cy="20" r="19" fill="#2563eb"/><g fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" transform="translate(8 8)"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></g></svg>`;
+
+// Rotation pivot (anchor point): a small gold disc with a white Lucide
+// "anchor" glyph, shown while a selection is active. Defaults to the center of
+// the selection and can be dragged anywhere; the rotater anchor then rotates
+// the selection around it. Ephemeral UI state — never persisted, resets to the
+// center on every new selection. Only rotation honors it; resize is untouched.
+const ROTATION_PIVOT_GOLD = "#d4af37";
+const ROTATION_PIVOT_DISC_RADIUS_PX = 8.5; // screen px (marker is zoom-fixed)
+// Hit area matches the visual disc. Anything bigger silently steals
+// figure-body drags that start near the selection center (the marker sits on
+// top of the figure).
+const ROTATION_PIVOT_HIT_RADIUS_PX = 9.5;
+// While dragging the pivot, it snaps onto any figure node within this radius
+// (screen px), so it can sit exactly on a node. Always on — independent of the
+// global magnet toggle, since precise placement is the pivot's whole purpose.
+const ROTATION_PIVOT_SNAP_PX = 10;
+const ROTATE_SNAP_STEP_DEG = 15;
+const ROTATE_SNAP_TOLERANCE_DEG = 4;
 
 type Vec2 = { x: number; y: number };
 
@@ -3988,6 +4017,80 @@ export default function Canvas() {
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const figureNodeRefs = useRef<Map<string, Konva.Group>>(new Map());
 
+  // Icon image for the rotation anchor (loaded once, client-side).
+  const [rotateHandleIcon, setRotateHandleIcon] =
+    useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    const img = new window.Image();
+    img.onload = () => setRotateHandleIcon(img);
+    img.src =
+      "data:image/svg+xml;utf8," + encodeURIComponent(ROTATE_HANDLE_ICON_SVG);
+  }, []);
+
+  const rotateAnchorStyleFunc = useCallback(
+    (anchor: Konva.Rect) => {
+      if (!anchor.hasName("rotater")) return;
+      const size = ROTATE_HANDLE_SIZE_PX;
+      anchor.width(size);
+      anchor.height(size);
+      anchor.offsetX(size / 2);
+      anchor.offsetY(size / 2);
+      anchor.cornerRadius(size / 2);
+      anchor.strokeEnabled(false);
+      // Plain blue disc until the SVG image finishes loading.
+      anchor.fill("#2563eb");
+      if (rotateHandleIcon) {
+        anchor.fillPriority("pattern");
+        anchor.fillPatternImage(rotateHandleIcon);
+        anchor.fillPatternRepeat("no-repeat");
+        anchor.fillPatternScale({
+          x: size / ROTATE_HANDLE_ICON_PX,
+          y: size / ROTATE_HANDLE_ICON_PX,
+        });
+      }
+    },
+    [rotateHandleIcon]
+  );
+
+  // Re-style the rotater anchor once the icon arrives — the Transformer does
+  // not watch anchorStyleFunc identity changes.
+  useEffect(() => {
+    transformerRef.current?.forceUpdate();
+  }, [rotateAnchorStyleFunc]);
+
+  // ---- Inner transform mode (mold doc block / grain arrow) ------------------
+  // Entered by double-clicking the element's drag handle. A dedicated
+  // Transformer attaches to an invisible proxy rect; scale is baked into the
+  // font sizes (doc) or arrow length (grain) and rotation into
+  // nameRotationDeg / grainline.angleDeg. The OUTER figure transformer is
+  // detached while this mode is active to avoid conflicting gestures.
+  const innerTransformerRef = useRef<Konva.Transformer | null>(null);
+  const [innerTransformTarget, setInnerTransformTarget] = useState<{
+    figureId: string;
+    kind: "doc" | "grain";
+  } | null>(null);
+  const innerTransformTargetRef = useRef(innerTransformTarget);
+  useEffect(() => {
+    innerTransformTargetRef.current = innerTransformTarget;
+  }, [innerTransformTarget]);
+
+  const handleNameHandleDblClick = useCallback((figureId: string) => {
+    setInnerTransformTarget({ figureId, kind: "doc" });
+  }, []);
+  const handleGrainHandleDblClick = useCallback((figureId: string) => {
+    setInnerTransformTarget({ figureId, kind: "grain" });
+  }, []);
+
+  // Exit on Escape.
+  useEffect(() => {
+    if (!innerTransformTarget) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") setInnerTransformTarget(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [innerTransformTarget]);
+
   const transformMods = useMemo(
     () => ({ shift: modifierKeys.shift, alt: modifierKeys.alt }),
     [modifierKeys.alt, modifierKeys.shift]
@@ -6013,7 +6116,13 @@ export default function Canvas() {
     const transformer = transformerRef.current;
     if (!transformer) return;
 
-    if (tool !== "select" || transformTargetIds.length === 0) {
+    // While the inner transform mode (doc block / grain arrow) is active, the
+    // outer figure transformer is detached so the two gestures never conflict.
+    if (
+      tool !== "select" ||
+      transformTargetIds.length === 0 ||
+      innerTransformTarget
+    ) {
       transformer.nodes([]);
       transformer.getLayer()?.batchDraw();
       return;
@@ -6026,7 +6135,7 @@ export default function Canvas() {
     }
     transformer.nodes(nodes);
     transformer.getLayer()?.batchDraw();
-  }, [tool, transformTargetIds]);
+  }, [tool, transformTargetIds, innerTransformTarget]);
 
   useEffect(() => {
     const transformer = transformerRef.current;
@@ -6039,6 +6148,250 @@ export default function Canvas() {
     transformer.forceUpdate();
     transformer.getLayer()?.batchDraw();
   }, [scale, tool, transformTargetIds]);
+
+  // ---- Rotation pivot (anchor point) ----------------------------------------
+  // World-coords pivot the rotater anchor rotates the selection around.
+  // Defaults to the selection center; draggable to anywhere (even outside the
+  // figure). Ephemeral: resets to the center whenever the selection changes.
+  const [rotationPivot, setRotationPivot] = useState<Vec2 | null>(null);
+  const rotationPivotRef = useRef<Vec2 | null>(null);
+  useEffect(() => {
+    rotationPivotRef.current = rotationPivot;
+  }, [rotationPivot]);
+  // True once the user drags the pivot away from the default center; cleared
+  // on selection changes so the next selection starts centered again.
+  const rotationPivotCustomRef = useRef(false);
+  const transformTargetKey = transformTargetIds.join("|");
+  useEffect(() => {
+    rotationPivotCustomRef.current = false;
+  }, [transformTargetKey]);
+  useEffect(() => {
+    if (tool !== "select" || !selectionHitBounds) {
+      setRotationPivot(null);
+      return;
+    }
+    if (rotationPivotCustomRef.current) return;
+    setRotationPivot({
+      x: selectionHitBounds.x + selectionHitBounds.width / 2,
+      y: selectionHitBounds.y + selectionHitBounds.height / 2,
+    });
+  }, [tool, selectionHitBounds, transformTargetKey]);
+
+  // Node magnetism for the pivot drag: world positions of every figure node,
+  // collected once per drag (geometry is static while the pivot moves).
+  const pivotSnapCandidatesRef = useRef<Vec2[]>([]);
+  const collectPivotSnapCandidates = useCallback(() => {
+    const out: Vec2[] = [];
+    for (const f of figures) {
+      const tr = getRuntimeFigureTransform(f);
+      const transform = { x: tr.x, y: tr.y, rotation: tr.rotation };
+      for (const n of f.nodes) {
+        out.push(figureLocalToWorld(transform, { x: n.x, y: n.y }));
+      }
+    }
+    pivotSnapCandidatesRef.current = out;
+  }, [figures, getRuntimeFigureTransform]);
+
+  const snapPivotPosition = useCallback(
+    (p: Vec2): Vec2 => {
+      let best: Vec2 | null = null;
+      let bestDist = ROTATION_PIVOT_SNAP_PX / scale;
+      for (const c of pivotSnapCandidatesRef.current) {
+        const d = Math.hypot(c.x - p.x, c.y - p.y);
+        if (d <= bestDist) {
+          bestDist = d;
+          best = c;
+        }
+      }
+      return best ? { ...best } : p;
+    },
+    [scale]
+  );
+
+  // Live rotater-drag session. While set, `transform` events re-derive every
+  // node's rotation/position from the pointer's angle around the pivot,
+  // overriding Konva's own rotate-around-box-center math (the Transformer has
+  // no native custom-pivot support). Absolute math from the start snapshot —
+  // no per-event error accumulation.
+  const pivotRotateSessionRef = useRef<{
+    pivot: Vec2;
+    pointerAngle0: number;
+    nodes: Array<{ node: Konva.Node; x0: number; y0: number; rot0: number }>;
+  } | null>(null);
+
+  const pointerWorldFromStage = useCallback((stage: Konva.Stage): Vec2 | null => {
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return null;
+    return stage.getAbsoluteTransform().copy().invert().point(pointer);
+  }, []);
+
+  const handlePivotTransformStart = useCallback(() => {
+    pivotRotateSessionRef.current = null;
+    const transformer = transformerRef.current;
+    const pivot = rotationPivotRef.current;
+    if (!transformer || !pivot) return;
+    if (transformer.getActiveAnchor() !== "rotater") return;
+    const stage = transformer.getStage();
+    if (!stage) return;
+    const world = pointerWorldFromStage(stage);
+    if (!world) return;
+    pivotRotateSessionRef.current = {
+      pivot: { ...pivot },
+      pointerAngle0: Math.atan2(world.y - pivot.y, world.x - pivot.x),
+      nodes: transformer.nodes().map((node) => ({
+        node,
+        x0: node.x(),
+        y0: node.y(),
+        rot0: node.rotation(),
+      })),
+    };
+  }, [pointerWorldFromStage]);
+
+  const handlePivotTransform = useCallback(
+    (e: Konva.KonvaEventObject<Event>) => {
+      const session = pivotRotateSessionRef.current;
+      const transformer = transformerRef.current;
+      if (!session || !transformer) return;
+      if (transformer.getActiveAnchor() !== "rotater") return;
+      const stage = transformer.getStage();
+      if (!stage) return;
+      const world = pointerWorldFromStage(stage);
+      if (!world) return;
+
+      let deltaDeg =
+        ((Math.atan2(world.y - session.pivot.y, world.x - session.pivot.x) -
+          session.pointerAngle0) *
+          180) /
+        Math.PI;
+
+      // Shift: same 15° snapping the stock rotater offers via rotationSnaps.
+      const shiftHeld = !!(e.evt as MouseEvent | undefined)?.shiftKey;
+      if (shiftHeld && session.nodes.length) {
+        const desired = session.nodes[0]!.rot0 + deltaDeg;
+        const snapped =
+          Math.round(desired / ROTATE_SNAP_STEP_DEG) * ROTATE_SNAP_STEP_DEG;
+        if (Math.abs(desired - snapped) <= ROTATE_SNAP_TOLERANCE_DEG) {
+          deltaDeg += snapped - desired;
+        }
+      }
+
+      const rad = (deltaDeg * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      for (const s of session.nodes) {
+        const dx = s.x0 - session.pivot.x;
+        const dy = s.y0 - session.pivot.y;
+        s.node.position({
+          x: session.pivot.x + dx * cos - dy * sin,
+          y: session.pivot.y + dx * sin + dy * cos,
+        });
+        s.node.rotation(s.rot0 + deltaDeg);
+      }
+    },
+    [pointerWorldFromStage]
+  );
+
+  // ---- Inner transform mode: lifecycle + transform baking --------------------
+  // Leave the mode whenever the selection or the tool changes.
+  useEffect(() => {
+    setInnerTransformTarget(null);
+  }, [transformTargetKey, tool]);
+
+  // Attach the dedicated transformer to the proxy rect rendered by
+  // FigureRenderer for the active target (or detach when the mode is off).
+  // The effect re-runs on figure changes (the live bake mutates figures), so
+  // it must never disturb an in-flight gesture: re-attaching nodes() or
+  // forceUpdate() mid-drag kills the active anchor drag.
+  useEffect(() => {
+    const tr = innerTransformerRef.current;
+    if (!tr) return;
+    if (!innerTransformTarget || tool !== "select") {
+      if (tr.nodes().length) {
+        tr.nodes([]);
+        tr.getLayer()?.batchDraw();
+      }
+      return;
+    }
+    if (tr.isTransforming()) return;
+    const stage = stageRef.current;
+    const proxyName =
+      innerTransformTarget.kind === "doc"
+        ? "inaa-inner-proxy-doc"
+        : "inaa-inner-proxy-grain";
+    const node = stage?.findOne(`.${proxyName}`) ?? null;
+    if (!node) {
+      // Target vanished (e.g. fio cleared, all doc fields emptied) — exit.
+      setInnerTransformTarget(null);
+      return;
+    }
+    if (tr.nodes()[0] !== node) {
+      tr.nodes([node]);
+    }
+    tr.forceUpdate();
+    tr.getLayer()?.batchDraw();
+  }, [innerTransformTarget, tool, figures, scale]);
+
+  // Bake the proxy's scale/rotation into figure state. Runs on every
+  // `transform` event (commit=false → live, no history) and once on
+  // `transformend` (commit=true → rounded values, single undo step). The
+  // proxy's scale is reset to 1 each time; the layout re-renders the proxy at
+  // its new natural size, so the transformer box follows the content.
+  const handleInnerTransformEvent = useCallback(
+    (commit: boolean) => {
+      const target = innerTransformTargetRef.current;
+      const tr = innerTransformerRef.current;
+      const node = tr?.nodes()[0] ?? null;
+      if (!target || !node) return;
+
+      const scaleFactor = Math.max(
+        Math.abs(node.scaleX()),
+        Math.abs(node.scaleY())
+      );
+      const rotation = ((node.rotation() % 360) + 360) % 360;
+      node.scaleX(1);
+      node.scaleY(1);
+      node.rotation(rotation);
+      if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) return;
+
+      const clampFont = (v: number) => Math.max(6, Math.min(256, v));
+      const updater = (prev: Figure[]) =>
+        prev.map((f) => {
+          if (f.id !== target.figureId) return f;
+          if (target.kind === "doc") {
+            const nameFont = clampFont((f.nameFontSizePx ?? 24) * scaleFactor);
+            const docFont = clampFont(
+              (f.moldMeta?.docFontSizePx ?? 14) * scaleFactor
+            );
+            return {
+              ...f,
+              nameFontSizePx: commit ? Math.round(nameFont) : nameFont,
+              nameRotationDeg: commit ? Math.round(rotation) % 360 : rotation,
+              moldMeta: {
+                ...(f.moldMeta ?? {}),
+                docFontSizePx: commit ? Math.round(docFont) : docFont,
+              },
+            };
+          }
+          const baseLen = computeGrainArrowLength(f);
+          const nextLen = Math.max(12, Math.min(100000, baseLen * scaleFactor));
+          return {
+            ...f,
+            moldMeta: {
+              ...(f.moldMeta ?? {}),
+              grainLengthLocal: commit ? Math.round(nextLen) : nextLen,
+              grainline: {
+                ...(f.moldMeta?.grainline ?? { angleDeg: 0 }),
+                angleDeg: commit ? Math.round(rotation) % 360 : rotation,
+                autoGenerated: false,
+              },
+            },
+          };
+        });
+      if (commit) setFigures(updater);
+      else setFigures(updater, false);
+    },
+    [setFigures]
+  );
 
   const finalizeSelectionTransform = useCallback(() => {
     const transformer = transformerRef.current;
@@ -7568,6 +7921,26 @@ export default function Canvas() {
       }
     }
 
+    // Select tool: if the click started on the name/doc drag handle or the
+    // rotation pivot, the Konva draggable group owns the gesture. Without
+    // this, the stage would also start a direct figure drag and the figure
+    // would move along.
+    if (tool === "select") {
+      try {
+        const targetName = e.target?.name?.() ?? "";
+        if (
+          targetName.includes("inaa-figure-name-handle") ||
+          targetName.includes("inaa-grain-handle") ||
+          targetName.includes("inaa-inner-proxy") ||
+          targetName.includes("inaa-rotation-pivot")
+        ) {
+          return;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     // Cursor badge should never show while pointer is down.
     isPointerDownRef.current = true;
     hideCursorBadge();
@@ -7667,12 +8040,15 @@ export default function Canvas() {
     // up to the transformer itself.
     const isTransformerTarget = (() => {
       if (tool !== "select") return false;
-      const transformer = transformerRef.current;
-      if (!transformer || transformer.nodes().length === 0) return false;
+      const transformers = [
+        transformerRef.current,
+        innerTransformerRef.current,
+      ].filter((t): t is Konva.Transformer => !!t && t.nodes().length > 0);
+      if (!transformers.length) return false;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let node: any = e.target;
       while (node) {
-        if (node === transformer) return true;
+        if (transformers.includes(node)) return true;
         node = typeof node.getParent === "function" ? node.getParent() : null;
       }
       return false;
@@ -7680,19 +8056,26 @@ export default function Canvas() {
 
     const isTransformerChromeHit = (() => {
       if (!isBackground || tool !== "select") return false;
-      const transformer = transformerRef.current;
-      if (!transformer) return false;
-      if (transformer.nodes().length === 0) return false;
-      const rect = transformer.getClientRect();
-      if (!Number.isFinite(rect.width) || !Number.isFinite(rect.height)) {
-        return false;
+      for (const transformer of [
+        transformerRef.current,
+        innerTransformerRef.current,
+      ]) {
+        if (!transformer) continue;
+        if (transformer.nodes().length === 0) continue;
+        const rect = transformer.getClientRect();
+        if (!Number.isFinite(rect.width) || !Number.isFinite(rect.height)) {
+          continue;
+        }
+        if (
+          pos.x >= rect.x &&
+          pos.x <= rect.x + rect.width &&
+          pos.y >= rect.y &&
+          pos.y <= rect.y + rect.height
+        ) {
+          return true;
+        }
       }
-      return (
-        pos.x >= rect.x &&
-        pos.x <= rect.x + rect.width &&
-        pos.y >= rect.y &&
-        pos.y <= rect.y + rect.height
-      );
+      return false;
     })();
 
     // Skip all selection/drag logic when the pointer is on a transformer element
@@ -7775,6 +8158,11 @@ export default function Canvas() {
 
     // Select tool: edge-priority selection (closest contour) + marquee selection.
     if (tool === "select" && isLeftClick) {
+      // Any plain canvas click leaves the inner transform mode (interactions
+      // with the inner chrome/proxy/handles returned earlier above).
+      if (innerTransformTargetRef.current) {
+        setInnerTransformTarget(null);
+      }
       const HIT_SLOP_PX = 10;
       const thresholdWorld = HIT_SLOP_PX / scale;
 
@@ -13420,7 +13808,7 @@ export default function Canvas() {
                     selectedFigureIds.length === 1 &&
                     selectedFigureId === baseId &&
                     fig.kind !== "seam" &&
-                    !!(fig.name ?? "").trim()
+                    (fig.kind === "mold" || !!(fig.name ?? "").trim())
                   }
                   onNameOffsetChange={(figureId, nextOffsetLocal) => {
                     setFigures(
@@ -13442,6 +13830,46 @@ export default function Canvas() {
                       )
                     );
                   }}
+                  onGrainOffsetChange={(figureId, nextOffsetLocal) => {
+                    setFigures(
+                      (prev) =>
+                        prev.map((f) =>
+                          f.id === figureId
+                            ? {
+                                ...f,
+                                moldMeta: {
+                                  ...(f.moldMeta ?? {}),
+                                  grainOffsetLocal: nextOffsetLocal,
+                                },
+                              }
+                            : f
+                        ),
+                      false
+                    );
+                  }}
+                  onGrainOffsetCommit={(figureId, nextOffsetLocal) => {
+                    setFigures((prev) =>
+                      prev.map((f) =>
+                        f.id === figureId
+                          ? {
+                              ...f,
+                              moldMeta: {
+                                ...(f.moldMeta ?? {}),
+                                grainOffsetLocal: nextOffsetLocal,
+                              },
+                            }
+                          : f
+                      )
+                    );
+                  }}
+                  innerTransformKind={
+                    innerTransformTarget &&
+                    innerTransformTarget.figureId === fig.id
+                      ? innerTransformTarget.kind
+                      : null
+                  }
+                  onNameHandleDblClick={handleNameHandleDblClick}
+                  onGrainHandleDblClick={handleGrainHandleDblClick}
                   onPointerDown={(e) => {
                     const evtAny = e.evt as MouseEvent;
                     const buttons = (evtAny.buttons ?? 0) as number;
@@ -13908,12 +14336,153 @@ export default function Canvas() {
               borderStrokeWidth={1}
               anchorStrokeWidth={1}
               padding={4}
-              rotateAnchorOffset={18}
+              rotateAnchorOffset={24}
+              anchorStyleFunc={rotateAnchorStyleFunc}
               boundBoxFunc={(oldBox, newBox) => {
                 if (newBox.width < 5 || newBox.height < 5) return oldBox;
                 return newBox;
               }}
-              onTransformEnd={finalizeSelectionTransform}
+              onTransformStart={handlePivotTransformStart}
+              onTransform={handlePivotTransform}
+              onTransformEnd={() => {
+                pivotRotateSessionRef.current = null;
+                finalizeSelectionTransform();
+              }}
+            />
+
+            {/* Rotation pivot marker: gold disc + white anchor glyph (Lucide
+                "anchor"). Zoom-fixed size; draggable to re-position the pivot.
+                Hidden while the inner transform mode owns the interaction. */}
+            {tool === "select" &&
+              rotationPivot &&
+              transformTargetIds.length > 0 &&
+              !innerTransformTarget && (
+              <Group
+                x={rotationPivot.x}
+                y={rotationPivot.y}
+                scaleX={1 / scale}
+                scaleY={1 / scale}
+                draggable={true}
+                onDragStart={(e) => {
+                  e.cancelBubble = true;
+                  rotationPivotCustomRef.current = true;
+                  collectPivotSnapCandidates();
+                }}
+                onDragMove={(e) => {
+                  e.cancelBubble = true;
+                  const snapped = snapPivotPosition({
+                    x: e.target.x(),
+                    y: e.target.y(),
+                  });
+                  e.target.position(snapped);
+                  setRotationPivot(snapped);
+                }}
+                onDragEnd={(e) => {
+                  e.cancelBubble = true;
+                  const snapped = snapPivotPosition({
+                    x: e.target.x(),
+                    y: e.target.y(),
+                  });
+                  e.target.position(snapped);
+                  setRotationPivot(snapped);
+                }}
+                onMouseEnter={(e) => {
+                  const container = e.target.getStage()?.container();
+                  if (container) container.style.cursor = "move";
+                }}
+                onMouseLeave={(e) => {
+                  const container = e.target.getStage()?.container();
+                  if (container) container.style.cursor = "";
+                }}
+              >
+                <Circle
+                  radius={ROTATION_PIVOT_HIT_RADIUS_PX}
+                  fill="rgba(0,0,0,0)"
+                  name="inaa-rotation-pivot"
+                />
+                <Circle
+                  radius={ROTATION_PIVOT_DISC_RADIUS_PX}
+                  fill={ROTATION_PIVOT_GOLD}
+                  stroke="#ffffff"
+                  strokeWidth={1.5}
+                  listening={false}
+                />
+                {/* Lucide "anchor" glyph (24x24 box) scaled to ~11px. */}
+                <Group
+                  scaleX={0.46}
+                  scaleY={0.46}
+                  offsetX={12}
+                  offsetY={12}
+                  listening={false}
+                >
+                  <Path
+                    data="M12 22V8"
+                    stroke="#ffffff"
+                    strokeWidth={2.6}
+                    lineCap="round"
+                    listening={false}
+                  />
+                  <Path
+                    data="M5 12H2a10 10 0 0 0 20 0h-3"
+                    stroke="#ffffff"
+                    strokeWidth={2.6}
+                    lineCap="round"
+                    lineJoin="round"
+                    listening={false}
+                  />
+                  <Circle
+                    x={12}
+                    y={5}
+                    radius={3}
+                    stroke="#ffffff"
+                    strokeWidth={2.6}
+                    listening={false}
+                  />
+                </Group>
+              </Group>
+            )}
+
+            {/* Inner transformer (doc block / grain arrow). Gold chrome to
+                signal the inner edit mode; corners only + keepRatio because
+                scale maps to font size / arrow length (uniform by nature).
+                centeredScaling keeps the element's anchor fixed, matching how
+                the baked state re-renders it. */}
+            <Transformer
+              ref={innerTransformerRef}
+              enabledAnchors={[
+                "top-left",
+                "top-right",
+                "bottom-left",
+                "bottom-right",
+              ]}
+              rotateEnabled={true}
+              keepRatio={true}
+              centeredScaling={true}
+              flipEnabled={false}
+              rotationSnaps={
+                transformMods.shift
+                  ? [
+                      0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180,
+                      195, 210, 225, 240, 255, 270, 285, 300, 315, 330, 345,
+                    ]
+                  : []
+              }
+              rotateSnapTolerance={4}
+              anchorSize={8}
+              borderStroke={ROTATION_PIVOT_GOLD}
+              anchorStroke={ROTATION_PIVOT_GOLD}
+              anchorFill="#ffffff"
+              borderStrokeWidth={1}
+              anchorStrokeWidth={1}
+              padding={4}
+              rotateAnchorOffset={24}
+              anchorStyleFunc={rotateAnchorStyleFunc}
+              boundBoxFunc={(oldBox, newBox) => {
+                if (newBox.width < 6 || newBox.height < 6) return oldBox;
+                return newBox;
+              }}
+              onTransform={() => handleInnerTransformEvent(false)}
+              onTransformEnd={() => handleInnerTransformEvent(true)}
             />
 
             {offsetHoverPreview ? (

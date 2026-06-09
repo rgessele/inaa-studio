@@ -1383,6 +1383,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       tool: f.tool,
       kind: f.kind,
       parentId: f.parentId,
+      name: f.name,
+      nameFontSizePx: f.nameFontSizePx,
+      nameRotationDeg: f.nameRotationDeg,
+      nameOffsetLocal: f.nameOffsetLocal,
+      moldMeta: f.moldMeta,
       x: f.x,
       y: f.y,
       rotation: f.rotation || 0,
@@ -1537,6 +1542,17 @@ export function EditorProvider({ children }: { children: ReactNode }) {
               typeof value === "number" ? value : Number(value)
             );
           });
+        } catch {
+          return [];
+        }
+      },
+      getStageNodeClientRectsByName: (name: string) => {
+        const stage = stageRef.current;
+        if (!stage) return [];
+        try {
+          return stage
+            .find(`.${name}`)
+            .map((node) => node.getClientRect({ relativeTo: stage }));
         } catch {
           return [];
         }

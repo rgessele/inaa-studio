@@ -189,11 +189,22 @@ export interface MoldMeta {
   cutQuantity?: number;
   cutOnFold?: boolean;
   notes?: string;
+  // Font size (local px / world units) for the documentation text lines drawn on
+  // the mold (everything except the name, which uses Figure.nameFontSizePx).
+  // Effective default 14, clamped to [6, 256] — same scale as nameFontSizePx.
+  docFontSizePx?: number;
   visible?: boolean;
   printEnabled?: boolean;
   sourceMode?: "fromDiagram" | "fromMold";
   sourceMoldId?: string;
   grainline?: MoldGrainline;
+  // Draggable offset (local coords, relative to the figure centroid) of the
+  // grain arrow's CENTER. Unset = automatic placement (parked left of the doc
+  // text block, or on the centroid when there is no text).
+  grainOffsetLocal?: { x: number; y: number };
+  // Custom grain arrow length (local px), set by the inner transform mode
+  // (double-click on the arrow handle). Unset = automatic (0.6 * min bbox side).
+  grainLengthLocal?: number;
   sourceSegments?: MoldSourceSegmentRef[];
   lineage?: {
     rootMoldId?: string;

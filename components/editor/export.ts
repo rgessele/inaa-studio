@@ -15,6 +15,7 @@ import { edgeLocalPoints } from "./figurePath";
 import type { PointLabelsMode } from "./types";
 import { computeNodeLabels } from "./pointLabels";
 import { figureCentroidLocal } from "./figurePath";
+import { computeMoldDocLayoutLocal } from "./moldDoc";
 import { toast } from "@/utils/toast";
 import {
   add,
@@ -151,6 +152,7 @@ type PointLabelsExportOptions = {
   includeMeasures?: boolean;
   includePatternName?: boolean;
   includePiques?: boolean;
+  includeMoldDocumentation?: boolean;
   pointLabelsMode?: PointLabelsMode;
 };
 
@@ -528,6 +530,8 @@ export async function generateTiledPDF(
   const shouldIncludeMeasures = options?.includeMeasures !== false;
   const shouldIncludePatternName = options?.includePatternName !== false;
   const shouldIncludePiques = options?.includePiques !== false;
+  const shouldIncludeMoldDocumentation =
+    options?.includeMoldDocumentation !== false;
 
   const shouldIncludePointLabels =
     options?.includePointLabels === true &&
@@ -1358,7 +1362,12 @@ export async function generateTiledPDF(
       }
 
       const figureName = (figure.name ?? "").trim();
-      if (shouldIncludePatternName && figure.kind !== "seam" && figureName) {
+      if (
+        shouldIncludePatternName &&
+        figure.kind !== "seam" &&
+        figure.kind !== "mold" &&
+        figureName
+      ) {
         const layout = computeFigureNameLayoutLocal(figure, figureName);
         if (layout) {
           const worldPos = figureLocalToWorld(figure, layout.posLocal);
@@ -1382,6 +1391,94 @@ export async function generateTiledPDF(
               name: "inaa-figure-name",
             })
           );
+        }
+      }
+
+      // Mold: consolidated documentation block + single-headed grain arrow.
+      // Mirrors FigureRenderer/moldDoc so on-canvas and PDF output stay in sync.
+      if (
+        shouldIncludeMoldDocumentation &&
+        figure.kind === "mold" &&
+        figure.moldMeta?.printEnabled !== false &&
+        figure.moldMeta?.visible !== false
+      ) {
+        const docLayout = computeMoldDocLayoutLocal(figure);
+        if (docLayout) {
+          if (docLayout.grain) {
+            const g = docLayout.grain;
+            const tail = figureLocalToWorld(figure, g.tail);
+            const tip = figureLocalToWorld(figure, g.tip);
+            const headA = figureLocalToWorld(figure, g.headA);
+            const headB = figureLocalToWorld(figure, g.headB);
+            tileLayer.add(
+              new Konva.Line({
+                points: [
+                  tail.x - tileX,
+                  tail.y - tileY,
+                  tip.x - tileX,
+                  tip.y - tileY,
+                ],
+                stroke: "#000000",
+                strokeWidth: g.strokeWidth,
+                opacity: 0.22,
+                lineCap: "round",
+                lineJoin: "round",
+                listening: false,
+                name: "inaa-mold-grainline",
+              })
+            );
+            tileLayer.add(
+              new Konva.Line({
+                points: [
+                  headA.x - tileX,
+                  headA.y - tileY,
+                  tip.x - tileX,
+                  tip.y - tileY,
+                  headB.x - tileX,
+                  headB.y - tileY,
+                ],
+                stroke: "#000000",
+                strokeWidth: g.strokeWidth,
+                opacity: 0.22,
+                lineCap: "round",
+                lineJoin: "round",
+                listening: false,
+                name: "inaa-mold-grainline-head",
+              })
+            );
+          }
+          if (docLayout.lines.length > 0) {
+            const anchorWorld = figureLocalToWorld(figure, docLayout.anchor);
+            const group = new Konva.Group({
+              x: anchorWorld.x - tileX,
+              y: anchorWorld.y - tileY,
+              rotation: (figure.rotation || 0) + docLayout.rotationDeg,
+              listening: false,
+              name: "inaa-mold-doc",
+            });
+            for (const line of docLayout.lines) {
+              group.add(
+                new Konva.Text({
+                  x: 0,
+                  y: line.y,
+                  width: docLayout.blockWidth,
+                  height: line.height,
+                  offsetX: docLayout.blockWidth / 2,
+                  text: line.text,
+                  fontSize: line.fontSizePx,
+                  fontStyle: line.bold ? "bold" : "normal",
+                  fill: "#000000",
+                  opacity: 0.22,
+                  align: docLayout.textAlign,
+                  verticalAlign: line.wrap ? "top" : "middle",
+                  wrap: line.wrap ? "word" : "none",
+                  listening: false,
+                  name: "inaa-mold-doc-line",
+                })
+              );
+            }
+            tileLayer.add(group);
+          }
         }
       }
     });

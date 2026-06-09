@@ -110,11 +110,15 @@ async function getSnapshot(
   });
 }
 
-async function countFigureNameNodes(
+async function countMoldDocLineNodes(
   page: import("@playwright/test").Page
 ): Promise<number> {
+  // Molds render their name (and other filled doc fields) as documentation
+  // lines on the canvas; a name-only mold yields exactly one line.
   return await page.evaluate(() => {
-    return window.__INAA_DEBUG__?.countStageNodesByName?.("inaa-figure-name") ?? 0;
+    return (
+      window.__INAA_DEBUG__?.countStageNodesByName?.("inaa-mold-doc-line") ?? 0
+    );
   });
 }
 
@@ -161,7 +165,7 @@ test.describe("Offset Tool Visual (moldes)", () => {
     const seam = (await getSnapshot(page)).find((f) => f.kind === "seam") ?? null;
     expect(seam?.parentId).toBe("mold_full");
 
-    await expect.poll(async () => await countFigureNameNodes(page)).toBe(1);
+    await expect.poll(async () => await countMoldDocLineNodes(page)).toBe(1);
   });
 
   test("nao gera margem para figura convencional", async ({ page }) => {
@@ -230,7 +234,7 @@ test.describe("Offset Tool Visual (moldes)", () => {
     expect(typeof seam?.offsetCm).toBe("object");
     expect((seam?.seamSegmentEdgeIds ?? []).length).toBeGreaterThan(0);
 
-    await expect.poll(async () => await countFigureNameNodes(page)).toBe(1);
+    await expect.poll(async () => await countMoldDocLineNodes(page)).toBe(1);
   });
 
   test("ctrl+clique remove margem do molde", async ({ page }) => {

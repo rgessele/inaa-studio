@@ -1,9 +1,10 @@
 import React from "react";
 import { Group, Line, Rect, Text } from "react-konva";
-import type Konva from "konva";
+import Konva from "konva";
 import { Figure } from "./types";
 import { edgeLocalPoints, figureLocalPolyline } from "./figurePath";
 import { figureCentroidLocal } from "./figurePath";
+import { computeMoldDocLayoutLocal } from "./moldDoc";
 import { PX_PER_CM } from "./constants";
 import { MemoizedNodeOverlay } from "./NodeOverlay";
 import { MemoizedMeasureOverlay } from "./MeasureOverlay";
@@ -16,6 +17,104 @@ import {
   getOuterLoopPolygon,
   hasClosedLoop,
 } from "./seamFigure";
+
+const HANDLE_BASE_OPACITY = 0.35;
+
+/**
+ * Square drag handle for the name/doc block with hover feedback: shows a
+ * "grab" cursor and pulses (scale + opacity) while the pointer is over it, so
+ * it reads as grabbable. The pulse animates the Konva node directly (no React
+ * re-renders) and runs only while hovered. The rect is anchored on its CENTER
+ * (x/y + offset) so the pulse scales in place.
+ */
+const PulsingHandleRect: React.FC<{
+  /** Center x/y, in the parent group's coords. */
+  x: number;
+  y?: number;
+  size: number;
+  fill: string;
+  cornerRadius: number;
+  /** Konva node name; the stage pointer guard must know it. */
+  name?: string;
+  /** Second function of the handle (e.g. enter the inner transform mode). */
+  onDblClick?: () => void;
+}> = ({
+  x,
+  y = 0,
+  size,
+  fill,
+  cornerRadius,
+  name = "inaa-figure-name-handle",
+  onDblClick,
+}) => {
+  const rectRef = React.useRef<Konva.Rect>(null);
+  const animRef = React.useRef<Konva.Animation | null>(null);
+  const hoverStageRef = React.useRef<Konva.Stage | null>(null);
+
+  const stopPulse = React.useCallback(() => {
+    animRef.current?.stop();
+    animRef.current = null;
+    const node = rectRef.current;
+    if (node) {
+      node.scale({ x: 1, y: 1 });
+      node.opacity(HANDLE_BASE_OPACITY);
+      node.getLayer()?.batchDraw();
+    }
+    const container = hoverStageRef.current?.container();
+    if (container) container.style.cursor = "";
+    hoverStageRef.current = null;
+  }, []);
+
+  // Stop the animation and restore the cursor if the handle unmounts while
+  // hovered (e.g. the figure gets deselected under the pointer).
+  React.useEffect(() => stopPulse, [stopPulse]);
+
+  return (
+    <Rect
+      ref={rectRef}
+      x={x}
+      y={y}
+      offsetX={size / 2}
+      offsetY={size / 2}
+      width={size}
+      height={size}
+      fill={fill}
+      opacity={HANDLE_BASE_OPACITY}
+      cornerRadius={cornerRadius}
+      listening={true}
+      name={name}
+      onMouseEnter={(e) => {
+        const stage = e.target.getStage();
+        hoverStageRef.current = stage;
+        const container = stage?.container();
+        if (container) container.style.cursor = "grab";
+        const node = rectRef.current;
+        const layer = node?.getLayer();
+        if (!node || !layer || animRef.current) return;
+        const anim = new Konva.Animation((frame) => {
+          if (!frame) return;
+          // 1.4s cycle: scale 1 -> 1.4 -> 1, opacity 0.35 -> 0.8 -> 0.35.
+          const phase = 0.5 - 0.5 * Math.cos((frame.time / 700) * Math.PI);
+          node.scale({ x: 1 + 0.4 * phase, y: 1 + 0.4 * phase });
+          node.opacity(
+            HANDLE_BASE_OPACITY + (0.8 - HANDLE_BASE_OPACITY) * phase
+          );
+        }, layer);
+        animRef.current = anim;
+        anim.start();
+      }}
+      onMouseLeave={stopPulse}
+      onDblClick={(e) => {
+        e.cancelBubble = true;
+        onDblClick?.();
+      }}
+      onDblTap={(e) => {
+        e.cancelBubble = true;
+        onDblClick?.();
+      }}
+    />
+  );
+};
 
 interface FigureRendererProps {
   figure: Figure;
@@ -61,6 +160,22 @@ interface FigureRendererProps {
     figureId: string,
     nextOffsetLocal: { x: number; y: number }
   ) => void;
+  // Mold grain arrow handle (drag to reposition the arrow independently of
+  // the doc text block). Offset is relative to the figure centroid.
+  onGrainOffsetChange?: (
+    figureId: string,
+    nextOffsetLocal: { x: number; y: number }
+  ) => void;
+  onGrainOffsetCommit?: (
+    figureId: string,
+    nextOffsetLocal: { x: number; y: number }
+  ) => void;
+  // Inner transform mode (double-click on a handle): which inner element of
+  // THIS figure currently owns the dedicated inner Transformer. While set,
+  // the pulse handles hide and an invisible transformable proxy is rendered.
+  innerTransformKind?: "doc" | "grain" | null;
+  onNameHandleDblClick?: (figureId: string) => void;
+  onGrainHandleDblClick?: (figureId: string) => void;
 }
 
 const DENSE_LINEAR_CONTOUR_THRESHOLD = 96;
@@ -288,6 +403,11 @@ const FigureRenderer = ({
   showNameHandle,
   onNameOffsetChange,
   onNameOffsetCommit,
+  onGrainOffsetChange,
+  onGrainOffsetCommit,
+  innerTransformKind,
+  onNameHandleDblClick,
+  onGrainHandleDblClick,
 }: FigureRendererProps) => {
   const isTextFigure = figure.tool === "text";
   const supportsPiques =
@@ -520,8 +640,65 @@ const FigureRenderer = ({
     pts,
   ]);
 
+  // Consolidated documentation block + grain arrow for molds. Replaces the
+  // plain name label below when figure.kind === "mold".
+  const moldDocLayout = React.useMemo(
+    () => (figure.kind === "mold" ? computeMoldDocLayoutLocal(figure) : null),
+    [figure]
+  );
+  const moldDocBase = React.useMemo(() => {
+    if (!moldDocLayout) return null;
+    const offset = figure.nameOffsetLocal ?? { x: 0, y: 0 };
+    const ox = Number.isFinite(offset.x) ? offset.x : 0;
+    const oy = Number.isFinite(offset.y) ? offset.y : 0;
+    return { x: moldDocLayout.anchor.x - ox, y: moldDocLayout.anchor.y - oy };
+  }, [moldDocLayout, figure.nameOffsetLocal]);
+
   const handleSize = 10 / scale;
   const handleGap = 6 / scale;
+
+  // Grain arrow handle: parked just past the arrow's TAIL (never on the
+  // shaft). `center` is the drag group's anchor; `handleRel` the rect's
+  // position inside it.
+  const grainHandle = React.useMemo(() => {
+    const g = moldDocLayout?.grain;
+    if (!g) return null;
+    const center = {
+      x: (g.tail.x + g.tip.x) / 2,
+      y: (g.tail.y + g.tip.y) / 2,
+    };
+    const tailRel = { x: g.tail.x - center.x, y: g.tail.y - center.y };
+    const len = Math.hypot(tailRel.x, tailRel.y) || 1;
+    const past = handleGap + handleSize / 2;
+    return {
+      center,
+      handleRel: {
+        x: tailRel.x + (tailRel.x / len) * past,
+        y: tailRel.y + (tailRel.y / len) * past,
+      },
+    };
+  }, [moldDocLayout, handleGap, handleSize]);
+
+  // Box of the grain arrow for the inner-transform proxy (length along the
+  // arrow, width spanning the head wings).
+  const grainProxy = React.useMemo(() => {
+    const g = moldDocLayout?.grain;
+    if (!g) return null;
+    return {
+      center: {
+        x: (g.tail.x + g.tip.x) / 2,
+        y: (g.tail.y + g.tip.y) / 2,
+      },
+      length: Math.hypot(g.tip.x - g.tail.x, g.tip.y - g.tail.y),
+      width: Math.max(
+        Math.hypot(g.headA.x - g.headB.x, g.headA.y - g.headB.y),
+        12 / scale
+      ),
+      rotationDeg:
+        (((figure.moldMeta?.grainline?.angleDeg ?? 0) % 360) + 360) % 360,
+    };
+  }, [moldDocLayout, scale, figure.moldMeta?.grainline?.angleDeg]);
+
   const hasEdgeStrokeOverrides = figure.edges.some((edge) => !!edge.stroke);
 
   const renderEdgeStrokeLines = React.useCallback(() => {
@@ -953,7 +1130,7 @@ const FigureRenderer = ({
         />
       )}
 
-      {figure.kind !== "seam" && nameLayout && (
+      {figure.kind !== "seam" && figure.kind !== "mold" && nameLayout && (
         <Text
           x={nameLayout.x}
           y={nameLayout.y}
@@ -973,49 +1150,277 @@ const FigureRenderer = ({
         />
       )}
 
-      {figure.kind !== "seam" && nameLayout && showNameHandle && (
-        <Group
-          x={nameLayout.x}
-          y={nameLayout.y}
-          rotation={nameRotationDeg}
-          draggable={true}
-          onDragStart={(e) => {
-            e.cancelBubble = true;
-          }}
-          onDragMove={(e) => {
-            e.cancelBubble = true;
-            const nx = e.target.x();
-            const ny = e.target.y();
-            const nextOffsetLocal = {
-              x: nx - nameLayout.baseX,
-              y: ny - nameLayout.baseY,
-            };
-            onNameOffsetChange?.(figure.id, nextOffsetLocal);
-          }}
-          onDragEnd={(e) => {
-            e.cancelBubble = true;
-            const nx = e.target.x();
-            const ny = e.target.y();
-            const nextOffsetLocal = {
-              x: nx - nameLayout.baseX,
-              y: ny - nameLayout.baseY,
-            };
-            onNameOffsetCommit?.(figure.id, nextOffsetLocal);
-          }}
-        >
-          <Rect
-            x={nameLayout.textTightWidthApprox / 2 + handleGap}
-            y={-handleSize / 2}
-            width={handleSize}
-            height={handleSize}
-            fill={nameFill}
-            opacity={0.35}
-            cornerRadius={2 / scale}
-            listening={true}
-            name="inaa-figure-name-handle"
+      {figure.kind !== "seam" &&
+        figure.kind !== "mold" &&
+        nameLayout &&
+        showNameHandle && (
+          <Group
+            x={nameLayout.x}
+            y={nameLayout.y}
+            rotation={nameRotationDeg}
+            draggable={true}
+            onDragStart={(e) => {
+              e.cancelBubble = true;
+            }}
+            onDragMove={(e) => {
+              e.cancelBubble = true;
+              const nx = e.target.x();
+              const ny = e.target.y();
+              const nextOffsetLocal = {
+                x: nx - nameLayout.baseX,
+                y: ny - nameLayout.baseY,
+              };
+              onNameOffsetChange?.(figure.id, nextOffsetLocal);
+            }}
+            onDragEnd={(e) => {
+              e.cancelBubble = true;
+              const nx = e.target.x();
+              const ny = e.target.y();
+              const nextOffsetLocal = {
+                x: nx - nameLayout.baseX,
+                y: ny - nameLayout.baseY,
+              };
+              onNameOffsetCommit?.(figure.id, nextOffsetLocal);
+            }}
+          >
+            <PulsingHandleRect
+              x={nameLayout.textTightWidthApprox / 2 + handleGap + handleSize / 2}
+              size={handleSize}
+              fill={nameFill}
+              cornerRadius={2 / scale}
+            />
+          </Group>
+        )}
+
+      {/* Mold: grain-line arrow (single-headed). Not affected by text rotation. */}
+      {figure.kind === "mold" && moldDocLayout?.grain && (
+        <>
+          <Line
+            points={[
+              moldDocLayout.grain.tail.x,
+              moldDocLayout.grain.tail.y,
+              moldDocLayout.grain.tip.x,
+              moldDocLayout.grain.tip.y,
+            ]}
+            stroke={nameFill}
+            strokeWidth={moldDocLayout.grain.strokeWidth}
+            opacity={nameOpacity}
+            lineCap="round"
+            lineJoin="round"
+            listening={false}
+            perfectDrawEnabled={false}
+            name="inaa-mold-grainline"
           />
+          <Line
+            points={[
+              moldDocLayout.grain.headA.x,
+              moldDocLayout.grain.headA.y,
+              moldDocLayout.grain.tip.x,
+              moldDocLayout.grain.tip.y,
+              moldDocLayout.grain.headB.x,
+              moldDocLayout.grain.headB.y,
+            ]}
+            stroke={nameFill}
+            strokeWidth={moldDocLayout.grain.strokeWidth}
+            opacity={nameOpacity}
+            lineCap="round"
+            lineJoin="round"
+            listening={false}
+            perfectDrawEnabled={false}
+            name="inaa-mold-grainline-head"
+          />
+        </>
+      )}
+
+      {/* Mold: consolidated documentation text block (watermark). */}
+      {figure.kind === "mold" && moldDocLayout && moldDocLayout.lines.length > 0 && (
+        <Group
+          x={moldDocLayout.anchor.x}
+          y={moldDocLayout.anchor.y}
+          rotation={moldDocLayout.rotationDeg}
+          listening={false}
+          name="inaa-mold-doc"
+        >
+          {moldDocLayout.lines.map((line) => (
+            <Text
+              key={line.key}
+              x={0}
+              y={line.y}
+              width={moldDocLayout.blockWidth}
+              height={line.height}
+              offsetX={moldDocLayout.blockWidth / 2}
+              text={line.text}
+              fontSize={line.fontSizePx}
+              fontStyle={line.bold ? "bold" : "normal"}
+              fill={nameFill}
+              opacity={nameOpacity}
+              align={moldDocLayout.textAlign}
+              verticalAlign={line.wrap ? "top" : "middle"}
+              wrap={line.wrap ? "word" : "none"}
+              listening={false}
+              name="inaa-mold-doc-line"
+            />
+          ))}
         </Group>
       )}
+
+      {figure.kind === "mold" &&
+        moldDocLayout &&
+        moldDocBase &&
+        moldDocLayout.lines.length > 0 &&
+        showNameHandle &&
+        !innerTransformKind && (
+          <Group
+            x={moldDocLayout.anchor.x}
+            y={moldDocLayout.anchor.y}
+            rotation={moldDocLayout.rotationDeg}
+            draggable={true}
+            onDragStart={(e) => {
+              e.cancelBubble = true;
+            }}
+            onDragMove={(e) => {
+              e.cancelBubble = true;
+              const nextOffsetLocal = {
+                x: e.target.x() - moldDocBase.x,
+                y: e.target.y() - moldDocBase.y,
+              };
+              onNameOffsetChange?.(figure.id, nextOffsetLocal);
+            }}
+            onDragEnd={(e) => {
+              e.cancelBubble = true;
+              const nextOffsetLocal = {
+                x: e.target.x() - moldDocBase.x,
+                y: e.target.y() - moldDocBase.y,
+              };
+              onNameOffsetCommit?.(figure.id, nextOffsetLocal);
+            }}
+          >
+            <PulsingHandleRect
+              x={moldDocLayout.blockWidth / 2 + handleGap + handleSize / 2}
+              size={handleSize}
+              fill={nameFill}
+              cornerRadius={2 / scale}
+              onDblClick={() => onNameHandleDblClick?.(figure.id)}
+            />
+          </Group>
+        )}
+
+      {/* Grain arrow handle: drags the arrow freely, independent of the doc
+          text block. Persists moldMeta.grainOffsetLocal (centroid-relative). */}
+      {figure.kind === "mold" &&
+        moldDocBase &&
+        grainHandle &&
+        showNameHandle &&
+        !innerTransformKind && (
+          <Group
+            x={grainHandle.center.x}
+            y={grainHandle.center.y}
+            draggable={true}
+            onDragStart={(e) => {
+              e.cancelBubble = true;
+            }}
+            onDragMove={(e) => {
+              e.cancelBubble = true;
+              const nextOffsetLocal = {
+                x: e.target.x() - moldDocBase.x,
+                y: e.target.y() - moldDocBase.y,
+              };
+              onGrainOffsetChange?.(figure.id, nextOffsetLocal);
+            }}
+            onDragEnd={(e) => {
+              e.cancelBubble = true;
+              const nextOffsetLocal = {
+                x: e.target.x() - moldDocBase.x,
+                y: e.target.y() - moldDocBase.y,
+              };
+              onGrainOffsetCommit?.(figure.id, nextOffsetLocal);
+            }}
+          >
+            <PulsingHandleRect
+              x={grainHandle.handleRel.x}
+              y={grainHandle.handleRel.y}
+              size={handleSize}
+              fill={nameFill}
+              cornerRadius={2 / scale}
+              name="inaa-grain-handle"
+              onDblClick={() => onGrainHandleDblClick?.(figure.id)}
+            />
+          </Group>
+        )}
+
+      {/* Inner-transform proxies: invisible, draggable rects mirroring the doc
+          block / grain arrow. The dedicated inner Transformer (Canvas) attaches
+          to them; scale/rotation are baked back into figure state. */}
+      {figure.kind === "mold" &&
+        moldDocLayout &&
+        moldDocBase &&
+        innerTransformKind === "doc" &&
+        moldDocLayout.lines.length > 0 && (
+          <Rect
+            name="inaa-inner-proxy-doc"
+            x={moldDocLayout.anchor.x}
+            y={moldDocLayout.anchor.y}
+            width={moldDocLayout.blockWidth}
+            height={moldDocLayout.blockHeight}
+            offsetX={moldDocLayout.blockWidth / 2}
+            offsetY={moldDocLayout.blockHeight / 2}
+            rotation={moldDocLayout.rotationDeg}
+            fill="rgba(0,0,0,0)"
+            draggable={true}
+            onDragStart={(e) => {
+              e.cancelBubble = true;
+            }}
+            onDragMove={(e) => {
+              e.cancelBubble = true;
+              onNameOffsetChange?.(figure.id, {
+                x: e.target.x() - moldDocBase.x,
+                y: e.target.y() - moldDocBase.y,
+              });
+            }}
+            onDragEnd={(e) => {
+              e.cancelBubble = true;
+              onNameOffsetCommit?.(figure.id, {
+                x: e.target.x() - moldDocBase.x,
+                y: e.target.y() - moldDocBase.y,
+              });
+            }}
+          />
+        )}
+
+      {figure.kind === "mold" &&
+        moldDocBase &&
+        grainProxy &&
+        innerTransformKind === "grain" && (
+          <Rect
+            name="inaa-inner-proxy-grain"
+            x={grainProxy.center.x}
+            y={grainProxy.center.y}
+            width={grainProxy.width}
+            height={grainProxy.length}
+            offsetX={grainProxy.width / 2}
+            offsetY={grainProxy.length / 2}
+            rotation={grainProxy.rotationDeg}
+            fill="rgba(0,0,0,0)"
+            draggable={true}
+            onDragStart={(e) => {
+              e.cancelBubble = true;
+            }}
+            onDragMove={(e) => {
+              e.cancelBubble = true;
+              onGrainOffsetChange?.(figure.id, {
+                x: e.target.x() - moldDocBase.x,
+                y: e.target.y() - moldDocBase.y,
+              });
+            }}
+            onDragEnd={(e) => {
+              e.cancelBubble = true;
+              onGrainOffsetCommit?.(figure.id, {
+                x: e.target.x() - moldDocBase.x,
+                y: e.target.y() - moldDocBase.y,
+              });
+            }}
+          />
+        )}
     </Group>
   );
 };
@@ -1042,6 +1447,8 @@ const arePropsEqual = (
     prev.pointLabelsMode === next.pointLabelsMode &&
     prev.pointLabelsByNodeId === next.pointLabelsByNodeId &&
     prev.showSeamLabel === next.showSeamLabel &&
+    prev.showNameHandle === next.showNameHandle &&
+    prev.innerTransformKind === next.innerTransformKind &&
     prev.isDark === next.isDark &&
     prev.selectedEdge === next.selectedEdge &&
     prev.hoveredEdge === next.hoveredEdge &&

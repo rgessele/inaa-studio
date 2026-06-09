@@ -93,6 +93,9 @@ declare global {
       ) => Array<{ x: number; y: number }>;
       getStageNodePointsLengthByName?: (name: string) => number[];
       getStageNodePointsByName?: (name: string) => number[][];
+      getStageNodeClientRectsByName?: (
+        name: string
+      ) => Array<{ x: number; y: number; width: number; height: number }>;
       getFiguresSnapshot?: () => Array<{
         id: string;
         tool: string;

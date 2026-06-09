@@ -73,12 +73,14 @@ test.describe("offset tool - seam label", () => {
     const before = await getLabelPos();
 
     // Drag the base figure; the derived seam (and its label) should move too.
+    // Grab the body away from the selection center: the rotation pivot marker
+    // sits exactly on the center and owns drags that start on it.
     await page.keyboard.press("V");
     await stageCanvas.click({ position: { x: 100, y: 60 } });
 
     await dragOnCanvas(page, stageCanvas, {
-      source: { x: 100, y: 60 },
-      target: { x: 220, y: 160 },
+      source: { x: 60, y: 40 },
+      target: { x: 180, y: 140 },
     });
 
     const after = await getLabelPos();
