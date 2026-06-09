@@ -235,7 +235,10 @@ const MeasureOverlayRenderer = ({
     );
   };
 
-  const renderEdgeLabel = (edge: FigureEdge) => {
+  const renderEdgeLabel = (
+    edge: FigureEdge,
+    centroid: { x: number; y: number }
+  ) => {
     const hit = figure.measures?.perEdge?.find((m) => m.edgeId === edge.id);
     if (!hit) return null;
 
@@ -251,11 +254,10 @@ const MeasureOverlayRenderer = ({
       return null;
     }
 
-    const pts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 1 : 50);
+    const pts = edgeLocalPoints(figure, edge, edge.kind === "line" ? 1 : 24);
     const mt = midAndTangent(pts);
     if (!mt) return null;
 
-    const centroid = figureCentroidLocal(figure);
     const n = norm(perp(mt.tangent));
 
     // Align label with the edge direction.
@@ -363,12 +365,15 @@ const MeasureOverlayRenderer = ({
 
   const renderFigureLabels = () => {
     if (!figure.measures) return null;
+    // Compute the figure centroid once for all edge labels instead of once per
+    // edge (was O(edges^2) node scans on dense figures).
+    const centroid = figureCentroidLocal(figure);
     return (
       <>
         {renderSelectedEdgeHighlight()}
         {renderHoveredEdgeHighlight()}
         {renderCircleMeasures()}
-        {figure.edges.map((edge) => renderEdgeLabel(edge))}
+        {figure.edges.map((edge) => renderEdgeLabel(edge, centroid))}
       </>
     );
   };

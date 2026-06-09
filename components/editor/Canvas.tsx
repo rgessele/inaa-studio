@@ -107,6 +107,16 @@ const ZOOM_FACTOR = 1.08;
 const DENSE_MOLD_NODE_OVERLAY_THRESHOLD = 96;
 const SEGMENT_LENGTH_INPUT_DEBOUNCE_MS = 450;
 
+// Cap the backing-store resolution of the interactive canvases. On a HiDPI
+// all-in-one (devicePixelRatio 2+), rendering every layer at full DPR means ~4x
+// the pixels to fill each frame, which a weak integrated GPU cannot sustain.
+// This is set before any Stage/Layer mounts. Raster export sets its own higher
+// pixelRatio per call (export.ts), so quality there is unaffected.
+const MAX_LIVE_PIXEL_RATIO = 1.5;
+if (typeof window !== "undefined") {
+  Konva.pixelRatio = Math.min(window.devicePixelRatio || 1, MAX_LIVE_PIXEL_RATIO);
+}
+
 type Vec2 = { x: number; y: number };
 
 type OffsetPreviewLogInput = {
@@ -4999,6 +5009,27 @@ export default function Canvas() {
   const panRafRef = useRef<number | null>(null);
   const panPositionRef = useRef<Vec2 | null>(null);
 
+  // rAF coalescing for pointer-move and wheel. Native pointermove/wheel fire at
+  // 60-120+ Hz; processing every one synchronously (heavy hover/snap scans, or a
+  // full re-render per zoom tick) backs up the main thread on a weak machine.
+  // We instead process the latest event once per animation frame.
+  const pointerMoveRafRef = useRef<number | null>(null);
+  const pendingPointerMoveRef =
+    useRef<Konva.KonvaEventObject<PointerEvent | MouseEvent> | null>(null);
+  const wheelRafRef = useRef<number | null>(null);
+  const pendingZoomRef = useRef<{ scale: number; position: Vec2 } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pointerMoveRafRef.current !== null) {
+        cancelAnimationFrame(pointerMoveRafRef.current);
+      }
+      if (wheelRafRef.current !== null) {
+        cancelAnimationFrame(wheelRafRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (!isPanning) return;
 
@@ -5404,6 +5435,12 @@ export default function Canvas() {
     startOut?: Vec2;
     snappedToNodeId?: string | null;
   } | null>(null);
+
+  // A node/handle drag emits many move ticks. We want exactly ONE undo entry for
+  // the whole gesture: the first tick commits to history (pushing the pre-drag
+  // state), and every later tick updates the live geometry without saving
+  // history. Reset on each drag start.
+  const nodeEditHistoryCommittedRef = useRef(false);
 
   const mergeFigureNodes = useCallback(
     (figure: Figure, fromNodeId: string, toNodeId: string): Figure => {
@@ -6406,6 +6443,18 @@ export default function Canvas() {
     };
   }, [position.x, position.y, scale, size.width, size.height]);
 
+  // Per-figure world bounding boxes for viewport culling. Keyed on `figures`,
+  // so this recomputes only when geometry changes — NOT on pan/zoom (those just
+  // re-run the cheap intersection test below).
+  const figureWorldBoundsById = useMemo(() => {
+    const map = new Map<
+      string,
+      { x: number; y: number; width: number; height: number } | null
+    >();
+    for (const f of figures) map.set(f.id, figureWorldBoundingBox(f));
+    return map;
+  }, [figures]);
+
   const guidePreviewPendingRef = useRef<Map<string, number> | null>(null);
   const guidePreviewRafRef = useRef<number | null>(null);
   const [guidePreviewValues, setGuidePreviewValues] = useState<Map<
@@ -6611,6 +6660,31 @@ export default function Canvas() {
       setCursorBadge(null);
       scheduleCursorBadgeIdleShow();
 
+      // Accumulate zoom/pan into a pending ref so a dense stream of wheel events
+      // (trackpad pinch/momentum) composes correctly and commits to React state
+      // only once per animation frame. Base off the pending value (or the synced
+      // refs) so each event builds on the last without a stale snapshot.
+      const base = pendingZoomRef.current ?? {
+        scale: scaleRef.current,
+        position: positionRef.current,
+      };
+
+      const scheduleZoomCommit = () => {
+        if (wheelRafRef.current !== null) return;
+        wheelRafRef.current = requestAnimationFrame(() => {
+          wheelRafRef.current = null;
+          const pending = pendingZoomRef.current;
+          pendingZoomRef.current = null;
+          if (!pending) return;
+          // Keep the synced refs current immediately so the next event's base is
+          // correct even before React re-renders.
+          scaleRef.current = pending.scale;
+          positionRef.current = pending.position;
+          setScale(pending.scale);
+          setPosition(pending.position);
+        });
+      };
+
       // Trackpad pan is typically reported as wheel events with small deltas.
       // Pinch-zoom usually sets ctrlKey=true on macOS.
       const isTrackpadWheel =
@@ -6618,38 +6692,36 @@ export default function Canvas() {
         (Math.abs(e.evt.deltaX) > 0 || Math.abs(e.evt.deltaY) < 50);
 
       if (!e.evt.ctrlKey && isTrackpadWheel) {
-        setPosition({
-          x: position.x - e.evt.deltaX,
-          y: position.y - e.evt.deltaY,
-        });
+        pendingZoomRef.current = {
+          scale: base.scale,
+          position: {
+            x: base.position.x - e.evt.deltaX,
+            y: base.position.y - e.evt.deltaY,
+          },
+        };
+        scheduleZoomCommit();
         return;
       }
 
       const direction = e.evt.deltaY > 0 ? -1 : 1;
       const factor = direction > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
-      const nextScale = clamp(scale * factor, MIN_ZOOM_SCALE, MAX_ZOOM_SCALE);
+      const nextScale = clamp(base.scale * factor, MIN_ZOOM_SCALE, MAX_ZOOM_SCALE);
 
       const mousePointTo = {
-        x: (pointer.x - position.x) / scale,
-        y: (pointer.y - position.y) / scale,
+        x: (pointer.x - base.position.x) / base.scale,
+        y: (pointer.y - base.position.y) / base.scale,
       };
 
-      const nextPosition = {
-        x: pointer.x - mousePointTo.x * nextScale,
-        y: pointer.y - mousePointTo.y * nextScale,
+      pendingZoomRef.current = {
+        scale: nextScale,
+        position: {
+          x: pointer.x - mousePointTo.x * nextScale,
+          y: pointer.y - mousePointTo.y * nextScale,
+        },
       };
-
-      setScale(nextScale);
-      setPosition(nextPosition);
+      scheduleZoomCommit();
     },
-    [
-      position.x,
-      position.y,
-      scheduleCursorBadgeIdleShow,
-      scale,
-      setPosition,
-      setScale,
-    ]
+    [scheduleCursorBadgeIdleShow, setPosition, setScale]
   );
 
   const parseCmInput = useCallback((raw: string): number | null => {
@@ -11159,6 +11231,7 @@ export default function Canvas() {
                   nodeMeasureResolvedPreviewRef.current = null;
                   setNodeMeasurePreview(null);
                   clearSegmentLengthConstraint();
+                  nodeEditHistoryCommittedRef.current = false;
                   dragNodeRef.current = {
                     figureId: selectedFigure.id,
                     nodeId: n.id,
@@ -11257,6 +11330,8 @@ export default function Canvas() {
                     currentLocal: { x: nx, y: ny },
                   });
 
+                  const saveHist = !nodeEditHistoryCommittedRef.current;
+                  nodeEditHistoryCommittedRef.current = true;
                   setFigures((prev) =>
                     prev.map((f) => {
                       if (f.id !== ref.figureId) return f;
@@ -11282,7 +11357,8 @@ export default function Canvas() {
                           };
                         }),
                       };
-                    })
+                    }),
+                    saveHist
                   );
                 }}
                 onDragEnd={() => {
@@ -11451,6 +11527,7 @@ export default function Canvas() {
                       nodeId: n.id,
                       handle: "in",
                     });
+                    nodeEditHistoryCommittedRef.current = false;
                   }}
                   onDragMove={(ev) => {
                     let nx = ev.target.x();
@@ -11473,6 +11550,8 @@ export default function Canvas() {
                         ev.target.position({ x: nx, y: ny });
                       }
                     }
+                    const saveHist = !nodeEditHistoryCommittedRef.current;
+                    nodeEditHistoryCommittedRef.current = true;
                     setFigures((prev) =>
                       prev.map((f) => {
                         if (f.id !== selectedFigure.id) return f;
@@ -11496,7 +11575,8 @@ export default function Canvas() {
                             return next;
                           }),
                         };
-                      })
+                      }),
+                      saveHist
                     );
                   }}
                   onPointerDown={(ev) => {
@@ -11546,6 +11626,7 @@ export default function Canvas() {
                       nodeId: n.id,
                       handle: "out",
                     });
+                    nodeEditHistoryCommittedRef.current = false;
                   }}
                   onDragMove={(ev) => {
                     let nx = ev.target.x();
@@ -11568,6 +11649,8 @@ export default function Canvas() {
                         ev.target.position({ x: nx, y: ny });
                       }
                     }
+                    const saveHist = !nodeEditHistoryCommittedRef.current;
+                    nodeEditHistoryCommittedRef.current = true;
                     setFigures((prev) =>
                       prev.map((f) => {
                         if (f.id !== selectedFigure.id) return f;
@@ -11591,7 +11674,8 @@ export default function Canvas() {
                             return next;
                           }),
                         };
-                      })
+                      }),
+                      saveHist
                     );
                   }}
                   onPointerDown={(ev) => {
@@ -13043,13 +13127,29 @@ export default function Canvas() {
           onWheel={handleWheel}
           onPointerDown={handlePointerDown}
           onPointerMove={(e) => {
-            handlePointerMove(e);
-            handleCurvePointerMove(e);
+            // Coalesce: store the latest event and process once per frame.
+            pendingPointerMoveRef.current = e;
+            if (pointerMoveRafRef.current !== null) return;
+            pointerMoveRafRef.current = requestAnimationFrame(() => {
+              pointerMoveRafRef.current = null;
+              const ev = pendingPointerMoveRef.current;
+              pendingPointerMoveRef.current = null;
+              if (!ev) return;
+              handlePointerMove(ev);
+              handleCurvePointerMove(ev);
+            });
           }}
           onPointerUp={handlePointerUp}
           onContextMenu={(e) => {
             // Disable browser context menu inside the canvas.
             e.evt.preventDefault();
+
+            // While drawing with the curve/line tools, right-click means "undo
+            // the last placed point" (handled in handlePointerDown). Don't also
+            // open the figure/edge context menu on top of it.
+            if (tool === "curve" || tool === "line") {
+              return;
+            }
 
             const stage = stageRef.current;
             if (!stage) return;
@@ -13161,6 +13261,23 @@ export default function Canvas() {
               const isSeam = fig.kind === "seam" && !!fig.parentId;
               const baseId = isSeam ? fig.parentId! : fig.id;
               const isSelected = selectedIdsSet.has(baseId);
+
+              // Viewport culling: skip figures whose world bbox doesn't
+              // intersect the padded viewport. Selected figures are never culled
+              // (few of them, and they may be mid-drag with a preview offset).
+              if (!isSelected) {
+                const bb = figureWorldBoundsById.get(fig.id);
+                if (bb) {
+                  const padX = (viewportWorld.x1 - viewportWorld.x0) * 0.15;
+                  const padY = (viewportWorld.y1 - viewportWorld.y0) * 0.15;
+                  const offscreen =
+                    bb.x > viewportWorld.x1 + padX ||
+                    bb.x + bb.width < viewportWorld.x0 - padX ||
+                    bb.y > viewportWorld.y1 + padY ||
+                    bb.y + bb.height < viewportWorld.y0 - padY;
+                  if (offscreen) return null;
+                }
+              }
               const isRemovePreview =
                 tool === "offset" &&
                 hoveredOffsetBaseId != null &&

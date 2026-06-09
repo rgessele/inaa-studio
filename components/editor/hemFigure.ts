@@ -1,9 +1,11 @@
 import { edgeLocalPoints, figureLocalPolyline } from "./figurePath";
+import { simplifyPolylineRdp } from "./geometrySimplify";
 import {
   getOuterLoopEdgeDirections,
   getOuterLoopEdgeSequence,
   hasClosedLoop,
   makeSeamFigure,
+  SEAM_SIMPLIFY_TOLERANCE_PX,
 } from "./seamFigure";
 import type {
   Figure,
@@ -442,21 +444,32 @@ function buildHemNodesAndEdges(
 
   flattened.forEach((segment, segmentIndex) => {
     if (segment.points.length < 4) return;
+    // The base contour was flattened at ~90 points per cubic edge; thin each
+    // hem segment so it persists as a few dozen nodes (within ~0.2 mm of the
+    // dense polyline) instead of ~1000+. seamSegments, nodes and edges all
+    // derive from these same simplified points, so they stay consistent.
+    // Mirrors the seam-allowance fix in seamFigure.ts.
+    const simplifiedPoints = pointsToFlat(
+      simplifyPolylineRdp(
+        flattenToPoints(segment.points),
+        SEAM_SIMPLIFY_TOLERANCE_PX
+      )
+    );
     const isInternalFold = segment.foldIndex < totalFolds;
     const shouldDrawSegment = showInternalFoldLines || !isInternalFold;
     if (shouldDrawSegment) {
-      seamSegments.push([...segment.points]);
+      seamSegments.push([...simplifiedPoints]);
       seamSegmentEdgeIds.push(
         segment.sourceEdgeId ?? `hem-seg-${segmentIndex + 1}`
       );
     }
 
     const segmentNodes: FigureNode[] = [];
-    for (let i = 0; i < segment.points.length; i += 2) {
+    for (let i = 0; i < simplifiedPoints.length; i += 2) {
       const n: FigureNode = {
         id: id("n"),
-        x: segment.points[i]!,
-        y: segment.points[i + 1]!,
+        x: simplifiedPoints[i]!,
+        y: simplifiedPoints[i + 1]!,
         mode: "corner",
       };
       nodes.push(n);

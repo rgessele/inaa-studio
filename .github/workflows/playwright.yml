@@ -6,7 +6,7 @@ on:
     branches: [main, master]
 jobs:
   test:
-    timeout-minutes: 60
+    timeout-minutes: 90
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,13 +18,53 @@ jobs:
 
       - name: Lint
         run: npm run lint
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "v=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.v }}
+
       - name: Install Playwright Browsers
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        shell: bash
         run: |
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            npx playwright install --with-deps
-          else
-            npx playwright install
-          fi
+          # `npx playwright install` intermittently hangs on the macOS runner
+          # right after the first browser downloads, eating the whole job
+          # timeout. Run each attempt in its own process group with job control
+          # so a hang can be SIGKILLed wholesale (a killed child otherwise keeps
+          # holding the install __dirlock and fails every retry). Clear that lock
+          # around each attempt and retry. Cached, so it only needs to pass once
+          # per Playwright version.
+          set +e
+          LOCK="$HOME/Library/Caches/ms-playwright/__dirlock"
+          for i in 1 2 3 4; do
+            echo "::group::Playwright install attempt $i"
+            rm -rf "$LOCK"
+            set -m
+            npx playwright install &
+            pid=$!
+            ( sleep 900; kill -KILL -"$pid" 2>/dev/null ) &
+            watcher=$!
+            wait "$pid"; rc=$?
+            kill "$watcher" 2>/dev/null
+            kill -KILL -"$pid" 2>/dev/null
+            set +m
+            echo "::endgroup::"
+            if [ "$rc" -eq 0 ]; then
+              echo "Playwright install succeeded on attempt $i"
+              exit 0
+            fi
+            echo "Attempt $i failed or hung (rc=$rc); cleaning lock and retrying..."
+            rm -rf "$LOCK"
+            sleep 5
+          done
+          echo "Playwright install failed after all attempts"
+          exit 1
 
       - name: Enforce catalog update (editor changes)
         if: ${{ github.event_name == 'pull_request' }}

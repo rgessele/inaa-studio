@@ -36,6 +36,7 @@ interface StrokeColorPickerProps {
   hasProtectedOnlySelection?: boolean;
   onCommit: (color: string) => void;
   onCancel?: () => void;
+  onClose?: () => void;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -107,6 +108,7 @@ export function StrokeColorPicker({
   hasProtectedOnlySelection = false,
   onCommit,
   onCancel,
+  onClose,
 }: StrokeColorPickerProps) {
   const svAreaRef = useRef<HTMLDivElement | null>(null);
   const hueSliderRef = useRef<HTMLDivElement | null>(null);
@@ -196,6 +198,14 @@ export function StrokeColorPicker({
     setHexError(false);
     onCommit(hex);
   }, [onCommit]);
+
+  // "Aplicar" confirms the current color and dismisses the picker, so the
+  // popover closing is the visible "done" feedback (even when the color was
+  // already committed live via a preset/recent swatch).
+  const applyAndClose = useCallback(() => {
+    commitCurrent();
+    onClose?.();
+  }, [commitCurrent, onClose]);
 
   const updateFromSvPointer = useCallback(
     (event: PointerEvent | React.PointerEvent) => {
@@ -516,7 +526,7 @@ export function StrokeColorPicker({
           type="button"
           data-testid="stroke-color-apply"
           className="rounded bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary/90"
-          onClick={commitCurrent}
+          onClick={applyAndClose}
         >
           Aplicar
         </button>

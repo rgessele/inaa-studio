@@ -228,9 +228,22 @@ export function computeFigureMeasures(figure: Figure): FigureMeasures {
   return measures;
 }
 
+// Figure objects we have already measured. setFigures re-runs this over the
+// WHOLE document on every edit, but unchanged figures keep their object
+// reference (immutable updates only create a new object for the figure that
+// actually changed). So if we have seen this exact object before, its measures
+// are already current and we return it untouched — preserving reference
+// identity. That lets the MemoizedFigure `prev.figure === next.figure` barrier
+// skip every unchanged figure, turning an O(document) edit back into O(changed
+// figures) for both measure recompute and React/Konva re-render.
+const measuredFigures = new WeakSet<Figure>();
+
 export function withComputedFigureMeasures(figure: Figure): Figure {
-  return {
+  if (measuredFigures.has(figure)) return figure;
+  const next: Figure = {
     ...figure,
     measures: computeFigureMeasures(figure),
   };
+  measuredFigures.add(next);
+  return next;
 }
