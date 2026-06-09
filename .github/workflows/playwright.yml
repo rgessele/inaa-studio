@@ -35,18 +35,32 @@ jobs:
         run: |
           # `npx playwright install` intermittently hangs on the macOS runner
           # right after the first browser downloads, eating the whole job
-          # timeout. Run each attempt under a hard per-attempt timeout (perl
-          # alarm — macOS has no GNU `timeout`) and retry. The result is cached,
-          # so this only needs to succeed once per Playwright version.
+          # timeout. Run each attempt in its own process group with job control
+          # so a hang can be SIGKILLed wholesale (a killed child otherwise keeps
+          # holding the install __dirlock and fails every retry). Clear that lock
+          # around each attempt and retry. Cached, so it only needs to pass once
+          # per Playwright version.
+          set +e
+          LOCK="$HOME/Library/Caches/ms-playwright/__dirlock"
           for i in 1 2 3 4; do
             echo "::group::Playwright install attempt $i"
-            if perl -e 'alarm 900; exec @ARGV' npx playwright install; then
-              echo "::endgroup::"
+            rm -rf "$LOCK"
+            set -m
+            npx playwright install &
+            pid=$!
+            ( sleep 900; kill -KILL -"$pid" 2>/dev/null ) &
+            watcher=$!
+            wait "$pid"; rc=$?
+            kill "$watcher" 2>/dev/null
+            kill -KILL -"$pid" 2>/dev/null
+            set +m
+            echo "::endgroup::"
+            if [ "$rc" -eq 0 ]; then
               echo "Playwright install succeeded on attempt $i"
               exit 0
             fi
-            echo "::endgroup::"
-            echo "Attempt $i failed or hung; retrying..."
+            echo "Attempt $i failed or hung (rc=$rc); cleaning lock and retrying..."
+            rm -rf "$LOCK"
             sleep 5
           done
           echo "Playwright install failed after all attempts"
