@@ -51,6 +51,11 @@ jobs:
         if: steps.pw-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps
 
+      # The PDF export specs validate the generated files with pypdf via
+      # python3 (tests/export.pdf-*.spec.ts).
+      - name: Install pypdf (PDF export specs)
+        run: python3 -m pip install --user pypdf
+
       - name: Enforce catalog update (editor changes)
         if: ${{ github.event_name == 'pull_request' }}
         run: |
