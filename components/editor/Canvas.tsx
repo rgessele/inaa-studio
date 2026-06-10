@@ -4184,7 +4184,18 @@ export default function Canvas() {
   }, [tool]);
 
   const backgroundRef = useRef<Konva.Rect | null>(null);
-  const [draft, setDraft] = useState<Draft>(null);
+  const [draft, setDraftState] = useState<Draft>(null);
+  // The Konva pointer handlers run between React renders: a draft created on
+  // pointerdown is invisible to the pointermove/up closures until the next
+  // render. WebKit dispatches a synthetic down/move/up burst faster than React
+  // re-renders, so the rect/circle draft never grew and the commit discarded
+  // it as degenerate. Mirror the draft in a ref written synchronously and read
+  // the ref inside the move/up handlers (same pattern as penDraftRef).
+  const draftRef = useRef<Draft>(null);
+  const setDraft = useCallback((next: Draft) => {
+    draftRef.current = next;
+    setDraftState(next);
+  }, []);
   const [curveDraft, setCurveDraft] = useState<CurveDraft>(null);
   const [lineDraft, setLineDraft] = useState<LineDraft>(null);
   const lineDraftRef = useRef<LineDraft>(null);
@@ -9488,6 +9499,8 @@ export default function Canvas() {
   const handlePointerMove = (
     e: Konva.KonvaEventObject<PointerEvent | MouseEvent>
   ) => {
+    // Shadow the render-closure value with the live ref (see draftRef).
+    const draft = draftRef.current;
     const stage = stageRef.current;
     if (!stage) return;
 
@@ -10319,6 +10332,24 @@ export default function Canvas() {
   const handlePointerUp = (
     e?: Konva.KonvaEventObject<PointerEvent | MouseEvent>
   ) => {
+    // Flush the rAF-coalesced pointermove before handling the up: a fast
+    // gesture (or WebKit's synthetic event burst) delivers down/move/up before
+    // the rAF fires, so the queued move would only be processed AFTER the up —
+    // leaving drag-drawn drafts (rect/circle) degenerate at their start point.
+    if (pointerMoveRafRef.current !== null) {
+      cancelAnimationFrame(pointerMoveRafRef.current);
+      pointerMoveRafRef.current = null;
+    }
+    const pendingMove = pendingPointerMoveRef.current;
+    if (pendingMove) {
+      pendingPointerMoveRef.current = null;
+      handlePointerMove(pendingMove);
+      handleCurvePointerMove(pendingMove);
+    }
+
+    // Shadow the render-closure value with the live ref (see draftRef) — the
+    // flush above may have just grown the draft.
+    const draft = draftRef.current;
     if (e?.evt && stageRef.current) {
       stageRef.current.setPointersPositions(e.evt);
     }
@@ -10906,6 +10937,7 @@ export default function Canvas() {
     openMoldConfirmDialog,
     scheduleSegmentLengthInputCommit,
     scale,
+    setDraft,
     setSegmentLengthInputRawState,
     setSegmentLengthLockCmState,
     tool,
@@ -13515,6 +13547,14 @@ export default function Canvas() {
           onWheel={handleWheel}
           onPointerDown={handlePointerDown}
           onPointerMove={(e) => {
+            // The pen tool consumes every sample while the stroke is being
+            // drawn — the rAF coalescing below keeps only the latest move per
+            // frame, which collapses a fast stroke to its endpoints.
+            if (tool === "pen" && isPointerDownRef.current) {
+              handlePointerMove(e);
+              handleCurvePointerMove(e);
+              return;
+            }
             // Coalesce: store the latest event and process once per frame.
             pendingPointerMoveRef.current = e;
             if (pointerMoveRafRef.current !== null) return;

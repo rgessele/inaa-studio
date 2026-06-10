@@ -38,10 +38,16 @@ async function getFiguresSnapshot(page: Page): Promise<FigureSnapshot[]> {
 }
 
 /**
- * Get canvas locator and its bounding box
+ * Get canvas locator and its bounding box.
+ *
+ * Waits for the Konva canvases to actually have a size: the Stage mounts at
+ * 0x0 until the ResizeObserver delivers the container size, and the raw
+ * page.mouse drags these specs use are silently lost on a 0-sized stage
+ * (flaky on fast/warm WebKit runs).
  */
 async function getCanvas(page: Page) {
   const canvas = page.getByTestId("editor-stage-container");
+  await expect(canvas.locator("canvas").last()).toBeVisible();
   const box = await canvas.boundingBox();
   if (!box) throw new Error("Canvas not found");
   return { canvas, box };
