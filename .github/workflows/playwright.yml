@@ -17,7 +17,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          # Pinned: with `lts/*` the runner resolved Node 24.16, on which
+          # `playwright install` hangs forever right after the Chromium
+          # download reaches 100% (reproduced on macOS and Linux runners
+          # alike; works locally on Node 24.12). Node 22 LTS is unaffected.
+          node-version: 22
       - name: Install dependencies
         run: npm ci
 
@@ -36,6 +40,9 @@ jobs:
 
       - name: Install Playwright Browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
+        # Fail fast if the install ever stalls again instead of eating the
+        # whole 90-minute job timeout.
+        timeout-minutes: 15
         run: npx playwright install --with-deps
 
       # On a cache hit only the browser binaries are restored; the apt
