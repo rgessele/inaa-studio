@@ -317,14 +317,32 @@ test("girar os textos (transform interno) não move a seta do fio", async ({
     .poll(() => countByName(page, "inaa-inner-proxy-doc"))
     .toBe(1);
 
-  const rotaterRects = await page.evaluate(
-    () =>
-      window.__INAA_DEBUG__?.getStageNodeClientRectsByName?.("rotater") ?? []
-  );
-  const r = rotaterRects[rotaterRects.length - 1]!;
+  // Poll for the INNER transformer's rotater near the block (right after
+  // entering the mode the anchors may not be positioned yet, and the detached
+  // outer transformer parks its anchors far away).
+  let rotater: { x: number; y: number } | null = null;
+  await expect
+    .poll(async () => {
+      const rects = await page.evaluate(
+        () =>
+          window.__INAA_DEBUG__?.getStageNodeClientRectsByName?.("rotater") ??
+          []
+      );
+      // Reverse: the inner transformer mounts after the outer one, whose
+      // detached anchors keep stale positions that can also fall in range.
+      for (const r of [...rects].reverse()) {
+        const c = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        if (Math.hypot(c.x - MOLD_CX, c.y - MOLD_CY) <= 200) {
+          rotater = c;
+          return true;
+        }
+      }
+      return false;
+    })
+    .toBe(true);
   const start = {
-    x: box!.x + r.x + r.width / 2,
-    y: box!.y + r.y + r.height / 2,
+    x: box!.x + rotater!.x,
+    y: box!.y + rotater!.y,
   };
   const pivot = { x: box!.x + MOLD_CX, y: box!.y + MOLD_CY };
   const rad = (30 * Math.PI) / 180;

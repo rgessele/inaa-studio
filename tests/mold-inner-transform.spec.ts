@@ -114,21 +114,40 @@ async function absPositions(
 }
 
 /**
- * Visual center of the LAST node with this name (inner-transformer chrome is
- * mounted after the outer one). Uses client rects so it works for rotated
- * anchors too — stock Konva anchors report their top-left as position.
+ * Visual center of the inner transformer's anchor with this name. Uses client
+ * rects so it works for rotated anchors too — stock Konva anchors report
+ * their top-left as position. Polls until an anchor sits NEAR the inner
+ * element (the outer transformer parks its anchors far away while detached,
+ * and right after entering the mode the inner anchors may not be positioned
+ * yet — fetching immediately races the attach effect).
  */
 async function anchorCenter(
   page: import("@playwright/test").Page,
-  name: string
+  name: string,
+  near: { x: number; y: number } = CENTER,
+  tolerancePx = 200
 ) {
-  const rects = await page.evaluate(
-    (n) => window.__INAA_DEBUG__?.getStageNodeClientRectsByName?.(n) ?? [],
-    name
-  );
-  expect(rects.length).toBeGreaterThan(0);
-  const r = rects[rects.length - 1]!;
-  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  let found: { x: number; y: number } | null = null;
+  await expect
+    .poll(async () => {
+      const rects = await page.evaluate(
+        (n) => window.__INAA_DEBUG__?.getStageNodeClientRectsByName?.(n) ?? [],
+        name
+      );
+      // Reverse order: the INNER transformer mounts after the outer one, and
+      // the detached outer's anchors keep their last (stale) position, which
+      // can also fall within the tolerance.
+      for (const r of [...rects].reverse()) {
+        const c = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        if (Math.hypot(c.x - near.x, c.y - near.y) <= tolerancePx) {
+          found = c;
+          return true;
+        }
+      }
+      return false;
+    })
+    .toBe(true);
+  return found! as { x: number; y: number };
 }
 
 async function getFigure(page: import("@playwright/test").Page) {

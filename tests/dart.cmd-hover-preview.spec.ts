@@ -126,39 +126,39 @@ test("pence: Cmd alta precisão não deve esconder preview do ponto A", async ({
     .toBeGreaterThan(0);
 
   // Move along the edge while still holding Cmd; the preview should move.
+  // Poll: the hover preview updates on the next animation frame (the stage
+  // coalesces pointermove events), so an immediate read races the rAF.
   await page.mouse.move(s.x + 50, s.y);
-  const after = await page.evaluate(() => {
-    return window.__INAA_DEBUG__?.getStageNodeAbsolutePositionsByName?.(
-      "inaa-dart-preview-a"
-    );
-  });
-
   expect(Array.isArray(before)).toBeTruthy();
-  expect(Array.isArray(after)).toBeTruthy();
-
-  const moved = (() => {
-    const b = Array.isArray(before)
-      ? (before as Array<{ x: number; y: number }>).filter(
-          (p) => Number.isFinite(p.x) && Number.isFinite(p.y)
-        )
-      : [];
-    const a = Array.isArray(after)
-      ? (after as Array<{ x: number; y: number }>).filter(
-          (p) => Number.isFinite(p.x) && Number.isFinite(p.y)
-        )
-      : [];
-    if (b.length === 0 || a.length === 0) return false;
-    const n = Math.min(b.length, a.length);
-    let maxD = 0;
-    for (let i = 0; i < n; i++) {
-      const dx = a[i].x - b[i].x;
-      const dy = a[i].y - b[i].y;
-      const d = Math.hypot(dx, dy);
-      if (d > maxD) maxD = d;
-    }
-    return maxD > 1;
-  })();
-  expect(moved).toBeTruthy();
+  await expect
+    .poll(async () => {
+      const after = await page.evaluate(() => {
+        return window.__INAA_DEBUG__?.getStageNodeAbsolutePositionsByName?.(
+          "inaa-dart-preview-a"
+        );
+      });
+      const b = Array.isArray(before)
+        ? (before as Array<{ x: number; y: number }>).filter(
+            (p) => Number.isFinite(p.x) && Number.isFinite(p.y)
+          )
+        : [];
+      const a = Array.isArray(after)
+        ? (after as Array<{ x: number; y: number }>).filter(
+            (p) => Number.isFinite(p.x) && Number.isFinite(p.y)
+          )
+        : [];
+      if (b.length === 0 || a.length === 0) return 0;
+      const n = Math.min(b.length, a.length);
+      let maxD = 0;
+      for (let i = 0; i < n; i++) {
+        const dx = a[i].x - b[i].x;
+        const dy = a[i].y - b[i].y;
+        const d = Math.hypot(dx, dy);
+        if (d > maxD) maxD = d;
+      }
+      return maxD;
+    })
+    .toBeGreaterThan(1);
 
   await page.keyboard.up("Meta");
 

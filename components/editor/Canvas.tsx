@@ -4178,11 +4178,6 @@ export default function Canvas() {
     if (selectedEdge) setSelectedEdge(null);
   }, [selectedEdge, setSelectedEdge, tool]);
 
-  useEffect(() => {
-    if (tool === "pique") return;
-    setHoveredPique(null);
-  }, [tool]);
-
   const backgroundRef = useRef<Konva.Rect | null>(null);
   const [draft, setDraftState] = useState<Draft>(null);
   // The Konva pointer handlers run between React renders: a draft created on
@@ -4271,8 +4266,31 @@ export default function Canvas() {
   }, [nodeMeasurePreview]);
   const nodeMeasureResolvedPreviewRef =
     useRef<ResolvedNodeMeasurePreview | null>(null);
-  const [hoveredEdge, setHoveredEdge] = useState<EdgeHover>(null);
-  const [hoveredPique, setHoveredPique] = useState<HoveredPique>(null);
+  const [hoveredEdge, setHoveredEdgeState] = useState<EdgeHover>(null);
+  // Mirror of hoveredEdge for the pointer handlers: a pointerdown that flushes
+  // the coalesced pointermove (see flushPendingPointerMove) must see the hover
+  // that move just computed, but the running handler's render closure still
+  // holds the previous value (e.g. the dart tool's point-B click read point A's
+  // hover and bailed). Same pattern as draftRef/penDraftRef.
+  const hoveredEdgeRef = useRef<EdgeHover>(null);
+  const setHoveredEdge = useCallback((next: EdgeHover) => {
+    hoveredEdgeRef.current = next;
+    setHoveredEdgeState(next);
+  }, []);
+  const [hoveredPique, setHoveredPiqueState] = useState<HoveredPique>(null);
+  // Live mirror for the pointer handlers (see hoveredEdgeRef): a click that
+  // flushes the coalesced move must see the pique that move just hovered, not
+  // the previous render's value (which may reference an already-removed pique).
+  const hoveredPiqueRef = useRef<HoveredPique>(null);
+  const setHoveredPique = useCallback((next: HoveredPique) => {
+    hoveredPiqueRef.current = next;
+    setHoveredPiqueState(next);
+  }, []);
+
+  useEffect(() => {
+    if (tool === "pique") return;
+    setHoveredPique(null);
+  }, [tool, setHoveredPique]);
   const [hoveredMirrorLinkFigureId, setHoveredMirrorLinkFigureId] = useState<
     string | null
   >(null);
@@ -5831,7 +5849,7 @@ export default function Canvas() {
     if (tool !== "measure") {
       setMeasureDraft(null);
     }
-  }, [tool]);
+  }, [tool, setHoveredEdge, setHoveredPique]);
 
   useEffect(() => {
     const prev = prevToolRef.current;
@@ -6339,7 +6357,10 @@ export default function Canvas() {
       tr.nodes([node]);
     }
     tr.forceUpdate();
-    tr.getLayer()?.batchDraw();
+    // Synchronous draw (not batchDraw): the anchors must be present in the
+    // layer's HIT canvas before the next pointerdown, and the rAF that
+    // batchDraw schedules can lose that race right after entering the mode.
+    tr.getLayer()?.draw();
   }, [innerTransformTarget, tool, figures, scale]);
 
   // Bake the proxy's scale/rotation into figure state. Runs on every
@@ -7213,6 +7234,7 @@ export default function Canvas() {
       figures,
       selectedEdge?.figureId,
       setFigures,
+      setHoveredEdge,
       setSelectedEdge,
       setSelectedFigureIds,
     ]
@@ -7951,6 +7973,13 @@ export default function Canvas() {
         // ignore
       }
     }
+
+    // Act on fresh hover state: drain the rAF-coalesced pointermove first and
+    // read the hover from its live ref — the flush updates React state, but
+    // this running closure would still see the previous render's value.
+    flushPendingPointerMove();
+    const hoveredEdge = hoveredEdgeRef.current;
+    const hoveredPique = hoveredPiqueRef.current;
 
     // Cursor badge should never show while pointer is down.
     isPointerDownRef.current = true;
@@ -9499,8 +9528,12 @@ export default function Canvas() {
   const handlePointerMove = (
     e: Konva.KonvaEventObject<PointerEvent | MouseEvent>
   ) => {
-    // Shadow the render-closure value with the live ref (see draftRef).
+    // Shadow the render-closure values with the live refs (see draftRef /
+    // hoveredEdgeRef) — consecutive moves can be processed without a render
+    // in between (pen bypass, flushed bursts).
     const draft = draftRef.current;
+    const hoveredEdge = hoveredEdgeRef.current;
+    const hoveredPique = hoveredPiqueRef.current;
     const stage = stageRef.current;
     if (!stage) return;
 
@@ -10329,13 +10362,12 @@ export default function Canvas() {
     ]
   );
 
-  const handlePointerUp = (
-    e?: Konva.KonvaEventObject<PointerEvent | MouseEvent>
-  ) => {
-    // Flush the rAF-coalesced pointermove before handling the up: a fast
-    // gesture (or WebKit's synthetic event burst) delivers down/move/up before
-    // the rAF fires, so the queued move would only be processed AFTER the up —
-    // leaving drag-drawn drafts (rect/circle) degenerate at their start point.
+  // Flush the rAF-coalesced pointermove before a discrete event (down/up): a
+  // fast gesture (or WebKit's synthetic event burst in CI) can deliver
+  // move+down or move+up before the rAF fires, so the queued move would only
+  // be processed AFTER the discrete event — clicks would act on stale hover
+  // state (e.g. dart point A) and drag commits on a stale draft position.
+  const flushPendingPointerMove = () => {
     if (pointerMoveRafRef.current !== null) {
       cancelAnimationFrame(pointerMoveRafRef.current);
       pointerMoveRafRef.current = null;
@@ -10346,6 +10378,12 @@ export default function Canvas() {
       handlePointerMove(pendingMove);
       handleCurvePointerMove(pendingMove);
     }
+  };
+
+  const handlePointerUp = (
+    e?: Konva.KonvaEventObject<PointerEvent | MouseEvent>
+  ) => {
+    flushPendingPointerMove();
 
     // Shadow the render-closure value with the live ref (see draftRef) — the
     // flush above may have just grown the draft.
@@ -12146,6 +12184,7 @@ export default function Canvas() {
     scale,
     selectedFigure,
     setFigures,
+    setHoveredEdge,
     tool,
   ]);
 
