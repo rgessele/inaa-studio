@@ -643,15 +643,17 @@ test("can drag-move inner shape even when outer is visually on top", async ({
     return { x: inner.x, y: inner.y };
   });
 
-  // Drag inside the inner shape.
+  // Drag inside the inner shape. Grab it away from the selection center: the
+  // rotation pivot marker sits exactly on the center and owns drags that
+  // start on it.
   await stageCanvas.click({ position: { x: 380, y: 320 } });
   await expect
     .poll(async () => (await getEditorState(page)).selectedFigureId)
     .toBe("inner");
 
   await dragOnCanvas(page, stageCanvas, {
-    source: { x: 380, y: 320 },
-    target: { x: 430, y: 360 },
+    source: { x: 350, y: 290 },
+    target: { x: 400, y: 330 },
     steps: 18,
   });
 

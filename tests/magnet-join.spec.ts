@@ -90,7 +90,7 @@ async function drawLine(
   points: Array<{ x: number; y: number }>,
   finishWithEnter = true
 ) {
-  await page.getByRole("button", { name: "Linha" }).click();
+  await page.getByTestId("line-tool-button").click();
   
   // Wait for tool to be active
   await expect
@@ -466,7 +466,7 @@ test.describe("Magnet Join Mode", () => {
 
     // Draw line: start from middle of top edge, go to multiple points
     // Simulating: click on edge (snap), click point 2, click point 3, press Enter
-    await page.getByRole("button", { name: "Linha" }).click();
+    await page.getByTestId("line-tool-button").click();
     await expect.poll(() =>
       page.evaluate(() => window.__INAA_DEBUG__?.getState()?.tool)
     ).toBe("line");
@@ -553,7 +553,7 @@ test.describe("Magnet Join Mode", () => {
     ));
 
     // Switch to line tool
-    await page.getByRole("button", { name: "Linha" }).click();
+    await page.getByTestId("line-tool-button").click();
     await expect.poll(async () => {
       const state = await page.evaluate(() => window.__INAA_DEBUG__?.getState());
       return state?.tool;
@@ -716,7 +716,7 @@ test.describe("Magnet Join Mode", () => {
     });
 
     // Switch to line tool
-    await page.getByRole("button", { name: "Linha" }).click();
+    await page.getByTestId("line-tool-button").click();
     await expect.poll(async () => {
       const state = await page.evaluate(() => window.__INAA_DEBUG__?.getState());
       return state?.tool;
@@ -836,7 +836,7 @@ test.describe("Magnet Join Mode", () => {
     ));
 
     // Switch to line tool
-    await page.getByRole("button", { name: "Linha" }).click();
+    await page.getByTestId("line-tool-button").click();
     await expect.poll(async () => {
       const state = await page.evaluate(() => window.__INAA_DEBUG__?.getState());
       return state?.tool;
@@ -897,7 +897,7 @@ test.describe("Magnet Join Mode", () => {
     const box = await canvas.boundingBox();
     if (!box) throw new Error("Canvas not available");
 
-    await page.getByRole("button", { name: "Linha" }).click();
+    await page.getByTestId("line-tool-button").click();
     await expect.poll(async () => {
       const state = await page.evaluate(() => window.__INAA_DEBUG__?.getState());
       return state?.tool;

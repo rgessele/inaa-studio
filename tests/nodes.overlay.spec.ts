@@ -46,6 +46,8 @@ test("editor: nós (pontinhos) overlay modes (never/always/hover)", async ({
     .poll(async () => (await getEditorState(page)).nodesDisplayMode)
     .toBe("hover");
 
+  // Since the single-Shape node-dots optimization, the overlay renders ONE
+  // "inaa-node-point" Shape per figure (drawing all dots), not one per node.
   await expect
     .poll(async () => {
       return await page.evaluate(() => {
@@ -55,7 +57,7 @@ test("editor: nós (pontinhos) overlay modes (never/always/hover)", async ({
         return window.__INAA_DEBUG__.countStageNodesByName("inaa-node-point");
       });
     })
-    .toBe(4);
+    .toBe(1);
 
   // Switch to never (no points rendered)
   await chooseNodesMode(page, "never");
@@ -85,7 +87,7 @@ test("editor: nós (pontinhos) overlay modes (never/always/hover)", async ({
         return window.__INAA_DEBUG__.countStageNodesByName("inaa-node-point");
       });
     })
-    .toBe(4);
+    .toBe(1);
 });
 
 test("editor: molde denso não renderiza overlay de nós fora da ferramenta de nós", async ({

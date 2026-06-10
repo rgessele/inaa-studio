@@ -23,7 +23,7 @@ test("imã: linha faz snap no contorno de outra figura", async ({ page }) => {
     .toBe(true);
 
   // Use Line tool (UI click is more deterministic than keyboard in E2E)
-  await page.getByRole("button", { name: "Linha" }).click();
+  await page.getByTestId("line-tool-button").click();
   await expect
     .poll(
       async () =>
