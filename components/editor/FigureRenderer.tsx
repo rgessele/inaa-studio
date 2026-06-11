@@ -1,10 +1,11 @@
 import React from "react";
-import { Group, Line, Rect, Text } from "react-konva";
+import { Group, Image as KonvaImage, Line, Rect, Text } from "react-konva";
 import Konva from "konva";
 import { Figure } from "./types";
 import { edgeLocalPoints, figureLocalPolyline } from "./figurePath";
 import { figureCentroidLocal } from "./figurePath";
 import { computeMoldDocLayoutLocal } from "./moldDoc";
+import { useMoldDocLogoImage, type MoldDocLogo } from "./moldDocLogo";
 import { PX_PER_CM } from "./constants";
 import { MemoizedNodeOverlay } from "./NodeOverlay";
 import { MemoizedMeasureOverlay } from "./MeasureOverlay";
@@ -170,12 +171,27 @@ interface FigureRendererProps {
     figureId: string,
     nextOffsetLocal: { x: number; y: number }
   ) => void;
+  // Project-wide mold documentation logo (DesignDataV2.meta.moldDocLogo),
+  // drawn left of the doc text block on every mold. Per-mold adjustments live
+  // in figure.moldMeta.docImage*.
+  moldDocLogo?: MoldDocLogo | null;
+  // Logo handle drag callbacks. The offset is the logo CENTER in BLOCK
+  // coordinates (pre-rotation), persisted as moldMeta.docImageOffsetLocal.
+  onLogoOffsetChange?: (
+    figureId: string,
+    nextCenterBlockLocal: { x: number; y: number }
+  ) => void;
+  onLogoOffsetCommit?: (
+    figureId: string,
+    nextCenterBlockLocal: { x: number; y: number }
+  ) => void;
   // Inner transform mode (double-click on a handle): which inner element of
   // THIS figure currently owns the dedicated inner Transformer. While set,
   // the pulse handles hide and an invisible transformable proxy is rendered.
-  innerTransformKind?: "doc" | "grain" | null;
+  innerTransformKind?: "doc" | "grain" | "logo" | null;
   onNameHandleDblClick?: (figureId: string) => void;
   onGrainHandleDblClick?: (figureId: string) => void;
+  onLogoHandleDblClick?: (figureId: string) => void;
 }
 
 const DENSE_LINEAR_CONTOUR_THRESHOLD = 96;
@@ -405,9 +421,13 @@ const FigureRenderer = ({
   onNameOffsetCommit,
   onGrainOffsetChange,
   onGrainOffsetCommit,
+  moldDocLogo = null,
+  onLogoOffsetChange,
+  onLogoOffsetCommit,
   innerTransformKind,
   onNameHandleDblClick,
   onGrainHandleDblClick,
+  onLogoHandleDblClick,
 }: FigureRendererProps) => {
   const isTextFigure = figure.tool === "text";
   const supportsPiques =
@@ -640,11 +660,22 @@ const FigureRenderer = ({
     pts,
   ]);
 
-  // Consolidated documentation block + grain arrow for molds. Replaces the
-  // plain name label below when figure.kind === "mold".
+  // Decoded logo image (shared module-level cache; null while loading or on
+  // decode failure — the logo is simply not drawn then).
+  const moldDocLogoImage = useMoldDocLogoImage(
+    figure.kind === "mold" ? moldDocLogo?.dataUrl : null
+  );
+  // Consolidated documentation block + grain arrow + project logo for molds.
+  // Replaces the plain name label below when figure.kind === "mold". The logo
+  // enters the layout only once its image is decoded, so the grain arrow never
+  // reserves space for a logo that is not drawn — and the canvas stays
+  // consistent with the PDF export, which applies the same rule.
   const moldDocLayout = React.useMemo(
-    () => (figure.kind === "mold" ? computeMoldDocLayoutLocal(figure) : null),
-    [figure]
+    () =>
+      figure.kind === "mold"
+        ? computeMoldDocLayoutLocal(figure, moldDocLogoImage ? moldDocLogo : null)
+        : null,
+    [figure, moldDocLogo, moldDocLogoImage]
   );
   const moldDocBase = React.useMemo(() => {
     if (!moldDocLayout) return null;
@@ -1264,6 +1295,34 @@ const FigureRenderer = ({
         </Group>
       )}
 
+      {/* Mold: project logo, parked left of the text lines (letterhead). Lives
+          in BLOCK coordinates so it rotates with the texts. Drawn after them
+          ("in front"), at full opacity — it is a branded image, not a
+          watermark. */}
+      {figure.kind === "mold" && moldDocLayout?.logo && moldDocLogoImage && (
+        <Group
+          x={moldDocLayout.anchor.x}
+          y={moldDocLayout.anchor.y}
+          rotation={moldDocLayout.rotationDeg}
+          listening={false}
+          name="inaa-mold-doc-logo-frame"
+        >
+          <KonvaImage
+            name="inaa-mold-doc-logo"
+            image={moldDocLogoImage}
+            x={moldDocLayout.logo.center.x}
+            y={moldDocLayout.logo.center.y}
+            offsetX={moldDocLayout.logo.width / 2}
+            offsetY={moldDocLayout.logo.height / 2}
+            width={moldDocLayout.logo.width}
+            height={moldDocLayout.logo.height}
+            rotation={moldDocLayout.logo.rotationDeg}
+            listening={false}
+            perfectDrawEnabled={false}
+          />
+        </Group>
+      )}
+
       {figure.kind === "mold" &&
         moldDocLayout &&
         moldDocBase &&
@@ -1302,6 +1361,52 @@ const FigureRenderer = ({
               cornerRadius={2 / scale}
               onDblClick={() => onNameHandleDblClick?.(figure.id)}
             />
+          </Group>
+        )}
+
+      {/* Logo handle: drags the logo within the (rotated) block frame.
+          Persists moldMeta.docImageOffsetLocal (logo center, block coords). */}
+      {figure.kind === "mold" &&
+        moldDocLayout?.logo &&
+        moldDocLogoImage &&
+        showNameHandle &&
+        !innerTransformKind && (
+          <Group
+            x={moldDocLayout.anchor.x}
+            y={moldDocLayout.anchor.y}
+            rotation={moldDocLayout.rotationDeg}
+          >
+            <Group
+              x={moldDocLayout.logo.center.x}
+              y={moldDocLayout.logo.center.y}
+              draggable={true}
+              onDragStart={(e) => {
+                e.cancelBubble = true;
+              }}
+              onDragMove={(e) => {
+                e.cancelBubble = true;
+                onLogoOffsetChange?.(figure.id, {
+                  x: e.target.x(),
+                  y: e.target.y(),
+                });
+              }}
+              onDragEnd={(e) => {
+                e.cancelBubble = true;
+                onLogoOffsetCommit?.(figure.id, {
+                  x: e.target.x(),
+                  y: e.target.y(),
+                });
+              }}
+            >
+              <PulsingHandleRect
+                x={-(moldDocLayout.logo.width / 2) - handleGap - handleSize / 2}
+                size={handleSize}
+                fill={nameFill}
+                cornerRadius={2 / scale}
+                name="inaa-logo-handle"
+                onDblClick={() => onLogoHandleDblClick?.(figure.id)}
+              />
+            </Group>
           </Group>
         )}
 
@@ -1388,6 +1493,46 @@ const FigureRenderer = ({
         )}
 
       {figure.kind === "mold" &&
+        moldDocLayout?.logo &&
+        innerTransformKind === "logo" && (
+          <Group
+            x={moldDocLayout.anchor.x}
+            y={moldDocLayout.anchor.y}
+            rotation={moldDocLayout.rotationDeg}
+          >
+            <Rect
+              name="inaa-inner-proxy-logo"
+              x={moldDocLayout.logo.center.x}
+              y={moldDocLayout.logo.center.y}
+              width={moldDocLayout.logo.width}
+              height={moldDocLayout.logo.height}
+              offsetX={moldDocLayout.logo.width / 2}
+              offsetY={moldDocLayout.logo.height / 2}
+              rotation={moldDocLayout.logo.rotationDeg}
+              fill="rgba(0,0,0,0)"
+              draggable={true}
+              onDragStart={(e) => {
+                e.cancelBubble = true;
+              }}
+              onDragMove={(e) => {
+                e.cancelBubble = true;
+                onLogoOffsetChange?.(figure.id, {
+                  x: e.target.x(),
+                  y: e.target.y(),
+                });
+              }}
+              onDragEnd={(e) => {
+                e.cancelBubble = true;
+                onLogoOffsetCommit?.(figure.id, {
+                  x: e.target.x(),
+                  y: e.target.y(),
+                });
+              }}
+            />
+          </Group>
+        )}
+
+      {figure.kind === "mold" &&
         moldDocBase &&
         grainProxy &&
         innerTransformKind === "grain" && (
@@ -1449,6 +1594,7 @@ const arePropsEqual = (
     prev.showSeamLabel === next.showSeamLabel &&
     prev.showNameHandle === next.showNameHandle &&
     prev.innerTransformKind === next.innerTransformKind &&
+    prev.moldDocLogo === next.moldDocLogo &&
     prev.isDark === next.isDark &&
     prev.selectedEdge === next.selectedEdge &&
     prev.hoveredEdge === next.hoveredEdge &&

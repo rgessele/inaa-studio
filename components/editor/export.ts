@@ -16,6 +16,7 @@ import type { PointLabelsMode } from "./types";
 import { computeNodeLabels } from "./pointLabels";
 import { figureCentroidLocal } from "./figurePath";
 import { computeMoldDocLayoutLocal } from "./moldDoc";
+import { loadMoldDocLogoImage } from "./moldDocLogo";
 import { toast } from "@/utils/toast";
 import {
   add,
@@ -153,6 +154,13 @@ type PointLabelsExportOptions = {
   includePatternName?: boolean;
   includePiques?: boolean;
   includeMoldDocumentation?: boolean;
+  // Project-wide mold documentation logo (DesignDataV2.meta.moldDocLogo).
+  // Drawn on every mold's doc block, gated by includeMoldDocumentation.
+  moldDocLogo?: {
+    dataUrl: string;
+    naturalWidth: number;
+    naturalHeight: number;
+  } | null;
   pointLabelsMode?: PointLabelsMode;
 };
 
@@ -532,6 +540,17 @@ export async function generateTiledPDF(
   const shouldIncludePiques = options?.includePiques !== false;
   const shouldIncludeMoldDocumentation =
     options?.includeMoldDocumentation !== false;
+
+  // Preload the project logo ONCE before the tile loop — the stage is
+  // rasterized synchronously (toDataURL), so the image must be decoded
+  // up-front. On decode failure the logo is skipped (never aborts the export).
+  const moldDocLogoMeta = options?.moldDocLogo ?? null;
+  const moldDocLogoImage =
+    shouldIncludeMoldDocumentation &&
+    moldDocLogoMeta &&
+    figures.some((f) => f.kind === "mold")
+      ? await loadMoldDocLogoImage(moldDocLogoMeta.dataUrl)
+      : null;
 
   const shouldIncludePointLabels =
     options?.includePointLabels === true &&
@@ -1402,7 +1421,12 @@ export async function generateTiledPDF(
         figure.moldMeta?.printEnabled !== false &&
         figure.moldMeta?.visible !== false
       ) {
-        const docLayout = computeMoldDocLayoutLocal(figure);
+        // Pass the logo to the layout only when its image actually decoded, so
+        // the grain-arrow parking never clears space for an undrawn logo.
+        const docLayout = computeMoldDocLayoutLocal(
+          figure,
+          moldDocLogoImage ? moldDocLogoMeta : null
+        );
         if (docLayout) {
           if (docLayout.grain) {
             const g = docLayout.grain;
@@ -1478,6 +1502,34 @@ export async function generateTiledPDF(
               );
             }
             tileLayer.add(group);
+          }
+          // Project logo: lives in block coordinates (rotates with the
+          // texts), drawn after them ("in front"), full opacity. Mirrors the
+          // FigureRenderer drawing.
+          if (docLayout.logo && moldDocLogoImage) {
+            const anchorWorld = figureLocalToWorld(figure, docLayout.anchor);
+            const logoGroup = new Konva.Group({
+              x: anchorWorld.x - tileX,
+              y: anchorWorld.y - tileY,
+              rotation: (figure.rotation || 0) + docLayout.rotationDeg,
+              listening: false,
+              name: "inaa-mold-doc-logo-frame",
+            });
+            logoGroup.add(
+              new Konva.Image({
+                image: moldDocLogoImage,
+                x: docLayout.logo.center.x,
+                y: docLayout.logo.center.y,
+                offsetX: docLayout.logo.width / 2,
+                offsetY: docLayout.logo.height / 2,
+                width: docLayout.logo.width,
+                height: docLayout.logo.height,
+                rotation: docLayout.logo.rotationDeg,
+                listening: false,
+                name: "inaa-mold-doc-logo",
+              })
+            );
+            tileLayer.add(logoGroup);
           }
         }
       }

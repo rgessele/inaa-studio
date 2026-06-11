@@ -28,6 +28,7 @@ import {
   type ExportSettings,
 } from "./export";
 import { PAPER_SIZES, PAPER_SIZE_LABELS } from "./exportSettings";
+import { getSelectedMoldDocLogo } from "./moldDocLogo";
 import { toast } from "@/utils/toast";
 
 type ToolbarModeOption<T extends string> = {
@@ -374,6 +375,7 @@ export function EditorToolbar() {
     applyStrokeColorToSelection,
     lineToolMode,
     setLineToolMode,
+    projectMeta,
   } = useEditor();
   const [showExportModal, setShowExportModal] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -584,6 +586,7 @@ export function EditorToolbar() {
           includePatternName,
           includePiques,
           pointLabelsMode,
+          moldDocLogo: getSelectedMoldDocLogo(projectMeta),
         }
       );
     };
@@ -607,6 +610,7 @@ export function EditorToolbar() {
     includeSeamAllowance,
     noShapesToExportMessage,
     pointLabelsMode,
+    projectMeta,
     searchParams,
     setShowGrid,
     figures,
@@ -763,6 +767,7 @@ export function EditorToolbar() {
           includePatternName,
           includePiques,
           pointLabelsMode,
+          moldDocLogo: getSelectedMoldDocLogo(projectMeta),
         }
       );
       closeExportModal();

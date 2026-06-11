@@ -122,7 +122,8 @@ export async function saveProjectAsCopy(
   newProjectName: string,
   figures: Figure[],
   pageGuideSettings: PageGuideSettings,
-  guides: GuideLine[]
+  guides: GuideLine[],
+  meta?: DesignDataV2["meta"]
 ): Promise<{ success: boolean; projectId?: string; error?: string }> {
   try {
     const supabase = createClient();
@@ -153,7 +154,9 @@ export async function saveProjectAsCopy(
       figures,
       pageGuideSettings,
       guides,
-      meta: (source?.design_data as DesignDataV2 | undefined)?.meta,
+      // Prefer the caller's in-memory meta (it may hold unsaved edits, e.g. a
+      // just-attached mold-doc logo); fall back to the stored source meta.
+      meta: meta ?? (source?.design_data as DesignDataV2 | undefined)?.meta,
     };
 
     const { data, error } = await supabase

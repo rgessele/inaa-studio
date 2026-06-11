@@ -72,6 +72,13 @@ declare global {
         magnetEnabled: boolean;
         magnetJoinEnabled?: boolean;
         guidesCount?: number;
+        moldDocLogo?: {
+          dataUrl: string;
+          naturalWidth: number;
+          naturalHeight: number;
+        } | null;
+        moldDocLogoGalleryCount?: number;
+        hasUnsavedChanges?: boolean;
         lineDraft?: {
           pointsWorld?: Array<{ x: number; y: number }>;
           joinHits?: Array<{
@@ -172,6 +179,20 @@ declare global {
         };
         projectId?: string;
         projectName?: string;
+        meta?: {
+          moldDocLogo?: {
+            dataUrl: string;
+            naturalWidth: number;
+            naturalHeight: number;
+          } | null;
+          moldDocLogoGallery?: Array<{
+            id: string;
+            dataUrl: string;
+            naturalWidth: number;
+            naturalHeight: number;
+          }>;
+          moldDocLogoSelectedId?: string | null;
+        };
       }) => void;
     };
   }

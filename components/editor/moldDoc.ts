@@ -26,6 +26,12 @@ import { rotate, mul, add, sub, type Vec2 } from "./figureGeometry";
  * - `moldMeta.grainOffsetLocal` (set by dragging the arrow's handle) overrides
  *   the automatic parking: the arrow centers on centroid + offset and no
  *   longer follows the text block.
+ * - The project-wide logo (DesignDataV2.meta.moldDocLogo) parks LEFT of the
+ *   text lines (letterhead style), vertically centered, default height = text
+ *   block height. It lives in BLOCK coordinates, so it rotates with the texts.
+ *   Per-mold overrides: docImageOffsetLocal (center), docImageHeightLocal,
+ *   docImageRotationDeg (relative to the block). The grain arrow's automatic
+ *   parking clears the union of texts + logo.
  */
 
 export const MOLD_DOC_NAME_DEFAULT_PX = 24;
@@ -63,6 +69,24 @@ export interface MoldGrainArrow {
   strokeWidth: number;
 }
 
+/** Project-wide logo image info needed by the layout (post-normalization). */
+export interface MoldDocLogoInput {
+  naturalWidth: number;
+  naturalHeight: number;
+}
+
+export interface MoldDocLogoBox {
+  /**
+   * Logo CENTER in BLOCK coordinates (origin at the block anchor,
+   * pre-rotation). The caller draws it inside the rotated block group.
+   */
+  center: Vec2;
+  width: number;
+  height: number;
+  /** Additional rotation relative to the block (deg). */
+  rotationDeg: number;
+}
+
 export interface MoldDocLayout {
   /** Block anchor in local coords (centroid + nameOffsetLocal). */
   anchor: Vec2;
@@ -77,13 +101,19 @@ export interface MoldDocLayout {
   lines: MoldDocTextLine[];
   /** Single-headed grain arrow in local coords, or null when fio unset. */
   grain: MoldGrainArrow | null;
+  /** Project logo box in block coords, or null when no logo is attached. */
+  logo: MoldDocLogoBox | null;
 }
 
 /**
  * Builds the documentation layout for a mold. Returns null when the figure is
- * not a mold or has nothing to draw (no filled fields and no grain line).
+ * not a mold or has nothing to draw (no filled fields, no grain line and no
+ * project logo).
  */
-export function computeMoldDocLayoutLocal(figure: Figure): MoldDocLayout | null {
+export function computeMoldDocLayoutLocal(
+  figure: Figure,
+  logo?: MoldDocLogoInput | null
+): MoldDocLayout | null {
   if (figure.kind !== "mold") return null;
 
   const meta = figure.moldMeta;
@@ -164,10 +194,13 @@ export function computeMoldDocLayoutLocal(figure: Figure): MoldDocLayout | null 
     });
   }
 
+  // ---- Project logo (letterhead style, left of the text lines) --------------
+  const logoBox = computeLogoBox(figure, logo, blockWidth, totalHeight, docFont, lines.length > 0);
+
   // ---- Grain arrow (single-headed). 0° points up; rotates clockwise. ---------
   let grain = computeGrainArrow(figure);
 
-  if (!lines.length && !grain) return null;
+  if (!lines.length && !grain && !logoBox) return null;
 
   const centroid = figureCentroidLocal(figure);
   const offset = figure.nameOffsetLocal ?? { x: 0, y: 0 };
@@ -185,14 +218,22 @@ export function computeMoldDocLayoutLocal(figure: Figure): MoldDocLayout | null 
     Number.isFinite(grainOffset.y);
   if (grain && hasGrainOffset) {
     grain = shiftGrain(grain, grainOffset as Vec2);
-  } else if (grain && lines.length) {
+  } else if (grain && (lines.length || logoBox)) {
     let maxXFromCenter = grain.strokeWidth / 2;
     for (const p of [grain.tail, grain.tip, grain.headA, grain.headB])
       maxXFromCenter = Math.max(maxXFromCenter, p.x - centroid.x + grain.strokeWidth / 2);
-    const circumradius = Math.hypot(blockWidth, totalHeight) / 2;
+    // Clearance radius of the whole block unit (texts ∪ logo) around the
+    // anchor — rotation-invariant for both the block and the logo rotation.
+    let unionRadius = Math.hypot(blockWidth, totalHeight) / 2;
+    if (logoBox) {
+      const logoReach =
+        Math.hypot(logoBox.center.x, logoBox.center.y) +
+        Math.hypot(logoBox.width, logoBox.height) / 2;
+      unionRadius = Math.max(unionRadius, logoReach);
+    }
     const gapPx = Math.max(12, docFont);
     const center: Vec2 = {
-      x: anchor.x - circumradius - gapPx - maxXFromCenter,
+      x: anchor.x - unionRadius - gapPx - maxXFromCenter,
       y: anchor.y,
     };
     grain = shiftGrain(grain, sub(center, centroid));
@@ -206,7 +247,77 @@ export function computeMoldDocLayoutLocal(figure: Figure): MoldDocLayout | null 
     textAlign: "left",
     lines,
     grain,
+    logo: logoBox,
   };
+}
+
+const MOLD_DOC_LOGO_MIN_PX = 8;
+const MOLD_DOC_LOGO_MAX_PX = 4096;
+
+/**
+ * Effective logo box for a mold, in BLOCK coordinates (origin at the block
+ * anchor, pre-rotation). Default: parked left of the text lines, vertically
+ * centered, height = text block height (bbox-proportional fallback when the
+ * block has no lines). Per-mold overrides come from moldMeta.docImage*.
+ */
+function computeLogoBox(
+  figure: Figure,
+  logo: MoldDocLogoInput | null | undefined,
+  blockWidth: number,
+  blockHeight: number,
+  docFont: number,
+  hasLines: boolean
+): MoldDocLogoBox | null {
+  if (!logo) return null;
+  if (
+    !Number.isFinite(logo.naturalWidth) ||
+    !Number.isFinite(logo.naturalHeight) ||
+    logo.naturalWidth <= 0 ||
+    logo.naturalHeight <= 0
+  ) {
+    return null;
+  }
+
+  const meta = figure.moldMeta;
+
+  const customH = meta?.docImageHeightLocal;
+  let height: number;
+  if (Number.isFinite(customH ?? NaN) && (customH as number) > 0) {
+    height = Math.max(MOLD_DOC_LOGO_MIN_PX, Math.min(MOLD_DOC_LOGO_MAX_PX, customH as number));
+  } else if (hasLines && blockHeight > 0) {
+    height = blockHeight;
+  } else {
+    const bounds = figureLocalBounds(figure);
+    const span = bounds ? Math.min(bounds.width, bounds.height) : 60;
+    height = Math.max(24, span * 0.3);
+  }
+  let width = height * (logo.naturalWidth / logo.naturalHeight);
+  // Extreme banner aspects: cap the width too (preserving aspect by reducing
+  // the height), so the box — and the grain arrow parked beyond it — stays
+  // within sane reach.
+  if (width > MOLD_DOC_LOGO_MAX_PX) {
+    height = (height * MOLD_DOC_LOGO_MAX_PX) / width;
+    width = MOLD_DOC_LOGO_MAX_PX;
+  }
+
+  const offset = meta?.docImageOffsetLocal;
+  const hasOffset = !!offset && Number.isFinite(offset.x) && Number.isFinite(offset.y);
+  let center: Vec2;
+  if (hasOffset) {
+    center = { x: (offset as Vec2).x, y: (offset as Vec2).y };
+  } else if (hasLines) {
+    const gapPx = Math.max(10, Math.round(0.5 * docFont));
+    center = { x: -(blockWidth / 2) - gapPx - width / 2, y: 0 };
+  } else {
+    center = { x: 0, y: 0 };
+  }
+
+  const rotationRaw = meta?.docImageRotationDeg;
+  const rotationDeg = Number.isFinite(rotationRaw ?? NaN)
+    ? (((rotationRaw as number) % 360) + 360) % 360
+    : 0;
+
+  return { center, width, height, rotationDeg };
 }
 
 function shiftGrain(grain: MoldGrainArrow, delta: Vec2): MoldGrainArrow {

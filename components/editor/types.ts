@@ -205,6 +205,18 @@ export interface MoldMeta {
   // Custom grain arrow length (local px), set by the inner transform mode
   // (double-click on the arrow handle). Unset = automatic (0.6 * min bbox side).
   grainLengthLocal?: number;
+  // Per-mold adjustments of the project-wide documentation logo
+  // (DesignDataV2.meta.moldDocLogo). The image itself is global; these fields
+  // survive removing/re-attaching it.
+  // Offset of the logo CENTER relative to the doc block anchor, in BLOCK
+  // coordinates (pre-rotation — the logo rotates with the text block). Set by
+  // dragging the logo handle. Unset = parked left of the text lines.
+  docImageOffsetLocal?: { x: number; y: number };
+  // Custom logo height (local px), set by the inner transform mode. Unset =
+  // automatic (text block height; bbox-proportional fallback when no lines).
+  docImageHeightLocal?: number;
+  // Additional logo rotation relative to the text block (degrees). Default 0.
+  docImageRotationDeg?: number;
   sourceSegments?: MoldSourceSegmentRef[];
   lineage?: {
     rootMoldId?: string;
@@ -413,5 +425,26 @@ export interface DesignDataV2 {
     };
     grade?: string;
     coverUrl?: string | null;
+    // LEGACY single mold-doc logo (pre-gallery projects). Read as a fallback
+    // by getSelectedMoldDocLogo when the gallery fields below are absent;
+    // cleared on the first gallery write. Stored inline as a normalized
+    // (downscaled) data URL so the canvas/export never depend on network or
+    // CORS. Natural dimensions are recorded so layout can compute the aspect
+    // ratio synchronously.
+    moldDocLogo?: {
+      dataUrl: string;
+      naturalWidth: number;
+      naturalHeight: number;
+    } | null;
+    // Gallery of uploaded mold-doc logos (same inline data-URL format). The
+    // SELECTED one is drawn on every mold's documentation block (canvas and
+    // PDF export); none is drawn when moldDocLogoSelectedId doesn't match.
+    moldDocLogoGallery?: Array<{
+      id: string;
+      dataUrl: string;
+      naturalWidth: number;
+      naturalHeight: number;
+    }>;
+    moldDocLogoSelectedId?: string | null;
   };
 }

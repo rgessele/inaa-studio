@@ -66,7 +66,8 @@ import {
   figureWorldPolyline,
   worldToFigureLocal,
 } from "./figurePath";
-import { computeGrainArrowLength } from "./moldDoc";
+import { computeGrainArrowLength, computeMoldDocLayoutLocal } from "./moldDoc";
+import { getSelectedMoldDocLogo } from "./moldDocLogo";
 import {
   breakStyledLinkIfNeeded,
   markCurveCustomSnapshotDirtyIfPresent,
@@ -3926,7 +3927,13 @@ export default function Canvas() {
     showPageGuides,
     pageGuideSettings,
     activeStrokeColor,
+    projectMeta,
   } = useEditor();
+
+  // Selected project-wide mold documentation logo; drawn on every mold's doc
+  // block. Reference-stable (returns objects held by projectMeta), so the
+  // memoized FigureRenderers don't re-render unless the meta itself changes.
+  const moldDocLogo = getSelectedMoldDocLogo(projectMeta);
 
   const withActiveStroke = useCallback(
     (figure: Figure | null): Figure | null => {
@@ -4058,16 +4065,17 @@ export default function Canvas() {
     transformerRef.current?.forceUpdate();
   }, [rotateAnchorStyleFunc]);
 
-  // ---- Inner transform mode (mold doc block / grain arrow) ------------------
+  // ---- Inner transform mode (mold doc block / grain arrow / logo) -----------
   // Entered by double-clicking the element's drag handle. A dedicated
   // Transformer attaches to an invisible proxy rect; scale is baked into the
-  // font sizes (doc) or arrow length (grain) and rotation into
-  // nameRotationDeg / grainline.angleDeg. The OUTER figure transformer is
-  // detached while this mode is active to avoid conflicting gestures.
+  // font sizes (doc), arrow length (grain) or logo height (logo) and rotation
+  // into nameRotationDeg / grainline.angleDeg / docImageRotationDeg. The OUTER
+  // figure transformer is detached while this mode is active to avoid
+  // conflicting gestures.
   const innerTransformerRef = useRef<Konva.Transformer | null>(null);
   const [innerTransformTarget, setInnerTransformTarget] = useState<{
     figureId: string;
-    kind: "doc" | "grain";
+    kind: "doc" | "grain" | "logo";
   } | null>(null);
   const innerTransformTargetRef = useRef(innerTransformTarget);
   useEffect(() => {
@@ -4079,6 +4087,9 @@ export default function Canvas() {
   }, []);
   const handleGrainHandleDblClick = useCallback((figureId: string) => {
     setInnerTransformTarget({ figureId, kind: "grain" });
+  }, []);
+  const handleLogoHandleDblClick = useCallback((figureId: string) => {
+    setInnerTransformTarget({ figureId, kind: "logo" });
   }, []);
 
   // Exit on Escape.
@@ -6346,7 +6357,9 @@ export default function Canvas() {
     const proxyName =
       innerTransformTarget.kind === "doc"
         ? "inaa-inner-proxy-doc"
-        : "inaa-inner-proxy-grain";
+        : innerTransformTarget.kind === "grain"
+          ? "inaa-inner-proxy-grain"
+          : "inaa-inner-proxy-logo";
     const node = stage?.findOne(`.${proxyName}`) ?? null;
     if (!node) {
       // Target vanished (e.g. fio cleared, all doc fields emptied) — exit.
@@ -6361,7 +6374,9 @@ export default function Canvas() {
     // layer's HIT canvas before the next pointerdown, and the rAF that
     // batchDraw schedules can lose that race right after entering the mode.
     tr.getLayer()?.draw();
-  }, [innerTransformTarget, tool, figures, scale]);
+    // moldDocLogo dep: removing the logo unmounts its proxy without touching
+    // `figures` — the effect must re-run to take the vanish-exit branch above.
+  }, [innerTransformTarget, tool, figures, scale, moldDocLogo]);
 
   // Bake the proxy's scale/rotation into figure state. Runs on every
   // `transform` event (commit=false → live, no history) and once on
@@ -6404,6 +6419,32 @@ export default function Canvas() {
               },
             };
           }
+          if (target.kind === "logo") {
+            // Base height = the logo's current effective height from the
+            // shared layout (custom override or default). The proxy's local
+            // rotation is relative to the block frame — exactly the
+            // docImageRotationDeg semantics.
+            const logoBox = computeMoldDocLayoutLocal(f, moldDocLogo)?.logo;
+            if (!logoBox) return f;
+            const nextH = Math.max(8, Math.min(4096, logoBox.height * scaleFactor));
+            // Pin the center on the first bake: the automatic parking glues
+            // the logo's RIGHT edge to the text block, so its center shifts
+            // as the width grows — the Transformer (centeredScaling) would
+            // chase the moving node and amplify the scale.
+            const offset = f.moldMeta?.docImageOffsetLocal ?? {
+              x: logoBox.center.x,
+              y: logoBox.center.y,
+            };
+            return {
+              ...f,
+              moldMeta: {
+                ...(f.moldMeta ?? {}),
+                docImageOffsetLocal: offset,
+                docImageHeightLocal: commit ? Math.round(nextH) : nextH,
+                docImageRotationDeg: commit ? Math.round(rotation) % 360 : rotation,
+              },
+            };
+          }
           const baseLen = computeGrainArrowLength(f);
           const nextLen = Math.max(12, Math.min(100000, baseLen * scaleFactor));
           return {
@@ -6422,7 +6463,7 @@ export default function Canvas() {
       if (commit) setFigures(updater);
       else setFigures(updater, false);
     },
-    [setFigures]
+    [setFigures, moldDocLogo]
   );
 
   const finalizeSelectionTransform = useCallback(() => {
@@ -7964,6 +8005,7 @@ export default function Canvas() {
         if (
           targetName.includes("inaa-figure-name-handle") ||
           targetName.includes("inaa-grain-handle") ||
+          targetName.includes("inaa-logo-handle") ||
           targetName.includes("inaa-inner-proxy") ||
           targetName.includes("inaa-rotation-pivot")
         ) {
@@ -13853,7 +13895,13 @@ export default function Canvas() {
                   hitStrokeWidth={hitStrokeWidth}
                   hitFillEnabled={
                     tool !== "select" ||
-                    selectedIdsSet.has(baseId) ||
+                    // Seams render AFTER their base mold; with the base
+                    // selected, an interior hit-fill on the seam would sit on
+                    // top of the mold's doc/grain/logo handles in the hit
+                    // canvas and swallow their hover/drag. The base mold
+                    // (selected ⇒ hit-fill on) already provides the interior
+                    // drag surface, so seams can skip the selection term.
+                    (fig.kind !== "seam" && selectedIdsSet.has(baseId)) ||
                     !isEffectivelyTransparentFill(fig.fill)
                   }
                   draggable={(() => {
@@ -13941,6 +13989,39 @@ export default function Canvas() {
                       )
                     );
                   }}
+                  moldDocLogo={fig.kind === "mold" ? moldDocLogo : null}
+                  onLogoOffsetChange={(figureId, nextCenterBlockLocal) => {
+                    setFigures(
+                      (prev) =>
+                        prev.map((f) =>
+                          f.id === figureId
+                            ? {
+                                ...f,
+                                moldMeta: {
+                                  ...(f.moldMeta ?? {}),
+                                  docImageOffsetLocal: nextCenterBlockLocal,
+                                },
+                              }
+                            : f
+                        ),
+                      false
+                    );
+                  }}
+                  onLogoOffsetCommit={(figureId, nextCenterBlockLocal) => {
+                    setFigures((prev) =>
+                      prev.map((f) =>
+                        f.id === figureId
+                          ? {
+                              ...f,
+                              moldMeta: {
+                                ...(f.moldMeta ?? {}),
+                                docImageOffsetLocal: nextCenterBlockLocal,
+                              },
+                            }
+                          : f
+                      )
+                    );
+                  }}
                   innerTransformKind={
                     innerTransformTarget &&
                     innerTransformTarget.figureId === fig.id
@@ -13949,6 +14030,7 @@ export default function Canvas() {
                   }
                   onNameHandleDblClick={handleNameHandleDblClick}
                   onGrainHandleDblClick={handleGrainHandleDblClick}
+                  onLogoHandleDblClick={handleLogoHandleDblClick}
                   onPointerDown={(e) => {
                     const evtAny = e.evt as MouseEvent;
                     const buttons = (evtAny.buttons ?? 0) as number;

@@ -25,6 +25,7 @@ import { DEFAULT_UNIT, DEFAULT_PIXELS_PER_UNIT } from "./constants";
 import { useHistory } from "./useHistory";
 import { createDefaultExportSettings } from "./exportSettings";
 import { withComputedFigureMeasures } from "./figureMeasures";
+import { getSelectedMoldDocLogo } from "./moldDocLogo";
 import { figureWorldBoundingBox } from "./figurePath";
 import { figureLocalToWorld } from "./figurePath";
 import { hasClosedLoop } from "./seamFigure";
@@ -292,11 +293,13 @@ interface EditorContextType {
   projectName: string;
   setProjectName: (name: string) => void;
   projectMeta: DesignDataV2["meta"] | undefined;
+  setProjectMeta: React.Dispatch<React.SetStateAction<DesignDataV2["meta"]>>;
   hasUnsavedChanges: boolean;
   markProjectSaved: (snapshot?: {
     figures: Figure[];
     pageGuideSettings: PageGuideSettings;
     guides: GuideLine[];
+    meta?: DesignDataV2["meta"];
   }) => void;
   loadProject: (
     figures: Figure[],
@@ -815,9 +818,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       figures: figures || [],
       pageGuideSettings,
       guides,
+      meta: projectMeta,
     });
     setHasUnsavedChanges(current !== lastSavedSnapshot);
-  }, [figures, guides, lastSavedSnapshot, pageGuideSettings]);
+  }, [figures, guides, lastSavedSnapshot, pageGuideSettings, projectMeta]);
 
   const makeId = useCallback((prefix: string): string => {
     return typeof crypto !== "undefined" && crypto.randomUUID
@@ -1268,6 +1272,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           figures: normalizedFigures,
           pageGuideSettings: effectivePageGuideSettings,
           guides: Array.isArray(nextGuides) ? nextGuides : [],
+          meta,
         })
       );
       setSelectedFigureIdsState([]);
@@ -1295,6 +1300,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           figures: [],
           pageGuideSettings: effectivePageGuideSettings,
           guides: [],
+          meta: undefined,
         })
       );
       setSelectedFigureIdsState([]);
@@ -1308,11 +1314,13 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       figures: Figure[];
       pageGuideSettings: PageGuideSettings;
       guides: GuideLine[];
+      meta?: DesignDataV2["meta"];
     }) => {
       const effective = snapshot ?? {
         figures: figures || [],
         pageGuideSettings,
         guides,
+        meta: projectMeta,
       };
 
       setLastSavedSnapshot(
@@ -1320,10 +1328,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           figures: effective.figures,
           pageGuideSettings: effective.pageGuideSettings,
           guides: effective.guides,
+          meta: effective.meta,
         })
       );
     },
-    [figures, guides, pageGuideSettings]
+    [figures, guides, pageGuideSettings, projectMeta]
   );
 
   React.useEffect(() => {
@@ -1367,6 +1376,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       pageGuideSettings?: PageGuideSettings;
       projectId?: string;
       projectName?: string;
+      meta?: DesignDataV2["meta"];
     }) => {
       const safe = opts ?? {};
       loadProject(
@@ -1374,7 +1384,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         safe.projectId ?? "e2e-project",
         safe.projectName ?? "Projeto E2E",
         safe.pageGuideSettings,
-        []
+        [],
+        safe.meta
       );
     };
 
@@ -1468,6 +1479,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         projectName,
         activeStrokeColor,
         recentStrokeColors,
+        // O logo EFETIVO (item selecionado da galeria, com fallback legado).
+        moldDocLogo: getSelectedMoldDocLogo(projectMeta),
+        moldDocLogoGalleryCount:
+          projectMeta?.moldDocLogoGallery?.length ??
+          (projectMeta?.moldDocLogo ? 1 : 0),
+        hasUnsavedChanges,
       }),
       getPosition: () => position,
       getScale: () => scale,
@@ -1579,6 +1596,8 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     position,
     projectId,
     projectName,
+    projectMeta,
+    hasUnsavedChanges,
     recentStrokeColors,
     scale,
     selectedFigureId,
@@ -1797,6 +1816,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         projectName,
         setProjectName,
         projectMeta,
+        setProjectMeta,
         hasUnsavedChanges,
         markProjectSaved,
         loadProject,

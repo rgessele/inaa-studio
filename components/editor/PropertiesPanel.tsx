@@ -35,6 +35,13 @@ import {
   parsePtBrDecimal,
 } from "@/utils/numericInput";
 import { toast } from "@/utils/toast";
+import {
+  MOLD_DOC_LOGO_ACCEPT,
+  MOLD_DOC_LOGO_GALLERY_MAX,
+  getMoldDocLogoGalleryItems,
+  getSelectedMoldDocLogoId,
+  normalizeMoldDocLogo,
+} from "./moldDocLogo";
 import { makeSeamFigure } from "./seamFigure";
 import { normalizeHemMeta, recomputeHemFigure } from "./hemFigure";
 import type { HemMeta } from "./types";
@@ -61,6 +68,8 @@ export function PropertiesPanel() {
     hemNotchesEnabled,
     setHemNotchesEnabled,
     hemNotchType,
+    projectMeta,
+    setProjectMeta,
   } = useEditor();
 
   const isDark = useSyncExternalStore(
@@ -2241,6 +2250,76 @@ export function PropertiesPanel() {
   const fieldLabelClass =
     "block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider";
 
+  // Galeria de logotipos do molde (global ao projeto): a imagem SELECIONADA é
+  // a desenhada na documentação de todos os moldes. O campo legado
+  // meta.moldDocLogo é migrado para a galeria na primeira escrita.
+  const moldDocLogoItems = getMoldDocLogoGalleryItems(projectMeta);
+  const moldDocLogoSelectedId = getSelectedMoldDocLogoId(projectMeta);
+
+  const handleMoldDocLogoFile = useCallback(
+    async (file: File | null | undefined) => {
+      if (!file) return;
+      if (moldDocLogoItems.length >= MOLD_DOC_LOGO_GALLERY_MAX) {
+        toast(
+          `Máximo de ${MOLD_DOC_LOGO_GALLERY_MAX} imagens na galeria — remova uma antes de enviar outra.`,
+          "error"
+        );
+        return;
+      }
+      const result = await normalizeMoldDocLogo(file);
+      if (!result.ok) {
+        toast(result.error, "error");
+        return;
+      }
+      const newId =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? `logo_${crypto.randomUUID()}`
+          : `logo_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+      setProjectMeta((prev) => {
+        const items = getMoldDocLogoGalleryItems(prev);
+        const next = { ...(prev ?? {}) };
+        delete next.moldDocLogo;
+        next.moldDocLogoGallery = [...items, { id: newId, ...result.logo }];
+        next.moldDocLogoSelectedId = newId;
+        return next;
+      });
+      toast("Logotipo adicionado e aplicado aos moldes do projeto.", "success");
+    },
+    [setProjectMeta, moldDocLogoItems.length]
+  );
+
+  const handleMoldDocLogoSelect = useCallback(
+    (id: string) => {
+      setProjectMeta((prev) => {
+        const items = getMoldDocLogoGalleryItems(prev);
+        const current = getSelectedMoldDocLogoId(prev);
+        const next = { ...(prev ?? {}) };
+        delete next.moldDocLogo;
+        next.moldDocLogoGallery = items;
+        // Clicar no item já selecionado oculta o logotipo (nenhum selecionado).
+        next.moldDocLogoSelectedId = current === id ? null : id;
+        return next;
+      });
+    },
+    [setProjectMeta]
+  );
+
+  const handleMoldDocLogoRemove = useCallback(
+    (id: string) => {
+      setProjectMeta((prev) => {
+        const items = getMoldDocLogoGalleryItems(prev);
+        if (!items.some((item) => item.id === id)) return prev;
+        const current = getSelectedMoldDocLogoId(prev);
+        const next = { ...(prev ?? {}) };
+        delete next.moldDocLogo;
+        next.moldDocLogoGallery = items.filter((item) => item.id !== id);
+        next.moldDocLogoSelectedId = current === id ? null : current;
+        return next;
+      });
+    },
+    [setProjectMeta]
+  );
+
   const renderMoldDocumentationSection = () => {
     if (!selectedMold) return null;
     const mold = selectedMold;
@@ -2490,6 +2569,73 @@ export function PropertiesPanel() {
               {(mold.moldMeta?.notes ?? "").length}/{MOLD_NOTES_MAX_LENGTH}
             </div>
           </label>
+
+          {/* Logotipo do molde: galeria global ao projeto; o item selecionado
+              é desenhado na documentação de todos os moldes. */}
+          <div className="space-y-2">
+            <div className={subgroupHeaderClass}>Logotipo do molde</div>
+            {moldDocLogoItems.length > 0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {moldDocLogoItems.map((item, idx) => {
+                  const isSelected = item.id === moldDocLogoSelectedId;
+                  return (
+                    <div key={item.id} className="relative">
+                      <button
+                        type="button"
+                        data-testid="mold-doc-logo-item"
+                        aria-pressed={isSelected}
+                        title={
+                          isSelected
+                            ? "Clique para ocultar o logotipo nos moldes"
+                            : "Clique para usar este logotipo nos moldes"
+                        }
+                        className={
+                          "w-full h-12 flex items-center justify-center rounded border bg-white dark:bg-gray-800 p-0.5 transition-colors " +
+                          (isSelected
+                            ? "border-amber-500 ring-1 ring-amber-500"
+                            : "border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500")
+                        }
+                        onClick={() => handleMoldDocLogoSelect(item.id)}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={item.dataUrl}
+                          alt={`Logotipo ${idx + 1}`}
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="mold-doc-logo-remove"
+                        aria-label={`Remover logotipo ${idx + 1}`}
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full text-[10px] leading-none bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/60 dark:hover:text-red-300 transition-colors"
+                        onClick={() => handleMoldDocLogoRemove(item.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <label className="block px-2 py-1.5 text-xs text-center rounded border border-dashed border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+              Enviar imagem
+              <input
+                type="file"
+                data-testid="mold-doc-logo-upload"
+                accept={MOLD_DOC_LOGO_ACCEPT}
+                className="hidden"
+                onChange={(evt) => {
+                  void handleMoldDocLogoFile(evt.target.files?.[0]);
+                  evt.target.value = "";
+                }}
+              />
+            </label>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-snug">
+              A imagem selecionada aparece na documentação de todos os moldes
+              deste projeto, à esquerda dos textos.
+            </p>
+          </div>
 
           <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-snug">
             Os campos preenchidos aparecem desenhados sobre o molde; o fio é

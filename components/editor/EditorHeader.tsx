@@ -184,6 +184,7 @@ export function EditorHeader() {
         figures: snapshotNow.figures,
         pageGuideSettings: snapshotNow.pageGuideSettings,
         guides: snapshotNow.guides,
+        meta: snapshotNow.projectMeta,
       };
 
       try {
@@ -579,6 +580,7 @@ export function EditorHeader() {
         figures,
         pageGuideSettings,
         guides,
+        meta: projectMeta,
       });
       setToast({
         message: "Projeto salvo com sucesso!",
@@ -707,6 +709,7 @@ export function EditorHeader() {
         figures,
         pageGuideSettings,
         guides,
+        meta: projectMeta,
       });
       setToast({
         message: "Projeto salvo com sucesso!",
@@ -737,7 +740,8 @@ export function EditorHeader() {
       name,
       figures,
       pageGuideSettings,
-      guides
+      guides,
+      projectMeta
     );
 
     if (result.success && result.projectId) {
@@ -747,6 +751,7 @@ export function EditorHeader() {
         figures,
         pageGuideSettings,
         guides,
+        meta: projectMeta,
       });
       setToast({
         message: "Cópia salva com sucesso!",
